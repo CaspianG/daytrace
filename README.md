@@ -1,0 +1,146 @@
+<p align="center">
+  <img src="docs/assets/daytrace-avatar.png" width="132" alt="Daytrace compass logo">
+</p>
+
+<h1 align="center">Daytrace</h1>
+
+<p align="center"><strong>Your day. On your device.</strong></p>
+
+<p align="center">
+  A free, open-source Windows app that turns local application activity into a useful workday timeline — without screenshots, audio, accounts, APIs, or cloud storage.
+</p>
+
+<p align="center">
+  <a href="https://github.com/CaspianG/daytrace/releases/latest"><strong>Download for Windows</strong></a>
+  · <a href="README_RU.md">Русская версия</a>
+  · <a href="SECURITY.md">Security</a>
+</p>
+
+<p align="center">
+  <img alt="GitHub release" src="https://img.shields.io/github/v/release/CaspianG/daytrace?display_name=tag&style=flat-square&color=6f8f67">
+  <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-6f8f67?style=flat-square">
+  <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-c5684b?style=flat-square">
+  <img alt="Local only" src="https://img.shields.io/badge/data-local%20only-294332?style=flat-square">
+</p>
+
+![Daytrace — local, private and free](docs/assets/daytrace-cover.png)
+
+## Why Daytrace exists
+
+The useful question is simple: **“What was I working on this morning?”** The answer is usually scattered across editors, browser tabs, documents, chats, and window switches.
+
+OpenAI's announcement of Computer History validated this new category of desktop software. Its initial rollout was described as macOS-only and limited to Pro, Business, and Enterprise plans. Daytrace is an independent, Windows-first alternative for people who want the utility without a subscription or a hosted activity history.
+
+Daytrace requires no account and no API key. Its shipped desktop runtime contains no network integration: events are captured, filtered, grouped, queried, and deleted on your computer.
+
+> Computer History availability and plan limits may change after the initial announcement. Daytrace is not affiliated with or endorsed by OpenAI.
+
+## Install in one click
+
+1. Open the [latest release](https://github.com/CaspianG/daytrace/releases/latest).
+2. Download `Daytrace-Setup-…-x64.exe`.
+3. Double-click it. Daytrace installs for the current Windows user, creates Desktop and Start Menu shortcuts, and opens automatically.
+
+No administrator account, separate .NET installation, browser extension, cloud account, or API key is required.
+
+The first public build is not code-signed yet, so Windows SmartScreen may show **Unknown publisher**. Check the SHA-256 value published in the release notes before running it.
+
+Prefer a portable build? Download `Daytrace-Portable-…-x64.zip`, extract it, and run `Daytrace.exe`.
+
+## What you get
+
+- **A readable workday timeline** grouped into focus sessions instead of a raw event dump.
+- **Local questions about your day**, including morning, afternoon, evening, today, and yesterday.
+- **A morning summary** showing the main areas of work and how long they took.
+- **Application and window context** from the Windows accessibility/event APIs.
+- **Private-window filtering** for common Incognito, InPrivate, and Private Browsing titles before disk writes.
+- **Application exclusions** with password managers excluded by default.
+- **48-hour retention** with precise automatic pruning of older event lines.
+- **Pause, session deletion, and delete-all controls** inside the app.
+- **Local workflow detection** that can export a reviewable `SKILL.md` draft from repeated application sequences.
+
+![Daytrace timeline and morning summary](docs/assets/screenshots/timeline.png)
+
+## Privacy model
+
+Daytrace is intentionally less invasive than screenshot-based activity recorders.
+
+| Recorded locally | Never recorded |
+| --- | --- |
+| Active application name | Screenshots or screen video |
+| Active window title | Audio or microphone input |
+| Window-switch timestamp | Clipboard contents |
+| Aggregate click count | Mouse coordinates |
+| Aggregate keypress count | Key identities or typed text |
+| Session duration | Form values or passwords |
+
+Window titles can contain document names, page titles, or conversation names. They stay local, but you should exclude sensitive applications. Private-browser detection is title-based because browsers do not expose one universal private-mode signal; treat exclusions as the stronger control.
+
+Default data location:
+
+```text
+%APPDATA%\daytrace-local\daytrace-data\
+├── events\YYYY-MM-DD-HH.jsonl
+├── settings.json
+└── skills\<workflow>\SKILL.md
+```
+
+Uninstalling the application preserves this folder so history is not destroyed unexpectedly. Use **Delete all data** inside Daytrace if you want to erase the journal first.
+
+## How it works
+
+```mermaid
+flowchart LR
+    A["Windows foreground, keyboard and mouse hooks"] --> B["Privacy filter"]
+    B -->|"allowed"| C["Hourly local JSONL files"]
+    B -->|"private or excluded"| X["Discarded before disk write"]
+    C --> D["Local sessionizer"]
+    D --> E["Timeline, summaries and local answers"]
+    D --> F["Reviewable SKILL.md drafts"]
+```
+
+The native tracker emits foreground-window changes plus aggregate input counts. Electron's local main process applies privacy rules, stores hourly JSONL segments, and exposes state to the sandboxed renderer over a narrow IPC bridge. There is no cloud backend.
+
+## Current limitations
+
+- Windows x64 only; tested on Windows 10/11.
+- The interface and generated summaries are currently Russian-first.
+- Local Q&A is deterministic and heuristic — it is not a bundled language model.
+- Private-window detection depends on browser title conventions and cannot be guaranteed for every browser/version.
+- The installer is not code-signed in v0.1.0.
+
+These boundaries are documented because privacy software should be explicit about what it can and cannot prove.
+
+## Build from source
+
+Requirements: Node.js 22+, npm, and .NET 8 SDK.
+
+```powershell
+git clone https://github.com/CaspianG/daytrace.git
+cd daytrace
+npm ci
+npm run dev:desktop
+```
+
+Run verification and produce both installer and portable artifacts:
+
+```powershell
+npm test
+npm run test:sites
+npm run dist
+```
+
+Artifacts are written to `release/`:
+
+- `Daytrace-Setup-<version>-x64.exe`
+- `Daytrace-Portable-<version>-x64.zip`
+
+## Project status
+
+Daytrace is an early public release. The privacy boundary, retention behavior, installer cycle, and application launch are tested; broader browser coverage and localization still need community testing.
+
+Issues and focused pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before changing capture or privacy behavior.
+
+## License
+
+[MIT](LICENSE) © Daytrace contributors.
