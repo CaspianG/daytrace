@@ -2,6 +2,29 @@
 
 All notable changes to Daytrace are documented here.
 
+## [0.2.0] - 2026-08-15
+
+### Added
+
+- Complete day overview with active time, application count, context-switch count, maximum observed browser tabs, focus distribution, top applications, and hourly activity rhythm.
+- Previous-day navigation inside the 48-hour retention window.
+- Low-frequency browser tab-count sampling through Windows UI Automation; tab titles outside the active window, URLs, and form values are never read.
+- Active-title change tracking for browser tabs and Telegram chats without waiting for the whole application window to change.
+- Idle-aware heartbeats that preserve long reading and review sessions without recording inactive computer time indefinitely.
+- Context-aware local answers for browser use, Telegram activity, time allocation, and task switching.
+
+### Changed
+
+- The day timeline is reverse chronological by default, with the newest session and newest activity first.
+- “Day history” is now “Day overview” in both English and Russian.
+- The morning-only panel is now a selected-day summary.
+
+### Privacy and performance
+
+- Accessibility enrichment stores only the active window title, a coarse context type, and a bounded numeric tab count.
+- Message contents, typed text, URLs, non-active tab titles, screenshots, audio, clipboard data, and key identities remain outside the journal.
+- Browser accessibility sampling runs once per minute and only for the active browser window.
+
 ## [0.1.1] - 2026-08-15
 
 ### Fixed

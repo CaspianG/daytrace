@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, Brain, Check, Clock, Compass, Database, EyeSlash, FolderOpen, Gear, Globe, LockKey, MagnifyingGlass, Pause, Play, Plus, ShieldCheck, Sparkle, Trash, X } from "@phosphor-icons/react";
+import { ArrowRight, ArrowsLeftRight, Brain, Browsers, CalendarBlank, CaretLeft, CaretRight, ChartBar, Check, Clock, Compass, Database, EyeSlash, FolderOpen, Gear, Globe, LockKey, MagnifyingGlass, Pause, Play, Plus, ShieldCheck, Sparkle, Timer, Trash, X } from "@phosphor-icons/react";
 import { SiFigma, SiGooglechrome, SiGmail, SiTelegram } from "react-icons/si";
 import { FaEdge } from "react-icons/fa6";
 import { VscVscode } from "react-icons/vsc";
 import sageBranch from "./assets/sage-branch.png";
-import { formatDuration, formatTime, formatToday, normalizeLanguage, text, translations } from "./i18n.js";
+import { formatDay, formatDuration, formatTime, normalizeLanguage, text, translations } from "./i18n.js";
 
 const NAVIGATION = [
   { id: "history", icon: Clock },
@@ -46,7 +46,8 @@ function demoState(language = demoLanguage(), onboardingComplete = true) {
   const times = [[9, 5, 9, 30], [9, 30, 9, 45], [9, 45, 10, 0], [10, 0, 10, 15], [10, 15, 10, 45], [10, 45, 11, 15], [11, 15, 11, 30], [11, 30, 11, 50], [11, 50, 12, 5]];
   const activities = times.map(([sh, sm, eh, em], index) => ({
     start: startOfToday(sh, sm), end: startOfToday(eh, em), durationMs: startOfToday(eh, em) - startOfToday(sh, sm),
-    app: apps[index], title: t.demo.titles[index], focus: focuses[index], clicks: 4, inputs: 18,
+    app: apps[index], title: t.demo.titles[index], focus: focuses[index], context: apps[index].includes("Chrome") ? "browser" : apps[index].includes("Telegram") ? "messaging" : "other",
+    tabCount: apps[index].includes("Chrome") ? (index === 1 ? 7 : 11) : 0, clicks: 4, inputs: 18,
   }));
   const makeSession = (id, from, to, focus) => ({ id, start: activities[from].start, end: activities[to].end, durationMs: activities[to].end - activities[from].start, focus, label: FOCUS_LABELS[lang][focus], activities: activities.slice(from, to + 1) });
   return {
@@ -60,6 +61,70 @@ function demoState(language = demoLanguage(), onboardingComplete = true) {
       { id: "morning-dev", title: t.demo.skills[0][0], description: t.demo.skills[0][1], apps: ["Visual Studio Code", "Google Chrome", "Telegram Desktop"], count: 3, duration: t.demo.skills[0][2] },
       { id: "requirements-sync", title: t.demo.skills[1][0], description: t.demo.skills[1][1], apps: ["Telegram Desktop", "Figma", "Gmail"], count: 2, duration: t.demo.skills[1][2] },
     ],
+  };
+}
+
+function startOfLocalDay(value) {
+  const day = new Date(value);
+  day.setHours(0, 0, 0, 0);
+  return day.getTime();
+}
+
+function daySessions(sessions, selectedDay) {
+  const start = startOfLocalDay(selectedDay);
+  const end = start + 24 * 60 * 60_000;
+  return sessions
+    .filter((session) => session.end > start && session.start < end)
+    .map((session) => ({
+      ...session,
+      activities: [...session.activities]
+        .filter((activity) => activity.end > start && activity.start < end)
+        .sort((a, b) => b.end - a.end),
+    }))
+    .sort((a, b) => b.end - a.end);
+}
+
+function buildOverview(sessions, selectedDay) {
+  const dayStart = startOfLocalDay(selectedDay);
+  const dayEnd = dayStart + 24 * 60 * 60_000;
+  const activities = sessions.flatMap((session) => session.activities.map((activity) => ({ ...activity, focus: session.focus, label: session.label })));
+  const focus = new Map();
+  const apps = new Map();
+  const hours = Array.from({ length: 24 }, (_, hour) => ({ hour, durationMs: 0 }));
+  let activeMs = 0;
+  let maxTabs = 0;
+  for (const activity of activities) {
+    const start = Math.max(dayStart, activity.start);
+    const end = Math.min(dayEnd, activity.end);
+    const duration = Math.max(0, end - start);
+    activeMs += duration;
+    focus.set(activity.focus, { focus: activity.focus, label: activity.label, durationMs: (focus.get(activity.focus)?.durationMs || 0) + duration });
+    apps.set(activity.app, (apps.get(activity.app) || 0) + duration);
+    maxTabs = Math.max(maxTabs, Number(activity.tabCount || 0));
+    let cursor = start;
+    while (cursor < end) {
+      const nextHour = new Date(cursor);
+      nextHour.setMinutes(60, 0, 0);
+      const sliceEnd = Math.min(end, nextHour.getTime());
+      hours[new Date(cursor).getHours()].durationMs += sliceEnd - cursor;
+      cursor = sliceEnd;
+    }
+  }
+  const focusTotals = [...focus.values()].sort((a, b) => b.durationMs - a.durationMs);
+  const appTotals = [...apps.entries()].map(([app, durationMs]) => ({ app, durationMs })).sort((a, b) => b.durationMs - a.durationMs);
+  const usedHours = hours.filter((item) => item.durationMs > 0);
+  const firstHour = usedHours.length ? Math.max(0, usedHours[0].hour - 1) : 8;
+  const lastHour = usedHours.length ? Math.min(23, usedHours.at(-1).hour + 1) : 18;
+  return {
+    activeMs,
+    appCount: apps.size,
+    switchCount: Math.max(0, activities.length - 1),
+    maxTabs,
+    focusTotals,
+    appTotals,
+    hours: hours.slice(firstHour, lastHour + 1),
+    topFocus: focusTotals[0],
+    topApp: appTotals[0],
   };
 }
 
@@ -136,22 +201,49 @@ function QuestionBar({ onAsk, t, initial = "" }) {
   return <form className="question-bar" onSubmit={submit}><MagnifyingGlass size={26} /><input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={t.question.placeholder} aria-label={t.question.label} /><button type="submit" disabled={busy}>{busy ? t.question.searching : t.question.ask}</button></form>;
 }
 
-function Session({ session, onDelete, language, t }) {
-  const isBreak = session.focus === "break";
-  return <section className={`timeline-session ${isBreak ? "break-session" : ""}`}><span className="timeline-node" /><header className="session-header"><div className="session-chip"><strong>{formatTime(session.start, language)} – {formatTime(session.end, language)}</strong>{!isBreak && <><span>•</span><span>{t.session.focus}: {session.label.toLocaleLowerCase(t.locale)}</span></>}</div><span className="session-line" /><strong className="duration">{formatDuration(session.durationMs, language)}</strong><button className="icon-button delete-session" onClick={() => onDelete(session)} title={t.session.delete}><Trash size={17} /></button></header><div className="activity-list">{session.activities.map((activity, index) => <div className="activity" key={`${activity.start}-${index}`}><time>{formatTime(activity.start, language)} – {formatTime(activity.end, language)}</time><AppIcon app={activity.app} /><div><strong>{activity.app}</strong><span>{activity.title || t.common.activeWindow}</span></div></div>)}</div></section>;
+function OverviewMetrics({ stats, language, t }) {
+  const cards = [
+    { icon: Timer, value: stats.activeMs ? formatDuration(stats.activeMs, language) : "—", label: t.overview.activeTime, hint: t.overview.activeTimeHint },
+    { icon: ChartBar, value: stats.appCount || "—", label: t.overview.apps, hint: t.overview.appsHint },
+    { icon: ArrowsLeftRight, value: stats.switchCount || "—", label: t.overview.switches, hint: t.overview.switchesHint },
+    { icon: Browsers, value: stats.maxTabs || "—", label: t.overview.tabs, hint: stats.maxTabs ? t.overview.tabsHint : t.overview.noTabs },
+  ];
+  return <section className="overview-metrics">{cards.map(({ icon: Icon, value, label, hint }) => <article className="metric-card" key={label}><div className="metric-icon"><Icon size={19} /></div><strong>{value}</strong><span>{label}</span><small>{hint}</small></article>)}</section>;
 }
 
-function Summary({ result, sessions, language, t }) {
-  const sessionPoints = sessions.filter((session) => session.focus !== "break").map((session) => ({ label: session.label, duration: formatDuration(session.durationMs, language), time: `${formatTime(session.start, language)} – ${formatTime(session.end, language)}`, detail: t.summary.details[session.focus] || t.summary.grouped }));
+function RankedBars({ title, subtitle, items, max, renderLabel, renderValue }) {
+  return <section className="chart-card"><header><div><h3>{title}</h3><p>{subtitle}</p></div></header><div className="ranked-bars">{items.slice(0, 5).map((item) => <div className="ranked-row" key={renderLabel(item)}><div className="ranked-label"><span>{renderLabel(item)}</span><strong>{renderValue(item)}</strong></div><div className="ranked-track"><span style={{ width: `${Math.max(4, (item.durationMs / Math.max(1, max)) * 100)}%` }} /></div></div>)}</div></section>;
+}
+
+function ActivityRhythm({ stats, t }) {
+  const max = Math.max(1, ...stats.hours.map((item) => item.durationMs));
+  return <section className="chart-card rhythm-card"><header><div><h3>{t.overview.rhythmTitle}</h3><p>{t.overview.rhythmSubtitle}</p></div></header><div className="rhythm-chart">{stats.hours.map((item) => <div className="rhythm-hour" key={item.hour} title={`${String(item.hour).padStart(2, "0")}:00`}><div><span style={{ height: `${Math.max(item.durationMs ? 8 : 2, (item.durationMs / max) * 100)}%` }} /></div><small>{String(item.hour).padStart(2, "0")}</small></div>)}</div></section>;
+}
+
+function DayOverview({ stats, language, t }) {
+  const focusMax = Math.max(1, ...stats.focusTotals.map((item) => item.durationMs));
+  const appMax = Math.max(1, ...stats.appTotals.map((item) => item.durationMs));
+  return <div className="day-overview"><OverviewMetrics stats={stats} language={language} t={t} /><div className="overview-charts"><RankedBars title={t.overview.focusTitle} subtitle={t.overview.focusSubtitle} items={stats.focusTotals} max={focusMax} renderLabel={(item) => item.label} renderValue={(item) => formatDuration(item.durationMs, language)} /><RankedBars title={t.overview.appsTitle} subtitle={t.overview.appsSubtitle} items={stats.appTotals} max={appMax} renderLabel={(item) => item.app} renderValue={(item) => formatDuration(item.durationMs, language)} /></div><ActivityRhythm stats={stats} t={t} /></div>;
+}
+
+function Session({ session, onDelete, language, t }) {
+  const isBreak = session.focus === "break";
+  return <section className={`timeline-session ${isBreak ? "break-session" : ""}`}><span className="timeline-node" /><header className="session-header"><div className="session-chip"><strong>{formatTime(session.start, language)} – {formatTime(session.end, language)}</strong>{!isBreak && <><span>•</span><span>{t.session.focus}: {session.label.toLocaleLowerCase(t.locale)}</span></>}</div><span className="session-line" /><strong className="duration">{formatDuration(session.durationMs, language)}</strong><button className="icon-button delete-session" onClick={() => onDelete(session)} title={t.session.delete}><Trash size={17} /></button></header><div className="activity-list">{session.activities.map((activity, index) => <div className="activity" key={`${activity.start}-${index}`}><time>{formatTime(activity.start, language)} – {formatTime(activity.end, language)}</time><AppIcon app={activity.app} /><div className="activity-copy"><strong>{activity.app}</strong><span>{activity.title || t.common.activeWindow}</span>{(activity.tabCount > 0 || activity.inputs + activity.clicks > 0) && <div className="activity-meta">{activity.tabCount > 0 && <small><Browsers size={13} /> {text(t.overview.tabsCount, { count: activity.tabCount })}</small>}{activity.inputs + activity.clicks > 0 && <small><ArrowsLeftRight size={13} /> {text(t.overview.inputCount, { count: activity.inputs + activity.clicks })}</small>}</div>}</div></div>)}</div></section>;
+}
+
+function Summary({ result, sessions, stats, language, t }) {
+  const sessionPoints = stats.focusTotals.map((item) => ({ label: item.label, duration: formatDuration(item.durationMs, language), detail: t.summary.details[item.focus] || t.summary.grouped }));
   const points = result?.points?.length ? result.points.map((point) => ({ ...sessionPoints.find((item) => item.label === point.label), ...point })) : sessionPoints;
-  const answer = result?.answer || (sessions.length ? t.summary.default : t.summary.empty);
+  const answer = result?.answer || (sessions.length ? text(t.summary.default, { focus: stats.topFocus?.label.toLocaleLowerCase(t.locale), app: stats.topApp?.app }) : t.summary.empty);
   return <aside className="summary-panel"><img className="sage-branch" src={sageBranch} alt="" /><h2>{t.summary.title}</h2><span className="summary-time">{text(t.summary.generated, { time: formatTime(Date.now(), language) })}</span><p className="summary-answer">{answer}</p><div className="summary-points">{points.slice(0, 3).map((point) => <div className="summary-point" key={point.label}><span className="summary-dot" /><div><strong>{point.label}</strong><small>{point.time ? `${point.time} (${point.duration})` : point.duration}</small>{point.detail && <p>{point.detail}</p>}</div></div>)}</div><div className="privacy-note"><strong>{t.summary.how}</strong><p>{t.summary.explanation}</p><div><LockKey size={16} /> {t.summary.private}</div><div><EyeSlash size={16} /> {t.summary.excluded}</div></div></aside>;
 }
 
-function HistoryPage({ state, actions, setPage, language, t }) {
+function HistoryPage({ state, actions, setPage, selectedDay, language, t }) {
   const [result, setResult] = useState(null);
-  useEffect(() => { setResult(null); }, [language]);
-  return <div className="history-page"><QuestionBar t={t} onAsk={async (question) => setResult(await actions.ask(question))} /><div className="history-layout"><main className="timeline-column"><div className="section-title"><h2>{t.history.title}</h2></div>{state.sessions.length ? <div className="timeline">{state.sessions.map((session) => <Session key={session.id} session={session} onDelete={actions.deleteSession} language={language} t={t} />)}</div> : <div className="empty-state"><Clock size={34} /><h3>{t.history.emptyTitle}</h3><p>{t.history.emptyText}</p><button onClick={() => setPage("settings")}>{t.history.checkSettings} <ArrowRight size={17} /></button></div>}</main><Summary result={result} sessions={state.sessions} language={language} t={t} /></div></div>;
+  const sessions = useMemo(() => daySessions(state.sessions, selectedDay), [state.sessions, selectedDay]);
+  const stats = useMemo(() => buildOverview(sessions, selectedDay), [sessions, selectedDay]);
+  useEffect(() => { setResult(null); }, [language, selectedDay]);
+  return <div className="history-page"><QuestionBar t={t} onAsk={async (question) => setResult(await actions.ask(question))} /><div className="history-layout"><main className="timeline-column"><DayOverview stats={stats} language={language} t={t} /><div className="section-title timeline-title"><h2>{t.history.title}</h2><span>{t.history.newestFirst}</span></div>{sessions.length ? <div className="timeline reverse-timeline">{sessions.map((session) => <Session key={session.id} session={session} onDelete={actions.deleteSession} language={language} t={t} />)}</div> : <div className="empty-state"><Clock size={34} /><h3>{t.history.emptyTitle}</h3><p>{t.history.emptyText}</p><button onClick={() => setPage("settings")}>{t.history.checkSettings} <ArrowRight size={17} /></button></div>}</main><Summary result={result} sessions={sessions} stats={stats} language={language} t={t} /></div></div>;
 }
 
 function AskPage({ actions, setPage, language, t }) {
@@ -184,9 +276,16 @@ function SettingsPage({ state, actions, isDesktop, language, t }) {
 export function App() {
   const { state, actions, isDesktop, language } = useDaytrace();
   const [page, setPage] = useState("history");
+  const [selectedDay, setSelectedDay] = useState(() => startOfLocalDay(Date.now()));
   const t = translations[language];
-  const date = useMemo(() => formatToday(language), [language]);
+  const today = startOfLocalDay(Date.now());
+  const displayDay = page === "history" ? selectedDay : today;
+  const date = useMemo(() => formatDay(displayDay, language), [displayDay, language]);
+  const isToday = displayDay === today;
+  const previousDay = selectedDay - 24 * 60 * 60_000;
+  const canGoPrevious = previousDay + 24 * 60 * 60_000 >= state.retentionCutoff;
+  const canGoNext = selectedDay < today;
   useEffect(() => { document.documentElement.lang = language; document.title = "Daytrace"; }, [language]);
   if (!state.settings.onboardingComplete) return <Onboarding language={language} onComplete={actions.completeOnboarding} />;
-  return <div className="app-shell"><Sidebar page={page} setPage={setPage} state={state} actions={actions} language={language} t={t} /><div className="app-main"><header className="date-header"><h1>{t.common.today}, {date.date}</h1><span>{date.weekday}</span></header>{page === "history" && <HistoryPage state={state} actions={actions} setPage={setPage} language={language} t={t} />}{page === "ask" && <AskPage actions={actions} setPage={setPage} language={language} t={t} />}{page === "skills" && <SkillsPage state={state} actions={actions} t={t} />}{page === "settings" && <SettingsPage state={state} actions={actions} isDesktop={isDesktop} language={language} t={t} />}{page === "exclusions" && <ExclusionsPage state={state} actions={actions} t={t} />}</div></div>;
+  return <div className="app-shell"><Sidebar page={page} setPage={setPage} state={state} actions={actions} language={language} t={t} /><div className="app-main"><header className="date-header"><div><h1>{isToday ? `${t.common.today}, ${date.date}` : date.date}</h1><span>{date.weekday}</span></div>{page === "history" && <nav className="day-nav" aria-label={t.nav.history}><button onClick={() => setSelectedDay(previousDay)} disabled={!canGoPrevious} title={t.overview.previousDay}><CaretLeft size={18} /></button><button className="today-button" onClick={() => setSelectedDay(today)} disabled={selectedDay === today}><CalendarBlank size={17} /> {t.overview.backToday}</button><button onClick={() => setSelectedDay(selectedDay + 24 * 60 * 60_000)} disabled={!canGoNext} title={t.overview.nextDay}><CaretRight size={18} /></button></nav>}</header>{page === "history" && <HistoryPage state={state} actions={actions} setPage={setPage} selectedDay={selectedDay} language={language} t={t} />}{page === "ask" && <AskPage actions={actions} setPage={setPage} language={language} t={t} />}{page === "skills" && <SkillsPage state={state} actions={actions} t={t} />}{page === "settings" && <SettingsPage state={state} actions={actions} isDesktop={isDesktop} language={language} t={t} />}{page === "exclusions" && <ExclusionsPage state={state} actions={actions} t={t} />}</div></div>;
 }

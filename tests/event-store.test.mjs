@@ -22,3 +22,15 @@ test("event store filters private windows and removes data older than 48 hours",
   assert.equal(fs.existsSync(oldFile), false);
   assert.equal(store.loadEvents().length, 1);
 });
+
+test("event store keeps only safe accessibility metadata", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "daytrace-context-test-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const store = new storeModule.EventStore(root);
+  store.append({ at: new Date().toISOString(), kind: "heartbeat", app: "Google Chrome", process: "chrome", title: "\u200ELocal\u2068 documentation\u2069", context: "browser", tabCount: 500, value: "must not persist" });
+  const [event] = store.loadEvents();
+  assert.equal(event.context, "browser");
+  assert.equal(event.tabCount, 200);
+  assert.equal(event.title, "Local documentation");
+  assert.equal("value" in event, false);
+});

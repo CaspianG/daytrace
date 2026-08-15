@@ -58,3 +58,40 @@ test("first run follows the OS language and persists onboarding choice", (t) => 
   assert.equal(reopened.settings.language, "en");
   assert.equal(reopened.settings.onboardingComplete, true);
 });
+
+test("local answers use browser and Telegram context without message content", () => {
+  const contextEvents = [
+    { at: new Date(base).toISOString(), kind: "foreground", app: "Google Chrome", title: "Daytrace docs - Google Chrome", context: "browser", tabCount: 8 },
+    { at: new Date(base + 10 * 60_000).toISOString(), kind: "heartbeat", app: "Google Chrome", title: "Daytrace docs - Google Chrome", context: "browser", tabCount: 12 },
+    { at: new Date(base + 20 * 60_000).toISOString(), kind: "foreground", app: "Telegram Desktop", title: "Project chat - Telegram Desktop", context: "messaging" },
+  ];
+  const now = new Date(base + 30 * 60_000);
+  const browser = answers.answerQuestion("How many browser tabs did I use?", contextEvents, now, "en");
+  const telegram = answers.answerQuestion("Что я делал в Телеграме?", contextEvents, now, "ru");
+  assert.match(browser.answer, /12 tabs/);
+  assert.match(telegram.answer, /Project chat/);
+  assert.match(telegram.answer, /содержимое сообщений не записывается/);
+});
+
+test("English and Russian READMEs use only their matching localized visuals", () => {
+  const root = path.resolve(import.meta.dirname, "..");
+  const englishReadme = fs.readFileSync(path.join(root, "README.md"), "utf8");
+  const russianReadme = fs.readFileSync(path.join(root, "README_RU.md"), "utf8");
+
+  assert.match(englishReadme, /daytrace-cover-en\.png/);
+  assert.match(englishReadme, /timeline-en\.png/);
+  assert.doesNotMatch(englishReadme, /(?:daytrace-cover|timeline)-ru\.png/);
+
+  assert.match(russianReadme, /daytrace-cover-ru\.png/);
+  assert.match(russianReadme, /timeline-ru\.png/);
+  assert.doesNotMatch(russianReadme, /(?:daytrace-cover|timeline)-en\.png/);
+
+  for (const relativePath of [
+    "docs/assets/daytrace-cover-en.png",
+    "docs/assets/daytrace-cover-ru.png",
+    "docs/assets/screenshots/timeline-en.png",
+    "docs/assets/screenshots/timeline-ru.png",
+  ]) {
+    assert.equal(fs.existsSync(path.join(root, relativePath)), true, `${relativePath} must exist`);
+  }
+});

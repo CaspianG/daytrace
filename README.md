@@ -23,7 +23,7 @@
   <img alt="Local only" src="https://img.shields.io/badge/data-local%20only-294332?style=flat-square">
 </p>
 
-![Daytrace — local, private and free](docs/assets/daytrace-cover.png)
+![Daytrace — local, private and free, with the interface fully in English](docs/assets/daytrace-cover-en.png)
 
 ## Why Daytrace exists
 
@@ -51,10 +51,11 @@ Minimizing or closing the window releases the heavy renderer while the lightweig
 
 ## What you get
 
-- **A readable workday timeline** grouped into focus sessions instead of a raw event dump.
+- **A complete day overview** with active time, applications, context switches, browser-tab maximum, focus distribution, top applications, and an hourly rhythm chart.
+- **A newest-first timeline** grouped into focus sessions instead of a raw event dump, with previous-day navigation inside the retention window.
 - **Local questions about your day**, including morning, afternoon, evening, today, and yesterday.
-- **A morning summary** showing the main areas of work and how long they took.
-- **Application and window context** from the Windows accessibility/event APIs.
+- **A selected-day summary** showing the main areas of work and how long they took.
+- **Richer application context** from Windows event and accessibility APIs: active Chrome tab-title changes, numeric tab count, Telegram active-window/chat-title changes, and idle-aware reading time.
 - **Private-window filtering** for common Incognito, InPrivate, and Private Browsing titles before disk writes.
 - **Application exclusions** with password managers excluded by default.
 - **48-hour retention** with precise automatic pruning of older event lines.
@@ -63,7 +64,7 @@ Minimizing or closing the window releases the heavy renderer while the lightweig
 - **Complete English and Russian localization** for the interface, timeline labels, local answers, tray menu, installer, and exported skills.
 - **First-run language choice** with an instant language switch available later in Settings.
 
-![Daytrace timeline and morning summary in English](docs/assets/screenshots/timeline-en.png)
+![Daytrace day overview and latest activity in English](docs/assets/screenshots/timeline-en.png)
 
 The same interface is also available in [Russian](README_RU.md), including localized summaries and system-tray controls.
 
@@ -75,6 +76,7 @@ Daytrace is intentionally less invasive than screenshot-based activity recorders
 | --- | --- |
 | Active application name | Screenshots or screen video |
 | Active window title | Audio or microphone input |
+| Numeric count of visible browser tabs | URLs or titles of background tabs |
 | Window-switch timestamp | Clipboard contents |
 | Aggregate click count | Mouse coordinates |
 | Aggregate keypress count | Key identities or typed text |
@@ -101,11 +103,11 @@ flowchart LR
     B -->|"allowed"| C["Hourly local JSONL files"]
     B -->|"private or excluded"| X["Discarded before disk write"]
     C --> D["Local sessionizer"]
-    D --> E["Timeline, summaries and local answers"]
+    D --> E["Day overview, reverse timeline and local answers"]
     D --> F["Reviewable SKILL.md drafts"]
 ```
 
-The native tracker emits foreground-window changes plus aggregate input counts. Electron's local main process applies privacy rules, stores hourly JSONL segments, and exposes state to the sandboxed renderer over a narrow IPC bridge. There is no cloud backend.
+The native tracker emits foreground-window and active-title changes, idle-aware heartbeats, a once-per-minute numeric browser-tab count, and aggregate input counts. Electron's local main process applies privacy rules, stores hourly JSONL segments, and exposes state to the sandboxed renderer over a narrow IPC bridge. It never reads message bodies, typed text, URLs, or background-tab titles. There is no cloud backend.
 
 ## Current limitations
 

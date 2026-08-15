@@ -28,17 +28,23 @@ function inferFocus(activity) {
   if (/(telegram|slack|teams|discord|outlook|mail|gmail|zoom)/.test(text)) return "communication";
   if (/(figma|photoshop|illustrator|after effects|premiere|canva)/.test(text)) return "design";
   if (/(code|visual studio|terminal|powershell|cmd|github|gitkraken|webstorm|idea|pycharm)/.test(text)) return "development";
-  if (/(notion|trello|asana|linear|calendar|документ|docs|word|excel)/.test(text)) return "planning";
+  if (/(notion|trello|asana|linear|calendar|документ|docs|sheets|word|excel)/.test(text)) return "planning";
+  if (/(documentation|документац|stackoverflow|stack overflow|mdn|wikipedia|github issue|search|поиск)/.test(text)) return "research";
   if (/(chrome|edge|firefox|brave|opera)/.test(text)) return "research";
   if (/(explorer|проводник|finder)/.test(text)) return "files";
   return "other";
 }
 
 function safeTitle(title, app, language = "ru") {
-  const cleaned = String(title || "").replace(/\s+/g, " ").trim();
+  const cleaned = String(title || "").replace(/\p{Cf}/gu, "").replace(/\s+/g, " ").trim();
   if (!cleaned) return normalizeLanguage(language) === "ru" ? "Активное окно" : "Active window";
   const appEscaped = String(app || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return cleaned.replace(new RegExp(`\\s*[—-]\\s*${appEscaped}$`, "i"), "").slice(0, 140);
+  return cleaned
+    .replace(new RegExp(`\\s*[—-]\\s*${appEscaped}$`, "i"), "")
+    .replace(/\s*[—-]\s*(Google Chrome|Microsoft Edge|Mozilla Firefox|Brave|Opera|Telegram Desktop)$/i, "")
+    .replace(/^\(\d+\)\s*/, "")
+    .replace(/\s+\(\d{5,}\)$/, "")
+    .slice(0, 140);
 }
 
 function sessionize(events, now = Date.now(), language = "ru") {
@@ -72,6 +78,8 @@ function sessionize(events, now = Date.now(), language = "ru") {
         app: event.app || event.process || (lang === "ru" ? "Приложение" : "Application"),
         process: event.process || "",
         title: event.title || "",
+        context: event.context || "other",
+        tabCount: Number(event.tabCount || 0),
         clicks: 0,
         inputs: 0,
       };
@@ -80,6 +88,8 @@ function sessionize(events, now = Date.now(), language = "ru") {
     if (!active) continue;
     if (event.app && event.app !== active.app) continue;
     active.lastSignal = at;
+    if (event.context) active.context = event.context;
+    if (Number(event.tabCount || 0) > 0) active.tabCount = Number(event.tabCount);
     if (event.kind === "click") active.clicks += Number(event.count || 1);
     if (event.kind === "input") active.inputs += Number(event.count || 1);
   }

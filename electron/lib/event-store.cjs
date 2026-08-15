@@ -21,6 +21,10 @@ function readJson(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return fallback; }
 }
 
+function sanitizeMetadata(value, limit) {
+  return String(value || "").replace(/\p{Cf}/gu, "").replace(/[\u0000-\u001f\u007f]/g, "").replace(/\s+/g, " ").trim().slice(0, limit);
+}
+
 class EventStore {
   constructor(root, onChange = () => {}, options = {}) {
     this.root = root;
@@ -59,10 +63,12 @@ class EventStore {
     const normalized = {
       at: event.at || new Date().toISOString(),
       kind: event.kind,
-      app: String(event.app || event.process || (this.settings.language === "ru" ? "Приложение" : "Application")).slice(0, 120),
-      process: String(event.process || "").slice(0, 120),
-      title: String(event.title || "").slice(0, 300),
+      app: sanitizeMetadata(event.app || event.process || (this.settings.language === "ru" ? "Приложение" : "Application"), 120),
+      process: sanitizeMetadata(event.process, 120),
+      title: sanitizeMetadata(event.title, 300),
       count: Math.max(1, Number(event.count || 1)),
+      context: ["browser", "messaging", "editor", "other"].includes(event.context) ? event.context : "other",
+      tabCount: Math.max(0, Math.min(200, Number(event.tabCount || 0))),
     };
     if (!shouldRecord(normalized, this.settings)) return false;
     fs.appendFileSync(this.eventFile(normalized.at), `${JSON.stringify(normalized)}\n`, "utf8");

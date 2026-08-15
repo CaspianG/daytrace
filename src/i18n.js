@@ -8,14 +8,14 @@ export const translations = {
   en: {
     locale: "en-US",
     languageName: "English",
-    nav: { history: "Day history", ask: "Ask about your day", settings: "Settings", exclusions: "Exclusions" },
+    nav: { history: "Day overview", ask: "Ask about your day", settings: "Settings", exclusions: "Exclusions" },
     common: { activeWindow: "Active window", cancel: "Cancel", add: "Add", today: "Today", local: "Local", minutes: "min", hours: "h" },
     status: { paused: "Tracking paused", retention: "Stored for {hours} hours", deletion: "Deletion by {time}", pause: "Pause", resume: "Resume" },
     question: { placeholder: "Ask about your day, for example: “What was I working on this morning?”", label: "Question about your workday", fallback: "What was I working on this morning?", searching: "Searching…", ask: "Ask" },
     session: { focus: "Focus", delete: "Delete session" },
     summary: {
-      title: "Morning summary", generated: "Generated locally, {time}",
-      default: "This morning you worked on project planning, development, and communication.",
+      title: "Day summary", generated: "Updated locally, {time}",
+      default: "Your day was centered on {focus}. Most time was spent in {app}.",
       empty: "Once activity appears, a clear summary of your day will be shown here.",
       how: "How this summary is made", explanation: "Based on local application and browser events. No screenshots, audio, or typed content.",
       private: "Private browser windows are excluded", excluded: "Selected applications are not tracked",
@@ -30,7 +30,15 @@ export const translations = {
         other: "Activity grouped from the active application and window.",
       },
     },
-    history: { title: "Day history", emptyTitle: "No history yet", emptyText: "Leave tracking enabled and switch between your work applications. The first sessions will appear here automatically.", checkSettings: "Check settings" },
+    history: { title: "Latest activity", newestFirst: "Newest first", emptyTitle: "No activity for this day", emptyText: "Leave tracking enabled and switch between your work applications. The first sessions will appear here automatically.", checkSettings: "Check settings" },
+    overview: {
+      previousDay: "Previous day", nextDay: "Next day", backToday: "Today",
+      activeTime: "Active time", activeTimeHint: "Observed in foreground", apps: "Applications", appsHint: "Used this day",
+      switches: "Context switches", switchesHint: "Between active windows", tabs: "Browser tabs", tabsHint: "Maximum observed",
+      focusTitle: "Where the day went", focusSubtitle: "Share of observed active time", appsTitle: "Top applications", appsSubtitle: "Time in the foreground",
+      rhythmTitle: "Activity rhythm", rhythmSubtitle: "Observed minutes by hour", noTabs: "Not observed",
+      tabsCount: "{count} tabs", inputCount: "{count} actions", latestContext: "Latest visible context",
+    },
     ask: {
       title: "Ask about your day", subtitle: "The answer is built on this device from events stored during the last 48 hours.", skills: "Skills from workflows",
       localAnswer: "Local answer", examples: "Examples", examplesText: "Ask about the morning, a specific application, a time period, or task switching.",
@@ -68,14 +76,14 @@ export const translations = {
   ru: {
     locale: "ru-RU",
     languageName: "Русский",
-    nav: { history: "История дня", ask: "Спросить о дне", settings: "Настройки", exclusions: "Исключения" },
+    nav: { history: "Обзор дня", ask: "Спросить о дне", settings: "Настройки", exclusions: "Исключения" },
     common: { activeWindow: "Активное окно", cancel: "Отмена", add: "Добавить", today: "Сегодня", local: "Локально", minutes: "мин", hours: "ч" },
     status: { paused: "Сбор на паузе", retention: "Хранение {hours} часов", deletion: "Удаление до {time}", pause: "Приостановить", resume: "Продолжить" },
     question: { placeholder: "Спросить о дне, например: «Над чем я работал сегодня с утра?»", label: "Вопрос о рабочем дне", fallback: "Над чем я работал сегодня с утра?", searching: "Ищу…", ask: "Спросить" },
     session: { focus: "Фокус", delete: "Удалить сессию" },
     summary: {
-      title: "Утренний итог", generated: "Сформировано локально, {time}",
-      default: "Сегодня утром вы работали над планированием, разработкой и коммуникацией по проекту.",
+      title: "Итог дня", generated: "Обновлено локально, {time}",
+      default: "День был сосредоточен на направлении «{focus}». Больше всего времени заняло приложение {app}.",
       empty: "Как только появится активность, здесь будет аккуратный итог дня.",
       how: "Как формируется итог", explanation: "На основе локальных событий приложений и браузера. Без скриншотов, аудио и содержимого ввода.",
       private: "Приватные окна браузера исключены", excluded: "Заданные приложения не отслеживаются",
@@ -90,7 +98,15 @@ export const translations = {
         other: "Активность сгруппирована по активному приложению и окну.",
       },
     },
-    history: { title: "История дня", emptyTitle: "История пока пуста", emptyText: "Оставьте сбор включённым и переключитесь между рабочими приложениями. Первые сессии появятся здесь автоматически.", checkSettings: "Проверить настройки" },
+    history: { title: "Последняя активность", newestFirst: "Сначала новое", emptyTitle: "За этот день активности нет", emptyText: "Оставьте сбор включённым и переключитесь между рабочими приложениями. Первые сессии появятся здесь автоматически.", checkSettings: "Проверить настройки" },
+    overview: {
+      previousDay: "Предыдущий день", nextDay: "Следующий день", backToday: "Сегодня",
+      activeTime: "Активное время", activeTimeHint: "В активном окне", apps: "Приложения", appsHint: "Использовано за день",
+      switches: "Смены контекста", switchesHint: "Между активными окнами", tabs: "Вкладки браузера", tabsHint: "Наблюдавшийся максимум",
+      focusTitle: "На что ушёл день", focusSubtitle: "Доля наблюдаемого активного времени", appsTitle: "Главные приложения", appsSubtitle: "Время на переднем плане",
+      rhythmTitle: "Ритм активности", rhythmSubtitle: "Наблюдаемые минуты по часам", noTabs: "Не наблюдались",
+      tabsCount: "{count} вкладок", inputCount: "{count} действий", latestContext: "Последний видимый контекст",
+    },
     ask: {
       title: "Спросить о дне", subtitle: "Ответ строится на этом устройстве из событий последних 48 часов.", skills: "Навыки из потоков",
       localAnswer: "Локальный ответ", examples: "Примеры", examplesText: "Можно спросить про утро, конкретное приложение, период или переходы между задачами.",
@@ -145,12 +161,16 @@ export function formatDuration(ms, language) {
   return hours ? `${hours} h${rest ? ` ${rest} min` : ""}` : `${minutes} min`;
 }
 
-export function formatToday(language) {
+export function formatDay(value, language) {
   const t = translations[normalizeLanguage(language)];
-  const now = new Date();
-  let date = new Intl.DateTimeFormat(t.locale, { day: "numeric", month: "long", year: "numeric" }).format(now).replace(/\s*г\.$/, "");
-  let weekday = new Intl.DateTimeFormat(t.locale, { weekday: "long" }).format(now);
+  const day = new Date(value);
+  let date = new Intl.DateTimeFormat(t.locale, { day: "numeric", month: "long", year: "numeric" }).format(day).replace(/\s*г\.$/, "");
+  let weekday = new Intl.DateTimeFormat(t.locale, { weekday: "long" }).format(day);
   date = date.replace(/^./, (letter) => letter.toUpperCase());
   weekday = weekday.replace(/^./, (letter) => letter.toUpperCase());
   return { date, weekday };
+}
+
+export function formatToday(language) {
+  return formatDay(Date.now(), language);
 }

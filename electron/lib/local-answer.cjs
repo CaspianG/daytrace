@@ -49,18 +49,60 @@ function answerQuestion(question, events, now = new Date(), language = "ru") {
     };
   }
 
+  const query = String(question || "").toLowerCase();
   const totals = new Map();
   for (const session of relevant) totals.set(session.label, (totals.get(session.label) || 0) + session.durationMs);
   const points = [...totals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([label, ms]) => ({ label, duration: durationText(ms, lang) }));
+  const activities = relevant.flatMap((session) => session.activities);
+  const appTotals = new Map();
+  for (const activity of activities) appTotals.set(activity.app, (appTotals.get(activity.app) || 0) + activity.durationMs);
+  const topApps = [...appTotals.entries()].sort((a, b) => b[1] - a[1]);
   const labels = points.map((item) => item.label.toLowerCase());
   const conjunction = lang === "ru" ? "и" : "and";
   const phrase = labels.length > 1 ? `${labels.slice(0, -1).join(", ")} ${conjunction} ${labels.at(-1)}` : labels[0];
+  let answer;
+
+  if (/(что заняло|больше всего времени|most time|longest)/.test(query) && topApps.length) {
+    const [app, duration] = topApps[0];
+    answer = lang === "ru"
+      ? `Больше всего времени заняло приложение ${app}: ${durationText(duration, lang)}. Главный тип активности — ${points[0].label.toLowerCase()} (${points[0].duration}).`
+      : `${app} took the most time: ${durationText(duration, lang)}. The leading activity was ${points[0].label.toLowerCase()} (${points[0].duration}).`;
+  } else if (/(переключ|switch)/.test(query)) {
+    const transitions = Math.max(0, activities.length - 1);
+    answer = lang === "ru"
+      ? `За выбранный период зафиксировано ${transitions} переходов между контекстами приложений. Чаще всего использовались ${topApps.slice(0, 3).map(([app]) => app).join(", ")}.`
+      : `${transitions} application-context switches were observed in the selected period. The most-used apps were ${topApps.slice(0, 3).map(([app]) => app).join(", ")}.`;
+  } else {
+    const requestedApp = [
+      ["telegram", /telegram|телеграм/i],
+      ["chrome", /chrome|хром|браузер|browser|вклад|tabs?/i],
+    ].find(([, pattern]) => pattern.test(query));
+    if (requestedApp) {
+      const matching = activities.filter((activity) => requestedApp[1].test(`${activity.app} ${activity.title}`));
+      if (matching.length) {
+        const duration = matching.reduce((sum, activity) => sum + activity.durationMs, 0);
+        const titles = [...new Set(matching.map((activity) => activity.title).filter((title) => title && !/^(active window|активное окно)$/i.test(title)))].slice(0, 3);
+        const maxTabs = Math.max(0, ...matching.map((activity) => Number(activity.tabCount || 0)));
+        if (requestedApp[0] === "telegram") {
+          answer = lang === "ru"
+            ? `В Telegram было ${durationText(duration, lang)} активности${titles.length ? ` в контекстах: ${titles.join(", ")}` : ""}. Daytrace видит только название активного окна или чата — содержимое сообщений не записывается.`
+            : `Telegram activity totalled ${durationText(duration, lang)}${titles.length ? ` across: ${titles.join(", ")}` : ""}. Daytrace sees only the active window or chat title; message contents are never recorded.`;
+        } else {
+          answer = lang === "ru"
+            ? `В браузере было ${durationText(duration, lang)} активности${titles.length ? ` по контекстам: ${titles.join(", ")}` : ""}${maxTabs ? `. Одновременно наблюдалось до ${maxTabs} вкладок` : ""}.`
+            : `Browser activity totalled ${durationText(duration, lang)}${titles.length ? ` across: ${titles.join(", ")}` : ""}${maxTabs ? `. Up to ${maxTabs} tabs were observed at once` : ""}.`;
+        }
+      }
+    }
+  }
+
+  answer ||= lang === "ru"
+    ? `В выбранный период вы в основном занимались ${phrase}. Журнал собран только из локальных событий приложений, смены активного контекста и обезличенных счётчиков активности.`
+    : `During the selected period, you mainly worked on ${phrase}. The journal is built only from local application events, active-context changes, and anonymous activity counters.`;
   return {
-    answer: lang === "ru"
-      ? `В выбранный период вы в основном занимались ${phrase}. Журнал собран только из локальных событий приложений и переключений окон.`
-      : `During the selected period, you mainly worked on ${phrase}. The journal is built only from local application events and window switches.`,
+    answer,
     points,
-    sources: relevant.slice(0, 6).map((session) => ({
+    sources: [...relevant].sort((a, b) => b.end - a.end).slice(0, 6).map((session) => ({
       id: session.id,
       label: session.label,
       start: session.start,

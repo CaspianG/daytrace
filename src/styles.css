@@ -45,9 +45,14 @@ button { color: inherit; }
 .app-main { position: relative; height: 100vh; overflow: auto; padding: 48px 48px 36px; scrollbar-width: none; }
 .app-main::-webkit-scrollbar { display: none; }
 button:focus-visible, input:focus-visible { outline: 2px solid #748e6c; outline-offset: 2px; }
-.date-header { margin: 0 0 20px 12px; }
+.date-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin: 0 0 20px 12px; }
 .date-header h1 { margin: 0; font-family: "Source Serif 4", Georgia, serif; font-size: clamp(32px, 3vw, 43px); font-weight: 600; line-height: 1.1; letter-spacing: -.025em; }
 .date-header span { display: block; margin-top: 7px; color: #6f6d67; font-size: 16px; }
+.day-nav { display: flex; align-items: center; gap: 5px; padding: 4px; border: 1px solid var(--line); border-radius: 10px; background: #f6f4ef; }
+.day-nav button { display: flex; min-width: 34px; height: 34px; align-items: center; justify-content: center; gap: 7px; padding: 0 8px; border: 0; border-radius: 7px; color: #5f665b; background: transparent; cursor: pointer; }
+.day-nav button:hover:not(:disabled) { color: #44583f; background: #fffefa; box-shadow: 0 2px 8px rgba(53, 56, 49, .08); }
+.day-nav button:disabled { cursor: default; opacity: .38; }
+.day-nav .today-button { padding-inline: 12px; font-size: 12px; font-weight: 650; }
 .history-page { display: grid; grid-template-columns: minmax(560px, 1fr) 315px; grid-template-rows: 80px auto; gap: 0 45px; min-width: 0; }
 .question-bar { display: grid; grid-template-columns: auto minmax(0, 1fr) 140px; align-items: center; gap: 13px; width: 100%; min-width: 0; min-height: 80px; padding: 8px 9px 8px 18px; border: 1px solid #d8d4cc; border-radius: 12px; background: #fffefa; box-shadow: 0 1px 2px rgba(53, 49, 42, .04); }
 .question-bar svg { color: #88857e; }
@@ -59,6 +64,32 @@ button:focus-visible, input:focus-visible { outline: 2px solid #748e6c; outline-
 .question-bar button:disabled { cursor: default; opacity: .55; }
 .history-layout { display: contents; }
 .timeline-column { grid-column: 1; grid-row: 2; min-width: 0; margin-top: 26px; }
+.day-overview { display: grid; gap: 14px; }
+.overview-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.metric-card { position: relative; display: grid; min-width: 0; min-height: 116px; padding: 16px 14px 13px; border: 1px solid #e0ddd5; border-radius: 11px; background: #fffefa; }
+.metric-icon { position: absolute; top: 15px; right: 13px; display: grid; width: 31px; height: 31px; place-items: center; border-radius: 50%; color: #62795c; background: #edf2e9; }
+.metric-card > strong { padding-right: 32px; font-family: "Source Serif 4", Georgia, serif; font-size: 25px; font-weight: 600; line-height: 1; }
+.metric-card > span { align-self: end; margin-top: 14px; font-size: 12px; font-weight: 700; }
+.metric-card > small { margin-top: 3px; overflow: hidden; color: #8b8881; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.overview-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.chart-card { min-width: 0; padding: 17px 16px 15px; border: 1px solid #e0ddd5; border-radius: 11px; background: #fffefa; }
+.chart-card header h3 { margin: 0; font-family: "Source Serif 4", Georgia, serif; font-size: 17px; font-weight: 600; }
+.chart-card header p { margin: 4px 0 0; color: #918e87; font-size: 10px; }
+.ranked-bars { display: grid; gap: 12px; margin-top: 16px; }
+.ranked-row { display: grid; gap: 6px; }
+.ranked-label { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; min-width: 0; font-size: 11px; }
+.ranked-label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ranked-label strong { flex: 0 0 auto; color: #77746d; font-family: "Source Serif 4", Georgia, serif; font-size: 11px; font-weight: 500; }
+.ranked-track { height: 5px; border-radius: 999px; background: #ece9e2; overflow: hidden; }
+.ranked-track span { display: block; height: 100%; border-radius: inherit; background: #789570; }
+.overview-charts .chart-card:nth-child(2) .ranked-track span { background: #bf745c; }
+.rhythm-card { padding-bottom: 11px; }
+.rhythm-chart { display: flex; height: 100px; align-items: end; gap: 6px; margin-top: 13px; overflow: hidden; }
+.rhythm-hour { display: grid; flex: 1 1 0; min-width: 12px; height: 100%; grid-template-rows: 1fr 15px; gap: 5px; }
+.rhythm-hour > div { position: relative; display: flex; align-items: end; justify-content: center; border-bottom: 1px solid #dedbd4; }
+.rhythm-hour > div span { width: min(16px, 72%); min-height: 2px; border-radius: 4px 4px 1px 1px; background: #90a889; transition: height 180ms ease; }
+.rhythm-hour small { color: #99958e; font-size: 9px; text-align: center; }
+.timeline-title { margin-top: 31px; }
 .section-title { display: flex; align-items: baseline; justify-content: space-between; margin: 0 0 20px 8px; }
 .section-title h2, .summary-panel h2 { margin: 0; font-family: "Source Serif 4", Georgia, serif; font-size: 23px; font-weight: 600; }
 .section-title span { color: var(--muted); font-size: 13px; }
@@ -82,9 +113,11 @@ button:focus-visible, input:focus-visible { outline: 2px solid #748e6c; outline-
 .activity > div:last-child { display: grid; min-width: 0; gap: 3px; }
 .activity strong { overflow: hidden; font-family: "Source Serif 4", Georgia, serif; font-size: 16px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .activity span { overflow: hidden; color: #8b8881; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.activity-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 3px; }
+.activity-meta small { display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px; border-radius: 999px; color: #74806f; background: #f0f3ed; font-size: 9px; }
 .generic-app-icon { display: grid; place-items: center; border-radius: 7px; color: white; background: #8a9384; font-size: 13px; font-weight: 700; }
 
-.summary-panel { position: relative; grid-column: 2; grid-row: 1 / span 2; align-self: start; min-height: 870px; padding: 26px 20px 22px; border: 1px solid #e1ddd5; border-radius: 11px; background: #fffefa; overflow: hidden; }
+.summary-panel { position: sticky; top: 20px; grid-column: 2; grid-row: 1 / span 2; align-self: start; min-height: min(870px, calc(100vh - 90px)); padding: 26px 20px 22px; border: 1px solid #e1ddd5; border-radius: 11px; background: #fffefa; overflow: hidden; }
 .sage-branch { position: absolute; top: 18px; right: 14px; width: 70px; height: 86px; object-fit: contain; opacity: .9; }
 .summary-time { display: block; margin-top: 6px; color: #939087; font-size: 12px; }
 .summary-answer { max-width: 275px; margin: 28px 0 26px; font-family: "Source Serif 4", Georgia, serif; font-size: 17px; line-height: 1.45; }
@@ -197,6 +230,9 @@ button:focus-visible, input:focus-visible { outline: 2px solid #748e6c; outline-
   .app-main { padding-inline: 30px; }
   .history-page { grid-template-columns: minmax(530px, 1fr) 285px; gap: 0 25px; }
   .activity { grid-template-columns: 93px 30px minmax(0, 1fr); }
+  .metric-card { padding-inline: 12px; }
+  .metric-icon { display: none; }
+  .metric-card > strong { padding-right: 0; font-size: 22px; }
 }
 
 @media (max-width: 920px) {
@@ -210,7 +246,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid #748e6c; outline-
   .question-bar { width: 100%; min-width: 0; }
   .history-page { display: block; }
   .timeline-column { margin-top: 26px; }
-  .summary-panel { min-height: 470px; }
+  .summary-panel { position: relative; top: auto; min-height: 470px; margin-top: 24px; }
   .privacy-note { position: static; margin-top: 28px; }
 }
 
@@ -223,6 +259,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid #748e6c; outline-
   .app-main { padding: 28px 17px 90px; }
   .date-header { margin-left: 0; }
   .date-header h1 { font-size: 30px; }
+  .date-header { align-items: flex-start; flex-direction: column; }
+  .day-nav { align-self: stretch; justify-content: space-between; }
+  .overview-metrics { grid-template-columns: 1fr 1fr; }
+  .overview-charts { grid-template-columns: 1fr; }
   .question-bar { grid-template-columns: auto minmax(0, 1fr); padding-right: 12px; }
   .question-bar button { grid-column: 1 / -1; height: 44px; }
   .timeline { padding-left: 30px; }
