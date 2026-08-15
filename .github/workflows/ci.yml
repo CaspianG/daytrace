@@ -23,6 +23,6 @@ jobs:
       - run: npm ci
       - run: npm audit
       - run: npm test
-      - run: npm run test:sites
       - run: npm run build
+      - run: npm run test:sites
       - run: npm run build:tracker
