@@ -25,6 +25,7 @@ function isExcludedApp(event, excludedApps = []) {
 
 function shouldRecord(event, settings) {
   if (!settings.trackingEnabled) return false;
+  if (/^daytrace(?:\.tracker)?$/i.test(normalize(event.process))) return false;
   if (settings.excludePrivateWindows && isPrivateWindow(event)) return false;
   if (isExcludedApp(event, settings.excludedApps)) return false;
   return true;

@@ -9,3 +9,9 @@ test("private browser windows are filtered", () => {
 test("excluded applications are filtered before writes", () => {
   assert.equal(privacy.shouldRecord({ app: "Bitwarden", title: "Vault" }, { trackingEnabled: true, excludePrivateWindows: true, excludedApps: ["Bitwarden"] }), false);
 });
+
+test("Daytrace never records its own window", () => {
+  const settings = { trackingEnabled: true, excludePrivateWindows: true, excludedApps: [] };
+  assert.equal(privacy.shouldRecord({ app: "Daytrace", process: "Daytrace", title: "Daytrace" }, settings), false);
+  assert.equal(privacy.shouldRecord({ app: "Daytrace Tracker", process: "Daytrace.Tracker" }, settings), false);
+});

@@ -47,6 +47,8 @@ The first public build is not code-signed yet, so Windows SmartScreen may show *
 
 Prefer a portable build? Download `Daytrace-Portable-…-x64.zip`, extract it, and run `Daytrace.exe`.
 
+Minimizing or closing the window releases the heavy renderer while the lightweight native tracker continues from the system tray. Double-click the tray icon or launch Daytrace again to reopen the same instance.
+
 ## What you get
 
 - **A readable workday timeline** grouped into focus sessions instead of a raw event dump.
@@ -107,7 +109,7 @@ The native tracker emits foreground-window changes plus aggregate input counts. 
 - The interface and generated summaries are currently Russian-first.
 - Local Q&A is deterministic and heuristic — it is not a bundled language model.
 - Private-window detection depends on browser title conventions and cannot be guaranteed for every browser/version.
-- The installer is not code-signed in v0.1.0.
+- The installer is not code-signed yet.
 
 These boundaries are documented because privacy software should be explicit about what it can and cannot prove.
 

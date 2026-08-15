@@ -1,9 +1,13 @@
-const { app, BrowserWindow, ipcMain, Menu, shell } = require("electron");
+const { app, BrowserWindow, ipcMain, Menu, shell, Tray } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const { spawn } = require("node:child_process");
 const readline = require("node:readline");
 const { EventStore } = require("./lib/event-store.cjs");
+
+// Daytrace renders a small, mostly static interface. Software compositing avoids
+// waking the hardware GPU for a window that is open only briefly.
+app.disableHardwareAcceleration();
 
 const startupLogPath = path.join(app.getPath("userData"), "startup.log");
 
@@ -21,15 +25,23 @@ process.on("uncaughtException", (error) => startupLog("uncaughtException", error
 process.on("unhandledRejection", (error) => startupLog("unhandledRejection", error));
 
 let mainWindow = null;
+let creatingWindow = null;
+let tray = null;
 let tracker = null;
 let store = null;
 let broadcastTimer = null;
+let isQuitting = false;
+
+function sendState() {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isMinimized() || !mainWindow.isVisible()) return;
+  mainWindow.webContents.send("daytrace:state-changed", store.state());
+}
 
 function broadcastState() {
   clearTimeout(broadcastTimer);
   broadcastTimer = setTimeout(() => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("daytrace:state-changed", store.state());
-  }, 350);
+    sendState();
+  }, 5000);
 }
 
 function trackerPath() {
@@ -56,9 +68,53 @@ function stopTracker() {
   tracker = null;
 }
 
+function trayIconPath() {
+  return path.join(__dirname, "..", "build", "icon.ico");
+}
+
+function updateTrayMenu() {
+  if (!tray || !store) return;
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: "Открыть Daytrace", click: () => { void openWindow(); } },
+    {
+      label: store.settings.trackingEnabled ? "Приостановить отслеживание" : "Возобновить отслеживание",
+      click: () => {
+        const enabled = !store.settings.trackingEnabled;
+        store.updateSettings({ trackingEnabled: enabled });
+        if (enabled) startTracker(); else stopTracker();
+        updateTrayMenu();
+      },
+    },
+    { type: "separator" },
+    {
+      label: "Выйти",
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      },
+    },
+  ]));
+}
+
+function createTray() {
+  if (tray) return;
+  tray = new Tray(trayIconPath());
+  tray.setToolTip("Daytrace — локальная история дня");
+  tray.on("double-click", () => { void openWindow(); });
+  updateTrayMenu();
+}
+
+function releaseWindowToTray(window) {
+  if (isQuitting || !window || window.isDestroyed()) return;
+  if (mainWindow === window) mainWindow = null;
+  window.removeAllListeners("close");
+  window.destroy();
+  startupLog("window-released-to-tray");
+}
+
 async function createWindow() {
   startupLog(`createWindow packaged=${app.isPackaged}`);
-  mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     width: 1488,
     height: 1058,
     minWidth: 1080,
@@ -73,27 +129,67 @@ async function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      backgroundThrottling: true,
     },
   });
+  mainWindow = window;
 
-  mainWindow.once("ready-to-show", () => {
+  window.once("ready-to-show", () => {
     startupLog("ready-to-show");
-    mainWindow.show();
-    mainWindow.focus();
+    if (!window.isDestroyed()) {
+      window.show();
+      window.focus();
+    }
   });
-  mainWindow.webContents.on("did-finish-load", () => startupLog("did-finish-load"));
-  mainWindow.webContents.on("did-fail-load", (_event, code, description, url) => {
+  window.webContents.on("did-finish-load", () => startupLog("did-finish-load"));
+  window.webContents.on("console-message", (_event, details) => {
+    if (details.level === "error") startupLog(`renderer-error ${details.message}`);
+  });
+  window.webContents.on("did-fail-load", (_event, code, description, url) => {
     startupLog(`did-fail-load code=${code} description=${description} url=${url}`);
   });
-  mainWindow.on("closed", () => { mainWindow = null; });
+  window.on("minimize", (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    setImmediate(() => releaseWindowToTray(window));
+  });
+  window.on("close", (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    setImmediate(() => releaseWindowToTray(window));
+  });
+  window.on("closed", () => { if (mainWindow === window) mainWindow = null; });
+  window.on("restore", sendState);
 
   if (!app.isPackaged) {
-    await mainWindow.loadURL("http://127.0.0.1:5173");
+    await window.loadURL("http://127.0.0.1:5173");
   } else {
     const entry = path.join(__dirname, "..", "dist", "client", "index.html");
     startupLog(`loadFile ${entry}`);
-    await mainWindow.loadFile(entry);
+    await window.loadFile(entry);
   }
+
+  const renderer = await window.webContents.executeJavaScript(`(() => {
+    const root = document.getElementById("root");
+    return { children: root ? root.childElementCount : -1, text: root ? root.innerText.trim().length : -1 };
+  })()`);
+  startupLog(`renderer-ready children=${renderer.children} text=${renderer.text}`);
+  if (renderer.children < 1 || renderer.text < 1) throw new Error("Renderer loaded without visible content");
+}
+
+async function openWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    sendState();
+    return mainWindow;
+  }
+  if (!creatingWindow) {
+    creatingWindow = createWindow().finally(() => { creatingWindow = null; });
+  }
+  await creatingWindow;
+  return mainWindow;
 }
 
 function registerIpc() {
@@ -102,6 +198,7 @@ function registerIpc() {
   ipcMain.handle("daytrace:set-tracking", (_event, enabled) => {
     store.updateSettings({ trackingEnabled: Boolean(enabled) });
     if (enabled) startTracker(); else stopTracker();
+    updateTrayMenu();
     return store.state();
   });
   ipcMain.handle("daytrace:set-exclusions", (_event, apps) => {
@@ -117,14 +214,19 @@ function registerIpc() {
 
 startupLog(`process-start version=${app.getVersion()}`);
 
-app.whenReady().then(async () => {
+const primaryInstance = app.requestSingleInstanceLock();
+
+if (!primaryInstance) {
+  app.quit();
+} else app.whenReady().then(async () => {
   try {
     startupLog("app-ready");
     Menu.setApplicationMenu(null);
     store = new EventStore(path.join(app.getPath("userData"), "daytrace-data"), broadcastState);
     startupLog("event-store-ready");
     registerIpc();
-    await createWindow();
+    createTray();
+    await openWindow();
     startupLog("window-loaded");
     startTracker();
     startupLog(`tracker-started=${Boolean(tracker)}`);
@@ -138,10 +240,16 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
-  stopTracker();
-  if (process.platform !== "darwin") app.quit();
+  if (process.platform === "darwin") app.quit();
 });
 
 app.on("activate", async () => {
-  if (BrowserWindow.getAllWindows().length === 0) await createWindow();
+  await openWindow();
+});
+
+app.on("second-instance", () => { void openWindow(); });
+
+app.on("before-quit", () => {
+  isQuitting = true;
+  stopTracker();
 });

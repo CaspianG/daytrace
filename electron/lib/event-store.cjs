@@ -63,7 +63,6 @@ class EventStore {
   }
 
   loadEvents() {
-    this.prune();
     const cutoff = Date.now() - this.settings.retentionHours * 60 * 60_000;
     const events = [];
     for (const name of fs.readdirSync(this.eventsDir).filter((item) => item.endsWith(".jsonl")).sort()) {

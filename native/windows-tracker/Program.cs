@@ -39,7 +39,8 @@ internal static class Program
         _foregroundHook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, IntPtr.Zero, _foregroundDelegate, 0, 0, WINEVENT_OUTOFCONTEXT);
         _keyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, _keyboardDelegate, GetModuleHandle(null), 0);
         _mouseHook = SetWindowsHookEx(WH_MOUSE_LL, _mouseDelegate, GetModuleHandle(null), 0);
-        _flushTimer = new System.Threading.Timer(_ => FlushCounts(), null, 2000, 2000);
+        // Coarse batches keep hook wakeups and journal writes negligible.
+        _flushTimer = new System.Threading.Timer(_ => FlushCounts(), null, 10000, 10000);
 
         try
         {

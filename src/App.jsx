@@ -3,6 +3,7 @@ import { ArrowRight, Brain, Check, Clock, Compass, Database, EyeSlash, FolderOpe
 import { SiFigma, SiGooglechrome, SiGmail, SiTelegram } from "react-icons/si";
 import { FaEdge } from "react-icons/fa6";
 import { VscVscode } from "react-icons/vsc";
+import sageBranch from "./assets/sage-branch.png";
 
 const NAVIGATION = [
   { id: "history", label: "История дня", icon: Clock },
@@ -127,7 +128,7 @@ function Summary({ result, sessions }) {
   const sessionPoints = sessions.filter((session) => session.focus !== "break").map((session) => ({ label: session.label, duration: durationText(session.durationMs), time: `${formatTime(session.start)} – ${formatTime(session.end)}`, detail: SUMMARY_DETAILS[session.focus] || "Сгруппировано по активному приложению и окну." }));
   const points = result?.points?.length ? result.points.map((point) => ({ ...sessionPoints.find((item) => item.label === point.label), ...point })) : sessionPoints;
   const answer = result?.answer || (sessions.length ? "Сегодня утром вы работали над планированием, разработкой и коммуникацией по проекту." : "Как только появится активность, здесь будет аккуратный итог дня.");
-  return <aside className="summary-panel"><img className="sage-branch" src="/assets/sage-branch.png" alt="" /><h2>Утренний итог</h2><span className="summary-time">Сформировано локально, {formatTime(Date.now())}</span><p className="summary-answer">{answer}</p><div className="summary-points">{points.slice(0, 3).map((point) => <div className="summary-point" key={point.label}><span className="summary-dot" /><div><strong>{point.label}</strong><small>{point.time ? `${point.time} (${point.duration})` : point.duration}</small>{point.detail && <p>{point.detail}</p>}</div></div>)}</div><div className="privacy-note"><strong>Как формируется итог</strong><p>На основе локальных событий приложений и браузера. Без скриншотов, аудио и содержимого ввода.</p><div><LockKey size={16} /> Приватные окна браузера исключены</div><div><EyeSlash size={16} /> Заданные приложения не отслеживаются</div></div></aside>;
+  return <aside className="summary-panel"><img className="sage-branch" src={sageBranch} alt="" /><h2>Утренний итог</h2><span className="summary-time">Сформировано локально, {formatTime(Date.now())}</span><p className="summary-answer">{answer}</p><div className="summary-points">{points.slice(0, 3).map((point) => <div className="summary-point" key={point.label}><span className="summary-dot" /><div><strong>{point.label}</strong><small>{point.time ? `${point.time} (${point.duration})` : point.duration}</small>{point.detail && <p>{point.detail}</p>}</div></div>)}</div><div className="privacy-note"><strong>Как формируется итог</strong><p>На основе локальных событий приложений и браузера. Без скриншотов, аудио и содержимого ввода.</p><div><LockKey size={16} /> Приватные окна браузера исключены</div><div><EyeSlash size={16} /> Заданные приложения не отслеживаются</div></div></aside>;
 }
 
 function HistoryPage({ state, actions, setPage }) {
