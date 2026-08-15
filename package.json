@@ -27,7 +27,7 @@
     "dev:desktop": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on tcp:5173 && electron .\"",
     "build": "vite build && node scripts/prepare-sites-build.mjs",
     "build:tracker": "dotnet publish native/windows-tracker/Daytrace.Tracker.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true",
-    "dist": "npm run test && npm run build:tracker && npm run build:brand && npm run build && electron-builder --win nsis zip",
+    "dist": "npm run test && npm run build:tracker && npm run build:brand && npm run build && electron-builder --win nsis zip --publish never",
     "build:brand": "node scripts/build-brand-assets.mjs",
     "preview": "vite preview",
     "test": "node --test tests/privacy.test.mjs tests/sessionizer.test.mjs tests/event-store.test.mjs",
