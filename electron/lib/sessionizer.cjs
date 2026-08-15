@@ -1,12 +1,27 @@
 const FOCUS_LABELS = {
-  development: "Разработка",
-  planning: "Планирование и подготовка",
-  research: "Исследование",
-  communication: "Коммуникация и уточнения",
-  design: "Дизайн",
-  files: "Работа с файлами",
-  other: "Рабочая активность",
+  ru: {
+    development: "Разработка",
+    planning: "Планирование и подготовка",
+    research: "Исследование",
+    communication: "Коммуникация и уточнения",
+    design: "Дизайн",
+    files: "Работа с файлами",
+    other: "Рабочая активность",
+  },
+  en: {
+    development: "Development",
+    planning: "Planning and preparation",
+    research: "Research",
+    communication: "Communication and follow-up",
+    design: "Design",
+    files: "File work",
+    other: "Work activity",
+  },
 };
+
+function normalizeLanguage(value) {
+  return String(value || "").toLowerCase().startsWith("ru") ? "ru" : "en";
+}
 
 function inferFocus(activity) {
   const text = `${activity.app} ${activity.title}`.toLowerCase();
@@ -19,14 +34,16 @@ function inferFocus(activity) {
   return "other";
 }
 
-function safeTitle(title, app) {
+function safeTitle(title, app, language = "ru") {
   const cleaned = String(title || "").replace(/\s+/g, " ").trim();
-  if (!cleaned) return "Активное окно";
+  if (!cleaned) return normalizeLanguage(language) === "ru" ? "Активное окно" : "Active window";
   const appEscaped = String(app || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return cleaned.replace(new RegExp(`\\s*[—-]\\s*${appEscaped}$`, "i"), "").slice(0, 140);
 }
 
-function sessionize(events, now = Date.now()) {
+function sessionize(events, now = Date.now(), language = "ru") {
+  const lang = normalizeLanguage(language);
+  const labels = FOCUS_LABELS[lang];
   const sorted = [...events].sort((a, b) => new Date(a.at) - new Date(b.at));
   const activities = [];
   let active = null;
@@ -39,7 +56,7 @@ function sessionize(events, now = Date.now()) {
       ...active,
       end,
       durationMs: end - active.start,
-      title: safeTitle(active.title, active.app),
+      title: safeTitle(active.title, active.app, lang),
     });
     active = null;
   }
@@ -52,7 +69,7 @@ function sessionize(events, now = Date.now()) {
       active = {
         start: at,
         lastSignal: at,
-        app: event.app || event.process || "Приложение",
+        app: event.app || event.process || (lang === "ru" ? "Приложение" : "Application"),
         process: event.process || "",
         title: event.title || "",
         clicks: 0,
@@ -91,7 +108,7 @@ function sessionize(events, now = Date.now()) {
       previous.end = activity.end;
       previous.durationMs = previous.end - previous.start;
       if (previous.focus === "other" && focus !== "other") previous.focus = focus;
-      previous.label = FOCUS_LABELS[previous.focus];
+      previous.label = labels[previous.focus];
     } else {
       sessions.push({
         id: `${activity.start}-${sessions.length}`,
@@ -99,7 +116,7 @@ function sessionize(events, now = Date.now()) {
         end: activity.end,
         durationMs: activity.durationMs,
         focus,
-        label: FOCUS_LABELS[focus],
+        label: labels[focus],
         activities: [activity],
       });
     }
@@ -107,4 +124,4 @@ function sessionize(events, now = Date.now()) {
   return sessions;
 }
 
-module.exports = { FOCUS_LABELS, inferFocus, sessionize };
+module.exports = { FOCUS_LABELS, inferFocus, normalizeLanguage, sessionize };

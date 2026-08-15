@@ -1,6 +1,6 @@
 {
   "name": "daytrace-local",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Private, fully local activity timeline and workday recall for Windows.",
   "author": "Daytrace contributors",
@@ -29,8 +29,9 @@
     "build:tracker": "dotnet publish native/windows-tracker/Daytrace.Tracker.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true",
     "dist": "npm run test && npm run build:tracker && npm run build:brand && npm run build && electron-builder --win nsis zip --publish never",
     "build:brand": "node scripts/build-brand-assets.mjs",
+    "screenshots": "npm run build && electron scripts/capture-screenshots.cjs",
     "preview": "vite preview",
-    "test": "node --test tests/privacy.test.mjs tests/sessionizer.test.mjs tests/event-store.test.mjs",
+    "test": "node --test tests/privacy.test.mjs tests/sessionizer.test.mjs tests/event-store.test.mjs tests/localization.test.mjs",
     "test:sites": "node --test tests/sites-worker.test.mjs"
   },
   "dependencies": {
@@ -115,13 +116,20 @@
     },
     "nsis": {
       "artifactName": "Daytrace-Setup-${version}-${arch}.${ext}",
-      "oneClick": true,
+      "oneClick": false,
       "perMachine": false,
       "allowElevation": true,
-      "createDesktopShortcut": "always",
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": false,
       "createStartMenuShortcut": true,
       "shortcutName": "Daytrace",
       "runAfterFinish": true,
+      "installerLanguages": [
+        "en_US",
+        "ru_RU"
+      ],
+      "displayLanguageSelector": true,
+      "multiLanguageInstaller": true,
       "deleteAppDataOnUninstall": false
     }
   }

@@ -32,6 +32,20 @@ let store = null;
 let broadcastTimer = null;
 let isQuitting = false;
 
+const MAIN_TEXT = {
+  en: { open: "Open Daytrace", pause: "Pause tracking", resume: "Resume tracking", quit: "Quit", tooltip: "Daytrace — local day history", startupTitle: "Daytrace could not start", startupMessage: "The local window could not be opened. Details were written to startup.log." },
+  ru: { open: "Открыть Daytrace", pause: "Приостановить отслеживание", resume: "Возобновить отслеживание", quit: "Выйти", tooltip: "Daytrace — локальная история дня", startupTitle: "Daytrace не запустился", startupMessage: "Не удалось открыть локальное окно. Подробности записаны в startup.log." },
+};
+
+function appLanguage() {
+  const value = store?.settings?.language || app.getLocale();
+  return String(value || "").toLowerCase().startsWith("ru") ? "ru" : "en";
+}
+
+function mainText() {
+  return MAIN_TEXT[appLanguage()];
+}
+
 function sendState() {
   if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isMinimized() || !mainWindow.isVisible()) return;
   mainWindow.webContents.send("daytrace:state-changed", store.state());
@@ -74,10 +88,11 @@ function trayIconPath() {
 
 function updateTrayMenu() {
   if (!tray || !store) return;
+  const t = mainText();
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: "Открыть Daytrace", click: () => { void openWindow(); } },
+    { label: t.open, click: () => { void openWindow(); } },
     {
-      label: store.settings.trackingEnabled ? "Приостановить отслеживание" : "Возобновить отслеживание",
+      label: store.settings.trackingEnabled ? t.pause : t.resume,
       click: () => {
         const enabled = !store.settings.trackingEnabled;
         store.updateSettings({ trackingEnabled: enabled });
@@ -87,7 +102,7 @@ function updateTrayMenu() {
     },
     { type: "separator" },
     {
-      label: "Выйти",
+      label: t.quit,
       click: () => {
         isQuitting = true;
         app.quit();
@@ -99,7 +114,7 @@ function updateTrayMenu() {
 function createTray() {
   if (tray) return;
   tray = new Tray(trayIconPath());
-  tray.setToolTip("Daytrace — локальная история дня");
+  tray.setToolTip(mainText().tooltip);
   tray.on("double-click", () => { void openWindow(); });
   updateTrayMenu();
 }
@@ -206,6 +221,20 @@ function registerIpc() {
     store.updateSettings({ excludedApps });
     return store.state();
   });
+  ipcMain.handle("daytrace:set-language", (_event, language) => {
+    const normalized = String(language || "").toLowerCase().startsWith("ru") ? "ru" : "en";
+    store.updateSettings({ language: normalized });
+    if (tray) tray.setToolTip(mainText().tooltip);
+    updateTrayMenu();
+    return store.state();
+  });
+  ipcMain.handle("daytrace:complete-onboarding", (_event, language) => {
+    const normalized = String(language || "").toLowerCase().startsWith("ru") ? "ru" : "en";
+    store.updateSettings({ language: normalized, onboardingComplete: true });
+    if (tray) tray.setToolTip(mainText().tooltip);
+    updateTrayMenu();
+    return store.state();
+  });
   ipcMain.handle("daytrace:delete-all", () => { store.deleteAll(); return store.state(); });
   ipcMain.handle("daytrace:delete-session", (_event, start, end) => { store.deleteRange(start, end); return store.state(); });
   ipcMain.handle("daytrace:export-skill", (_event, skill) => store.exportSkill(skill));
@@ -222,7 +251,7 @@ if (!primaryInstance) {
   try {
     startupLog("app-ready");
     Menu.setApplicationMenu(null);
-    store = new EventStore(path.join(app.getPath("userData"), "daytrace-data"), broadcastState);
+    store = new EventStore(path.join(app.getPath("userData"), "daytrace-data"), broadcastState, { defaultLanguage: app.getLocale() });
     startupLog("event-store-ready");
     registerIpc();
     createTray();
@@ -234,7 +263,8 @@ if (!primaryInstance) {
   } catch (error) {
     startupLog("startup-failed", error);
     const { dialog } = require("electron");
-    dialog.showErrorBox("Daytrace не запустился", "Не удалось открыть локальное окно. Подробности записаны в startup.log.");
+    const t = mainText();
+    dialog.showErrorBox(t.startupTitle, t.startupMessage);
     app.quit();
   }
 });

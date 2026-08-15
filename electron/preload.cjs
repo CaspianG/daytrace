@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld("daytrace", {
   ask: (question) => ipcRenderer.invoke("daytrace:ask", question),
   setTracking: (enabled) => ipcRenderer.invoke("daytrace:set-tracking", enabled),
   setExclusions: (apps) => ipcRenderer.invoke("daytrace:set-exclusions", apps),
+  setLanguage: (language) => ipcRenderer.invoke("daytrace:set-language", language),
+  completeOnboarding: (language) => ipcRenderer.invoke("daytrace:complete-onboarding", language),
   deleteAll: () => ipcRenderer.invoke("daytrace:delete-all"),
   deleteSession: (start, end) => ipcRenderer.invoke("daytrace:delete-session", start, end),
   exportSkill: (skill) => ipcRenderer.invoke("daytrace:export-skill", skill),

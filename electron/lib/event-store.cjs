@@ -9,15 +9,20 @@ const DEFAULT_SETTINGS = {
   retentionHours: 48,
   excludePrivateWindows: true,
   excludedApps: ["1Password", "Bitwarden", "KeePass"],
-  language: "ru",
+  language: "en",
+  onboardingComplete: false,
 };
+
+function normalizeLanguage(value) {
+  return String(value || "").toLowerCase().startsWith("ru") ? "ru" : "en";
+}
 
 function readJson(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return fallback; }
 }
 
 class EventStore {
-  constructor(root, onChange = () => {}) {
+  constructor(root, onChange = () => {}, options = {}) {
     this.root = root;
     this.eventsDir = path.join(root, "events");
     this.skillsDir = path.join(root, "skills");
@@ -25,7 +30,10 @@ class EventStore {
     this.onChange = onChange;
     fs.mkdirSync(this.eventsDir, { recursive: true });
     fs.mkdirSync(this.skillsDir, { recursive: true });
-    this.settings = { ...DEFAULT_SETTINGS, ...readJson(this.settingsFile, {}) };
+    const defaults = { ...DEFAULT_SETTINGS, language: normalizeLanguage(options.defaultLanguage || DEFAULT_SETTINGS.language) };
+    this.settings = { ...defaults, ...readJson(this.settingsFile, {}) };
+    this.settings.language = normalizeLanguage(this.settings.language);
+    this.settings.onboardingComplete = Boolean(this.settings.onboardingComplete);
     this.saveSettings();
     this.prune();
   }
@@ -51,7 +59,7 @@ class EventStore {
     const normalized = {
       at: event.at || new Date().toISOString(),
       kind: event.kind,
-      app: String(event.app || event.process || "Приложение").slice(0, 120),
+      app: String(event.app || event.process || (this.settings.language === "ru" ? "Приложение" : "Application")).slice(0, 120),
       process: String(event.process || "").slice(0, 120),
       title: String(event.title || "").slice(0, 300),
       count: Math.max(1, Number(event.count || 1)),
@@ -115,27 +123,30 @@ class EventStore {
     const events = this.loadEvents();
     return {
       settings: this.settings,
-      sessions: sessionize(events),
+      sessions: sessionize(events, Date.now(), this.settings.language),
       eventCount: events.length,
-      skills: suggestSkills(events),
+      skills: suggestSkills(events, new Date(), this.settings.language),
       dataPath: this.root,
       retentionCutoff: Date.now() - this.settings.retentionHours * 60 * 60_000,
     };
   }
 
   ask(question) {
-    return answerQuestion(question, this.loadEvents());
+    return answerQuestion(question, this.loadEvents(), new Date(), this.settings.language);
   }
 
   exportSkill(skill) {
     const safeId = String(skill.id || "workflow").replace(/[^a-zA-Z0-9_-]/g, "");
     const folder = path.join(this.skillsDir, safeId || "workflow");
     fs.mkdirSync(folder, { recursive: true });
-    const body = `---\nname: ${safeId || "workflow"}\ndescription: ${skill.description}\n---\n\n# ${skill.title}\n\nThis skill was derived locally from repeated Daytrace activity.\n\n## Observed application sequence\n\n${(skill.apps || []).map((app, index) => `${index + 1}. ${app}`).join("\n")}\n\n## Safety\n\n- Confirm destructive or external actions before running them.\n- Do not copy private window contents or input values.\n- Treat this as a draft workflow and review it before use.\n`;
+    const english = this.settings.language === "en";
+    const body = english
+      ? `---\nname: ${safeId || "workflow"}\ndescription: ${skill.description}\n---\n\n# ${skill.title}\n\nThis skill was derived locally from repeated Daytrace activity.\n\n## Observed application sequence\n\n${(skill.apps || []).map((app, index) => `${index + 1}. ${app}`).join("\n")}\n\n## Safety\n\n- Confirm destructive or external actions before running them.\n- Do not copy private window contents or input values.\n- Treat this as a draft workflow and review it before use.\n`
+      : `---\nname: ${safeId || "workflow"}\ndescription: ${skill.description}\n---\n\n# ${skill.title}\n\nЭтот навык создан локально из повторяющейся активности Daytrace.\n\n## Наблюдаемая последовательность приложений\n\n${(skill.apps || []).map((app, index) => `${index + 1}. ${app}`).join("\n")}\n\n## Безопасность\n\n- Подтверждайте разрушительные действия и внешние операции перед запуском.\n- Не копируйте содержимое приватных окон и значения полей ввода.\n- Считайте этот процесс черновиком и проверьте его перед использованием.\n`;
     const file = path.join(folder, "SKILL.md");
     fs.writeFileSync(file, body, "utf8");
     return file;
   }
 }
 
-module.exports = { DEFAULT_SETTINGS, EventStore };
+module.exports = { DEFAULT_SETTINGS, EventStore, normalizeLanguage };

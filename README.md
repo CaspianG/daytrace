@@ -35,11 +35,11 @@ Daytrace requires no account and no API key. Its shipped desktop runtime contain
 
 > Computer History availability and plan limits may change after the initial announcement. Daytrace is not affiliated with or endorsed by OpenAI.
 
-## Install in one click
+## Install with the guided setup
 
 1. Open the [latest release](https://github.com/CaspianG/daytrace/releases/latest).
 2. Download `Daytrace-Setup-…-x64.exe`.
-3. Double-click it. Daytrace installs for the current Windows user, creates Desktop and Start Menu shortcuts, and opens automatically.
+3. Double-click it. Choose English or Russian, the installation location, and whether to add a Desktop shortcut. The Start Menu shortcut is added automatically.
 
 No administrator account, separate .NET installation, browser extension, cloud account, or API key is required.
 
@@ -60,8 +60,12 @@ Minimizing or closing the window releases the heavy renderer while the lightweig
 - **48-hour retention** with precise automatic pruning of older event lines.
 - **Pause, session deletion, and delete-all controls** inside the app.
 - **Local workflow detection** that can export a reviewable `SKILL.md` draft from repeated application sequences.
+- **Complete English and Russian localization** for the interface, timeline labels, local answers, tray menu, installer, and exported skills.
+- **First-run language choice** with an instant language switch available later in Settings.
 
-![Daytrace timeline and morning summary](docs/assets/screenshots/timeline.png)
+![Daytrace timeline and morning summary in English](docs/assets/screenshots/timeline-en.png)
+
+The same interface is also available in [Russian](README_RU.md), including localized summaries and system-tray controls.
 
 ## Privacy model
 
@@ -106,7 +110,6 @@ The native tracker emits foreground-window changes plus aggregate input counts. 
 ## Current limitations
 
 - Windows x64 only; tested on Windows 10/11.
-- The interface and generated summaries are currently Russian-first.
 - Local Q&A is deterministic and heuristic — it is not a bundled language model.
 - Private-window detection depends on browser title conventions and cannot be guaranteed for every browser/version.
 - The installer is not code-signed yet.
@@ -139,7 +142,7 @@ Artifacts are written to `release/`:
 
 ## Project status
 
-Daytrace is an early public release. The privacy boundary, retention behavior, installer cycle, and application launch are tested; broader browser coverage and localization still need community testing.
+Daytrace is an early public release. The privacy boundary, retention behavior, bilingual interface, installer cycle, and application launch are tested; broader browser coverage still needs community testing.
 
 Issues and focused pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before changing capture or privacy behavior.
 

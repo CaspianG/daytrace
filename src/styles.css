@@ -161,6 +161,36 @@ button:focus-visible, input:focus-visible { outline: 2px solid #748e6c; outline-
 .confirm-row { display: flex; gap: 9px; }
 .danger-zone .cancel { border-color: var(--line); color: #66635d; }
 
+.language-setting { display: grid; gap: 18px; }
+.language-setting > div:first-child { display: flex; align-items: flex-start; gap: 12px; }
+.language-setting > div:first-child > svg { flex: 0 0 auto; margin-top: 2px; color: #71866d; }
+.language-setting span { display: grid; gap: 5px; }
+.language-setting small { max-width: 620px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.segmented-language { display: grid; grid-template-columns: 1fr 1fr; width: min(360px, 100%); padding: 4px; border: 1px solid #dedad2; border-radius: 10px; background: #f5f3ee; }
+.segmented-language button { min-height: 38px; border: 0; border-radius: 7px; color: #706e68; background: transparent; cursor: pointer; font-weight: 650; }
+.segmented-language button.active { color: #40583c; background: #fff; box-shadow: 0 2px 8px rgba(53, 56, 49, .09); }
+
+.onboarding-shell { display: grid; min-height: 100vh; padding: 58px 24px 30px; place-items: center; background: radial-gradient(circle at 25% 18%, #f0f5eb 0, transparent 34%), radial-gradient(circle at 82% 78%, #faeee9 0, transparent 30%), #f8f6f1; }
+.onboarding-card { width: min(680px, 100%); padding: 43px 48px 40px; border: 1px solid #dedad2; border-radius: 20px; background: rgba(255, 255, 252, .96); box-shadow: 0 24px 80px rgba(42, 48, 38, .11); }
+.onboarding-logo { display: grid; width: 58px; height: 58px; margin-bottom: 24px; place-items: center; border-radius: 50%; color: #fff; background: #708d68; box-shadow: 0 8px 25px rgba(83, 112, 75, .24); }
+.onboarding-card h1 { margin: 8px 0 10px; font-family: "Source Serif 4", Georgia, serif; font-size: 40px; font-weight: 600; letter-spacing: -.025em; }
+.onboarding-subtitle { max-width: 560px; margin: 0 0 28px; color: var(--muted); font-size: 14px; line-height: 1.65; }
+.language-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.language-grid button { display: grid; grid-template-columns: 42px 1fr 20px; align-items: center; gap: 13px; min-height: 94px; padding: 17px; border: 1px solid #ddd9d1; border-radius: 12px; color: var(--ink); background: #fbfaf7; cursor: pointer; text-align: left; }
+.language-grid button:hover { border-color: #aebea8; }
+.language-grid button.selected { border-color: #7e9976; background: #f3f7f0; box-shadow: 0 0 0 3px rgba(111, 142, 103, .11); }
+.language-grid button > span { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 50%; color: #597253; background: #e5eddf; font-size: 12px; font-weight: 800; letter-spacing: .05em; }
+.language-grid button > div { display: grid; gap: 5px; }
+.language-grid button strong { font-family: "Source Serif 4", Georgia, serif; font-size: 18px; }
+.language-grid button small { color: var(--muted); font-size: 11px; line-height: 1.4; }
+.language-grid button > svg { color: #64805d; }
+.onboarding-privacy { display: flex; align-items: flex-start; gap: 13px; margin-top: 20px; padding: 15px 17px; border: 1px solid #d5ded1; border-radius: 11px; color: #50684b; background: #f5f8f2; }
+.onboarding-privacy > svg { flex: 0 0 auto; }
+.onboarding-privacy > div { display: grid; gap: 4px; }
+.onboarding-privacy span { color: #71806e; font-size: 12px; line-height: 1.45; }
+.onboarding-continue { display: flex; align-items: center; justify-content: center; gap: 9px; width: 100%; min-height: 49px; margin-top: 20px; border: 0; border-radius: 10px; color: #fff; background: #6d8a65; cursor: pointer; font-weight: 700; box-shadow: 0 8px 22px rgba(83, 112, 75, .19); }
+.onboarding-continue:hover { background: #5f7d58; }
+
 @media (max-width: 1180px) {
   .app-shell { grid-template-columns: 210px minmax(0, 1fr); }
   .sidebar { padding-inline: 13px; }
@@ -206,4 +236,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid #748e6c; outline-
   .skill-card > button { grid-column: 2; justify-self: start; }
   .answer-sources > div { grid-template-columns: 20px 100px 1fr; }
   .answer-sources small { display: none; }
+  .onboarding-shell { padding-inline: 14px; }
+  .onboarding-card { padding: 32px 23px 28px; }
+  .onboarding-card h1 { font-size: 32px; }
+  .language-grid { grid-template-columns: 1fr; }
 }

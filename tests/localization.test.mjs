@@ -1,0 +1,60 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import answers from "../electron/lib/local-answer.cjs";
+import sessionizer from "../electron/lib/sessionizer.cjs";
+import storeModule from "../electron/lib/event-store.cjs";
+import { formatDuration, normalizeLanguage, translations } from "../src/i18n.js";
+
+const base = new Date("2026-08-15T09:00:00+03:00").getTime();
+const events = [
+  { at: new Date(base).toISOString(), kind: "foreground", app: "Visual Studio Code", title: "Daytrace - App.jsx" },
+  { at: new Date(base + 20 * 60_000).toISOString(), kind: "input", app: "Visual Studio Code", count: 12 },
+  { at: new Date(base + 30 * 60_000).toISOString(), kind: "foreground", app: "Google Chrome", title: "Electron documentation" },
+  { at: new Date(base + 50 * 60_000).toISOString(), kind: "click", app: "Google Chrome", count: 3 },
+];
+
+test("renderer translations have the same complete key structure", () => {
+  function keys(value, prefix = "") {
+    return Object.entries(value).flatMap(([key, item]) => {
+      const name = prefix ? `${prefix}.${key}` : key;
+      return item && typeof item === "object" && !Array.isArray(item) ? keys(item, name) : [name];
+    }).sort();
+  }
+  assert.deepEqual(keys(translations.en), keys(translations.ru));
+  assert.equal(normalizeLanguage("ru-RU"), "ru");
+  assert.equal(normalizeLanguage("en-US"), "en");
+  assert.equal(formatDuration(90 * 60_000, "en"), "1 h 30 min");
+  assert.equal(formatDuration(90 * 60_000, "ru"), "1 ч 30 мин");
+});
+test("sessions and local answers are fully localized", () => {
+  const enSessions = sessionizer.sessionize(events, base + 60 * 60_000, "en");
+  const ruSessions = sessionizer.sessionize(events, base + 60 * 60_000, "ru");
+  assert.equal(enSessions[0].label, "Development");
+  assert.equal(ruSessions[0].label, "Разработка");
+
+  const now = new Date("2026-08-15T11:00:00+03:00");
+  const english = answers.answerQuestion("What was I working on this morning?", events, now, "en");
+  const russian = answers.answerQuestion("Над чем я работал утром?", events, now, "ru");
+  assert.match(english.answer, /During the selected period/);
+  assert.doesNotMatch(english.answer, /[А-Яа-яЁё]/);
+  assert.match(russian.answer, /В выбранный период/);
+  assert.match(russian.answer, /[А-Яа-яЁё]/);
+  assert.equal(english.points[0].duration.includes("min") || english.points[0].duration.includes("h"), true);
+  assert.equal(russian.points[0].duration.includes("мин") || russian.points[0].duration.includes("ч"), true);
+});
+
+test("first run follows the OS language and persists onboarding choice", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "daytrace-i18n-test-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const store = new storeModule.EventStore(root, () => {}, { defaultLanguage: "ru-RU" });
+  assert.equal(store.settings.language, "ru");
+  assert.equal(store.settings.onboardingComplete, false);
+  store.updateSettings({ language: "en", onboardingComplete: true });
+
+  const reopened = new storeModule.EventStore(root, () => {}, { defaultLanguage: "ru-RU" });
+  assert.equal(reopened.settings.language, "en");
+  assert.equal(reopened.settings.onboardingComplete, true);
+});
