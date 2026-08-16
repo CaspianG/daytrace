@@ -73,6 +73,22 @@ test("local answers use browser and Telegram context without message content", (
   assert.match(telegram.answer, /содержимое сообщений не записывается/);
 });
 
+test("local question parser handles combined dates, explicit times and meaningful switches", () => {
+  const now = new Date("2026-08-15T18:00:00+03:00");
+  const yesterdayMorning = answers.interpretQuestion("What did I do yesterday morning?", now, "en");
+  assert.equal(new Date(yesterdayMorning.window.start).getDate(), 14);
+  assert.equal(new Date(yesterdayMorning.window.start).getHours(), 4);
+  const explicit = answers.interpretQuestion("Что делал с 10 до 12 в Telegram?", now, "ru");
+  assert.equal(explicit.intent, "app");
+  assert.equal(new Date(explicit.window.start).getHours(), 10);
+  assert.equal(new Date(explicit.window.end).getHours(), 12);
+  assert.equal(answers.meaningfulTransitions([
+    { start: 1, app: "Telegram", context: "messaging" },
+    { start: 2, app: "Telegram", context: "messaging" },
+    { start: 3, app: "Chrome", context: "browser" },
+  ]), 1);
+});
+
 test("English and Russian READMEs use only their matching localized visuals", () => {
   const root = path.resolve(import.meta.dirname, "..");
   const englishReadme = fs.readFileSync(path.join(root, "README.md"), "utf8");
@@ -80,10 +96,12 @@ test("English and Russian READMEs use only their matching localized visuals", ()
 
   assert.match(englishReadme, /daytrace-cover-en\.png/);
   assert.match(englishReadme, /timeline-en\.png/);
+  assert.match(englishReadme, /settings-en\.png/);
   assert.doesNotMatch(englishReadme, /(?:daytrace-cover|timeline)-ru\.png/);
 
   assert.match(russianReadme, /daytrace-cover-ru\.png/);
   assert.match(russianReadme, /timeline-ru\.png/);
+  assert.match(russianReadme, /settings-ru\.png/);
   assert.doesNotMatch(russianReadme, /(?:daytrace-cover|timeline)-en\.png/);
 
   for (const relativePath of [
@@ -91,6 +109,8 @@ test("English and Russian READMEs use only their matching localized visuals", ()
     "docs/assets/daytrace-cover-ru.png",
     "docs/assets/screenshots/timeline-en.png",
     "docs/assets/screenshots/timeline-ru.png",
+    "docs/assets/screenshots/settings-en.png",
+    "docs/assets/screenshots/settings-ru.png",
   ]) {
     assert.equal(fs.existsSync(path.join(root, relativePath)), true, `${relativePath} must exist`);
   }

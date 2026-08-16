@@ -5,7 +5,11 @@ const PRIVATE_WINDOW_PATTERNS = [
   /private window/i,
   /приватн(?:ый|ое|ая)/i,
   /инкогнито/i,
+  /частный доступ/i,
 ];
+
+const SYSTEM_PROCESS_PATTERNS = /^(pickerhost|shellexperiencehost|startmenuexperiencehost|searchhost|searchapp|textinputhost|lockapp|taskhostw|applicationframehost)$/i;
+const SYSTEM_TITLE_PATTERNS = /^(notification overflow window|task switching|new notification|окно переполнения области уведомлений|переключение задач|новое уведомление)$/i;
 
 function normalize(value) {
   return String(value || "").trim().toLowerCase();
@@ -23,12 +27,19 @@ function isExcludedApp(event, excludedApps = []) {
   return excludedApps.some((name) => haystack.includes(normalize(name)));
 }
 
+function isSystemNoise(event) {
+  const process = normalize(event.process);
+  const title = normalize(event.title);
+  return SYSTEM_PROCESS_PATTERNS.test(process) || SYSTEM_TITLE_PATTERNS.test(title);
+}
+
 function shouldRecord(event, settings) {
   if (!settings.trackingEnabled) return false;
   if (/^daytrace(?:\.tracker)?$/i.test(normalize(event.process))) return false;
+  if (isSystemNoise(event)) return false;
   if (settings.excludePrivateWindows && isPrivateWindow(event)) return false;
   if (isExcludedApp(event, settings.excludedApps)) return false;
   return true;
 }
 
-module.exports = { isPrivateWindow, isExcludedApp, shouldRecord };
+module.exports = { isPrivateWindow, isExcludedApp, isSystemNoise, shouldRecord };

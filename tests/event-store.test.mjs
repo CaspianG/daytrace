@@ -34,3 +34,17 @@ test("event store keeps only safe accessibility metadata", (t) => {
   assert.equal(event.title, "Local documentation");
   assert.equal("value" in event, false);
 });
+
+test("collection switches and private-window setting are enforced before disk writes", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "daytrace-settings-test-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const store = new storeModule.EventStore(root);
+
+  store.updateSettings({ collectWindowTitles: false, collectInputCounts: false, collectBrowserTabCount: false, excludePrivateWindows: false });
+  assert.equal(store.append({ at: new Date().toISOString(), kind: "input", app: "Editor", title: "Secret", count: 4 }), false);
+  assert.equal(store.append({ at: new Date().toISOString(), kind: "foreground", app: "Google Chrome", process: "chrome", title: "Private Browsing", context: "browser", tabCount: 9 }), true);
+  const [event] = store.loadEvents();
+  assert.equal(event.title, "");
+  assert.equal(event.tabCount, 0);
+  assert.equal(store.settings.excludePrivateWindows, false);
+});

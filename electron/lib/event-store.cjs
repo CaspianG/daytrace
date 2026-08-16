@@ -8,6 +8,10 @@ const DEFAULT_SETTINGS = {
   trackingEnabled: true,
   retentionHours: 48,
   excludePrivateWindows: true,
+  collectWindowTitles: true,
+  collectInputCounts: true,
+  collectBrowserTabCount: true,
+  autoStartEnabled: false,
   excludedApps: ["1Password", "Bitwarden", "KeePass"],
   language: "en",
   onboardingComplete: false,
@@ -32,23 +36,39 @@ class EventStore {
     this.skillsDir = path.join(root, "skills");
     this.settingsFile = path.join(root, "settings.json");
     this.onChange = onChange;
+    this.eventsCache = null;
+    this.stateCache = null;
     fs.mkdirSync(this.eventsDir, { recursive: true });
     fs.mkdirSync(this.skillsDir, { recursive: true });
     const defaults = { ...DEFAULT_SETTINGS, language: normalizeLanguage(options.defaultLanguage || DEFAULT_SETTINGS.language) };
     this.settings = { ...defaults, ...readJson(this.settingsFile, {}) };
     this.settings.language = normalizeLanguage(this.settings.language);
     this.settings.onboardingComplete = Boolean(this.settings.onboardingComplete);
+    for (const key of ["trackingEnabled", "excludePrivateWindows", "collectWindowTitles", "collectInputCounts", "collectBrowserTabCount", "autoStartEnabled"]) {
+      this.settings[key] = Boolean(this.settings[key]);
+    }
     this.saveSettings();
     this.prune();
   }
 
   saveSettings() {
-    fs.writeFileSync(this.settingsFile, JSON.stringify(this.settings, null, 2), "utf8");
+    const temporary = `${this.settingsFile}.tmp`;
+    fs.writeFileSync(temporary, JSON.stringify(this.settings, null, 2), "utf8");
+    fs.renameSync(temporary, this.settingsFile);
+  }
+
+  invalidate() {
+    this.stateCache = null;
   }
 
   updateSettings(patch) {
     this.settings = { ...this.settings, ...patch };
+    this.settings.language = normalizeLanguage(this.settings.language);
+    for (const key of ["trackingEnabled", "excludePrivateWindows", "collectWindowTitles", "collectInputCounts", "collectBrowserTabCount", "autoStartEnabled"]) {
+      this.settings[key] = Boolean(this.settings[key]);
+    }
     this.saveSettings();
+    this.invalidate();
     this.onChange();
     return this.settings;
   }
@@ -60,23 +80,27 @@ class EventStore {
   }
 
   append(event) {
+    if (!this.settings.collectInputCounts && (event.kind === "input" || event.kind === "click")) return false;
     const normalized = {
       at: event.at || new Date().toISOString(),
       kind: event.kind,
       app: sanitizeMetadata(event.app || event.process || (this.settings.language === "ru" ? "Приложение" : "Application"), 120),
       process: sanitizeMetadata(event.process, 120),
-      title: sanitizeMetadata(event.title, 300),
+      title: this.settings.collectWindowTitles ? sanitizeMetadata(event.title, 300) : "",
       count: Math.max(1, Number(event.count || 1)),
       context: ["browser", "messaging", "editor", "other"].includes(event.context) ? event.context : "other",
-      tabCount: Math.max(0, Math.min(200, Number(event.tabCount || 0))),
+      tabCount: this.settings.collectBrowserTabCount ? Math.max(0, Math.min(200, Number(event.tabCount || 0))) : 0,
     };
     if (!shouldRecord(normalized, this.settings)) return false;
     fs.appendFileSync(this.eventFile(normalized.at), `${JSON.stringify(normalized)}\n`, "utf8");
+    if (this.eventsCache) this.eventsCache.push(normalized);
+    this.invalidate();
     this.onChange();
     return true;
   }
 
   loadEvents() {
+    if (this.eventsCache) return this.eventsCache;
     const cutoff = Date.now() - this.settings.retentionHours * 60 * 60_000;
     const events = [];
     for (const name of fs.readdirSync(this.eventsDir).filter((item) => item.endsWith(".jsonl")).sort()) {
@@ -89,7 +113,8 @@ class EventStore {
         } catch { /* A truncated final line is ignored. */ }
       }
     }
-    return events;
+    this.eventsCache = events;
+    return this.eventsCache;
   }
 
   prune() {
@@ -105,10 +130,14 @@ class EventStore {
         else if (kept.length !== lines.length) fs.writeFileSync(file, `${kept.join("\n")}\n`, "utf8");
       } catch { /* File may have disappeared between scans. */ }
     }
+    if (this.eventsCache) this.eventsCache = this.eventsCache.filter((event) => new Date(event.at).getTime() >= cutoff);
+    this.invalidate();
   }
 
   deleteAll() {
     for (const name of fs.readdirSync(this.eventsDir)) fs.rmSync(path.join(this.eventsDir, name), { force: true });
+    this.eventsCache = [];
+    this.invalidate();
     this.onChange();
   }
 
@@ -122,19 +151,27 @@ class EventStore {
       });
       if (kept.length) fs.writeFileSync(file, `${kept.join("\n")}\n`, "utf8"); else fs.rmSync(file, { force: true });
     }
+    if (this.eventsCache) this.eventsCache = this.eventsCache.filter((event) => {
+      const at = new Date(event.at).getTime();
+      return at < min || at > max;
+    });
+    this.invalidate();
     this.onChange();
   }
 
   state() {
+    if (this.stateCache) return this.stateCache;
     const events = this.loadEvents();
-    return {
+    this.stateCache = {
       settings: this.settings,
       sessions: sessionize(events, Date.now(), this.settings.language),
       eventCount: events.length,
+      lastEventAt: events.length ? events.at(-1).at : null,
       skills: suggestSkills(events, new Date(), this.settings.language),
       dataPath: this.root,
       retentionCutoff: Date.now() - this.settings.retentionHours * 60 * 60_000,
     };
+    return this.stateCache;
   }
 
   ask(question) {

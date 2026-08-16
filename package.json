@@ -1,8 +1,8 @@
 {
   "name": "daytrace-local",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
-  "description": "Private, fully local activity timeline and workday recall for Windows.",
+  "description": "Private, fully local activity timeline and workday recall for Windows and macOS.",
   "author": "Daytrace contributors",
   "license": "MIT",
   "repository": {
@@ -18,7 +18,8 @@
     "local-first",
     "privacy",
     "productivity",
-    "windows"
+    "windows",
+    "macos"
   ],
   "type": "module",
   "main": "electron/main.cjs",
@@ -26,8 +27,12 @@
     "dev": "vite",
     "dev:desktop": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on tcp:5173 && electron .\"",
     "build": "vite build && node scripts/prepare-sites-build.mjs",
-    "build:tracker": "dotnet publish native/windows-tracker/Daytrace.Tracker.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true",
-    "dist": "npm run test && npm run build:tracker && npm run build:brand && npm run build && electron-builder --win nsis zip --publish never",
+    "build:tracker": "npm run build:tracker:win",
+    "build:tracker:win": "dotnet publish native/windows-tracker/Daytrace.Tracker.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishReadyToRun=true",
+    "build:tracker:mac": "bash scripts/build-macos-tracker.sh",
+    "dist": "npm run dist:win",
+    "dist:win": "npm run test && npm run build:tracker:win && npm run build:brand && npm run build && electron-builder --win nsis zip --publish never",
+    "dist:mac": "npm run test && npm run build:tracker:mac && npm run build:brand && npm run build && electron-builder --mac dmg zip --universal --publish never",
     "build:brand": "node scripts/build-brand-assets.mjs",
     "screenshots": "npm run build && electron scripts/capture-screenshots.cjs",
     "preview": "vite preview",
@@ -65,19 +70,11 @@
       "dist/client/**/*",
       "electron/**/*",
       "build/icon.ico",
+      "build/icon.png",
       "LICENSE",
       "README.md",
       "README_RU.md",
       "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "native/windows-tracker/bin/Release/net8.0-windows/win-x64/publish/",
-        "to": "tracker",
-        "filter": [
-          "**/*"
-        ]
-      }
     ],
     "extraFiles": [
       {
@@ -98,6 +95,7 @@
     },
     "win": {
       "icon": "build/icon.ico",
+      "extraResources": [{ "from": "native/windows-tracker/bin/Release/net8.0-windows/win-x64/publish/", "to": "tracker/windows", "filter": ["**/*"] }],
       "target": [
         {
           "target": "nsis",
@@ -114,13 +112,21 @@
       ],
       "signAndEditExecutable": false
     },
+    "mac": {
+      "icon": "build/icon.png",
+      "category": "public.app-category.productivity",
+      "minimumSystemVersion": "12.0",
+      "artifactName": "Daytrace-${version}-macOS-${arch}.${ext}",
+      "extraResources": [{ "from": "native/macos-tracker/build/daytrace-tracker", "to": "tracker/macos/daytrace-tracker" }],
+      "target": [{ "target": "dmg", "arch": ["universal"] }, { "target": "zip", "arch": ["universal"] }]
+    },
     "nsis": {
       "artifactName": "Daytrace-Setup-${version}-${arch}.${ext}",
       "oneClick": false,
       "perMachine": false,
       "allowElevation": true,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": false,
+      "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Daytrace",
       "runAfterFinish": true,

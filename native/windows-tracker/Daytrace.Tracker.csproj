@@ -5,7 +5,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <UseWPF>true</UseWPF>
-    <PublishSingleFile>true</PublishSingleFile>
+    <PublishSingleFile>false</PublishSingleFile>
+    <PublishReadyToRun>true</PublishReadyToRun>
     <AssemblyName>Daytrace.Tracker</AssemblyName>
     <RootNamespace>Daytrace.Tracker</RootNamespace>
   </PropertyGroup>

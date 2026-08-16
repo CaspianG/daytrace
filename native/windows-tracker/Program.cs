@@ -34,6 +34,10 @@ internal static class Program
     private static WindowSnapshot _active = new("Application", "", "", 0, "other");
     private static System.Threading.Timer? _flushTimer;
     private static System.Threading.Timer? _sampleTimer;
+    private static System.Threading.Timer? _nameChangeTimer;
+    private static readonly bool CollectTitles = Environment.GetEnvironmentVariable("DAYTRACE_COLLECT_TITLES") != "0";
+    private static readonly bool CollectInput = Environment.GetEnvironmentVariable("DAYTRACE_COLLECT_INPUT") != "0";
+    private static readonly bool CollectTabCount = Environment.GetEnvironmentVariable("DAYTRACE_COLLECT_TAB_COUNT") != "0";
 
     public static void Main()
     {
@@ -46,11 +50,14 @@ internal static class Program
         _keyboardDelegate = OnKeyboard;
         _mouseDelegate = OnMouse;
         _foregroundHook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, IntPtr.Zero, _foregroundDelegate, 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
-        _nameChangeHook = SetWinEventHook(EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_NAMECHANGE, IntPtr.Zero, _nameChangeDelegate, 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
-        _keyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, _keyboardDelegate, GetModuleHandle(null), 0);
-        _mouseHook = SetWindowsHookEx(WH_MOUSE_LL, _mouseDelegate, GetModuleHandle(null), 0);
+        if (CollectTitles) _nameChangeHook = SetWinEventHook(EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_NAMECHANGE, IntPtr.Zero, _nameChangeDelegate, 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+        if (CollectInput)
+        {
+            _keyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, _keyboardDelegate, GetModuleHandle(null), 0);
+            _mouseHook = SetWindowsHookEx(WH_MOUSE_LL, _mouseDelegate, GetModuleHandle(null), 0);
+        }
         // Coarse batches keep hook wakeups and journal writes negligible.
-        _flushTimer = new System.Threading.Timer(_ => FlushCounts(), null, 10000, 10000);
+        _flushTimer = new System.Threading.Timer(_ => FlushCounts(), null, 15000, 15000);
         // One accessibility sample per minute keeps long reading/review sessions
         // accurate and observes browser tab counts without continuous polling.
         _sampleTimer = new System.Threading.Timer(_ => SampleActiveWindow(), null, 60000, 60000);
@@ -68,6 +75,7 @@ internal static class Program
             FlushCounts();
             _flushTimer?.Dispose();
             _sampleTimer?.Dispose();
+            _nameChangeTimer?.Dispose();
             if (_foregroundHook != IntPtr.Zero) UnhookWinEvent(_foregroundHook);
             if (_nameChangeHook != IntPtr.Zero) UnhookWinEvent(_nameChangeHook);
             if (_keyboardHook != IntPtr.Zero) UnhookWindowsHookEx(_keyboardHook);
@@ -86,12 +94,22 @@ internal static class Program
     private static void OnNameChange(IntPtr hook, uint evt, IntPtr hwnd, int idObject, int idChild, uint thread, uint time)
     {
         if (hwnd == IntPtr.Zero || hwnd != GetForegroundWindow()) return;
+        lock (Sync)
+        {
+            _nameChangeTimer?.Dispose();
+            _nameChangeTimer = new System.Threading.Timer(_ => SampleTitleChange(hwnd), null, 750, Timeout.Infinite);
+        }
+    }
+
+    private static void SampleTitleChange(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero || hwnd != GetForegroundWindow()) return;
         var snapshot = ReadWindow(hwnd, false);
         WindowSnapshot previous;
         lock (Sync)
         {
             previous = _active;
-            if (snapshot.Process == previous.Process && snapshot.Title == previous.Title) return;
+            if ((snapshot.Process == previous.Process && snapshot.Title == previous.Title) || IsGenericTitle(snapshot)) return;
             _active = snapshot with { TabCount = previous.Process == snapshot.Process ? previous.TabCount : 0 };
             snapshot = _active;
         }
@@ -173,15 +191,26 @@ internal static class Program
         {
             using var process = Process.GetProcessById((int)processId);
             var processName = process.ProcessName;
-            var appName = string.IsNullOrWhiteSpace(process.MainWindowTitle) ? processName : FriendlyName(processName);
+            var appName = FriendlyName(processName);
             var context = ContextKind(processName);
-            var tabCount = includeAccessibility && context == "browser" ? CountBrowserTabs(hwnd) : 0;
-            return new WindowSnapshot(appName, processName, NormalizeWindowTitle(title.ToString()), tabCount, context);
+            var tabCount = CollectTabCount && includeAccessibility && context == "browser" ? CountBrowserTabs(hwnd) : 0;
+            return new WindowSnapshot(appName, processName, CollectTitles ? NormalizeWindowTitle(title.ToString()) : "", tabCount, context);
         }
         catch
         {
-            return new WindowSnapshot("Application", "", NormalizeWindowTitle(title.ToString()), 0, "other");
+            return new WindowSnapshot("Application", "", CollectTitles ? NormalizeWindowTitle(title.ToString()) : "", 0, "other");
         }
+    }
+
+    private static bool IsGenericTitle(WindowSnapshot snapshot)
+    {
+        var title = snapshot.Title.Trim();
+        if (string.IsNullOrWhiteSpace(title)) return false;
+        return title.Equals(snapshot.App, StringComparison.OrdinalIgnoreCase)
+            || title.Equals(snapshot.Process, StringComparison.OrdinalIgnoreCase)
+            || title.Equals("TelegramDesktop", StringComparison.OrdinalIgnoreCase)
+            || title.Equals("Google Chrome", StringComparison.OrdinalIgnoreCase)
+            || title.Equals("Microsoft Edge", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string NormalizeWindowTitle(string value)
@@ -228,8 +257,8 @@ internal static class Program
     private static string ContextKind(string process) => process.ToLowerInvariant() switch
     {
         "chrome" or "msedge" or "firefox" or "brave" or "opera" or "vivaldi" => "browser",
-        "telegram" or "slack" or "teams" or "discord" or "signal" or "whatsapp" => "messaging",
-        "code" or "devenv" or "webstorm64" or "idea64" or "pycharm64" => "editor",
+        "telegram" or "telegramdesktop" or "slack" or "teams" or "discord" or "signal" or "whatsapp" => "messaging",
+        "code" or "devenv" or "webstorm64" or "idea64" or "pycharm64" or "androidstudio" => "editor",
         _ => "other",
     };
 
@@ -238,10 +267,11 @@ internal static class Program
         "code" => "Visual Studio Code",
         "chrome" => "Google Chrome",
         "msedge" => "Microsoft Edge",
-        "telegram" => "Telegram Desktop",
+        "telegram" or "telegramdesktop" => "Telegram Desktop",
         "figma" => "Figma",
         "explorer" => "File Explorer",
         "windowsterminal" => "Windows Terminal",
+        "chatgpt" => "ChatGPT",
         _ => process,
     };
 

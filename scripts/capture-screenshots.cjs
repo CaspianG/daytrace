@@ -20,8 +20,12 @@ app.whenReady().then(async () => {
   for (const language of ["en", "ru"]) {
     await window.loadURL(`${pathToFileURL(entry).href}?lang=${language}`);
     await window.webContents.executeJavaScript("document.fonts.ready.then(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))");
+    await window.webContents.executeJavaScript("document.querySelector('.main-nav button:nth-child(1)').click(); new Promise(resolve => setTimeout(resolve, 250))");
     const image = await window.webContents.capturePage();
     fs.writeFileSync(path.join(output, `timeline-${language}.png`), image.toPNG());
+    await window.webContents.executeJavaScript("document.querySelector('.main-nav button:nth-child(3)').click(); new Promise(resolve => setTimeout(resolve, 250))");
+    const settings = await window.webContents.capturePage();
+    fs.writeFileSync(path.join(output, `settings-${language}.png`), settings.toPNG());
   }
   window.destroy();
   app.quit();

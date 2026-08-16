@@ -27,9 +27,9 @@ function inferFocus(activity) {
   const text = `${activity.app} ${activity.title}`.toLowerCase();
   if (/(telegram|slack|teams|discord|outlook|mail|gmail|zoom)/.test(text)) return "communication";
   if (/(figma|photoshop|illustrator|after effects|premiere|canva)/.test(text)) return "design";
-  if (/(code|visual studio|terminal|powershell|cmd|github|gitkraken|webstorm|idea|pycharm)/.test(text)) return "development";
+  if (/(code|visual studio|terminal|powershell|cmd|github|gitlab|gitkraken|webstorm|idea|pycharm|xcode|android studio)/.test(text)) return "development";
   if (/(notion|trello|asana|linear|calendar|документ|docs|sheets|word|excel)/.test(text)) return "planning";
-  if (/(documentation|документац|stackoverflow|stack overflow|mdn|wikipedia|github issue|search|поиск)/.test(text)) return "research";
+  if (/(documentation|документац|stackoverflow|stack overflow|mdn|wikipedia|github issue|search|поиск|chatgpt|claude|perplexity)/.test(text)) return "research";
   if (/(chrome|edge|firefox|brave|opera)/.test(text)) return "research";
   if (/(explorer|проводник|finder)/.test(text)) return "files";
   return "other";
@@ -44,6 +44,7 @@ function safeTitle(title, app, language = "ru") {
     .replace(/\s*[—-]\s*(Google Chrome|Microsoft Edge|Mozilla Firefox|Brave|Opera|Telegram Desktop)$/i, "")
     .replace(/^\(\d+\)\s*/, "")
     .replace(/\s+\(\d{5,}\)$/, "")
+    .replace(/^(telegramdesktop|google chrome|microsoft edge)$/i, "")
     .slice(0, 140);
 }
 
@@ -71,13 +72,19 @@ function sessionize(events, now = Date.now(), language = "ru") {
     const at = new Date(event.at).getTime();
     if (!Number.isFinite(at)) continue;
     if (event.kind === "foreground") {
+      const nextApp = event.app || event.process || (lang === "ru" ? "Приложение" : "Application");
+      const nextTitle = safeTitle(event.title || "", nextApp, lang);
+      if (active && active.app === nextApp && at - active.start < 2_000 && (!nextTitle || nextTitle === active.title)) {
+        active.lastSignal = at;
+        continue;
+      }
       closeActive(at);
       active = {
         start: at,
         lastSignal: at,
-        app: event.app || event.process || (lang === "ru" ? "Приложение" : "Application"),
+        app: nextApp,
         process: event.process || "",
-        title: event.title || "",
+        title: nextTitle,
         context: event.context || "other",
         tabCount: Number(event.tabCount || 0),
         clicks: 0,
@@ -100,7 +107,7 @@ function sessionize(events, now = Date.now(), language = "ru") {
     const previous = merged.at(-1);
     if (previous && previous.app === activity.app && previous.title === activity.title && activity.start - previous.end < 120_000) {
       previous.end = activity.end;
-      previous.durationMs = previous.end - previous.start;
+      previous.durationMs += activity.durationMs;
       previous.clicks += activity.clicks;
       previous.inputs += activity.inputs;
     } else {
@@ -116,7 +123,7 @@ function sessionize(events, now = Date.now(), language = "ru") {
     if (previous && gap < 8 * 60_000 && (previous.focus === focus || gap < 90_000)) {
       previous.activities.push(activity);
       previous.end = activity.end;
-      previous.durationMs = previous.end - previous.start;
+      previous.durationMs += activity.durationMs;
       if (previous.focus === "other" && focus !== "other") previous.focus = focus;
       previous.label = labels[previous.focus];
     } else {

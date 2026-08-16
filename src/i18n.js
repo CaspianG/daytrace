@@ -42,6 +42,7 @@ export const translations = {
     ask: {
       title: "Ask about your day", subtitle: "The answer is built on this device from events stored during the last 48 hours.", skills: "Skills from workflows",
       localAnswer: "Local answer", examples: "Examples", examplesText: "Ask about the morning, a specific application, a time period, or task switching.",
+      understood: "Understood as:", engineNote: "No LLM is used: a local rule engine recognizes the period, application, and question type, then calculates the answer from your journal.", demoInterpretation: "summary · today morning",
       prompts: ["What took the most time?", "When did I work in Figma?", "Where did I switch often?"],
     },
     skills: {
@@ -55,7 +56,10 @@ export const translations = {
     },
     settings: {
       title: "Settings", subtitle: "Control recording, storage, language, and local data.", language: "Language", languageText: "The interface, timeline labels, local answers, tray menu, and exported skills use this language.",
-      activity: "Activity tracking", record: "Record activity", recordText: "Window switches, clicks, and anonymous input counters", private: "Exclude private windows", privateText: "Always enabled for supported browsers",
+      activity: "Activity tracking", record: "Record activity", recordText: "Window switches and the enabled anonymous signals below", private: "Exclude private windows", privateText: "Incognito, InPrivate, and Private Browsing titles are discarded before saving", privateWarning: "Disabled: private-window titles may be recorded locally",
+      titles: "Window titles", titlesText: "Adds the active document, tab, or chat name; never reads its contents", inputs: "Anonymous input counts", inputsText: "Counts keyboard and mouse actions without recording keys, coordinates, or typed text", tabs: "Browser tab count", tabsText: "Samples only the number of visible browser tabs once per minute",
+      system: "System", autostart: "Launch at login", autostartText: "Starts quietly in the tray and begins local tracking", autostartUnavailable: "Available in the installed desktop application", runtimeText: "Native collector runs separately and writes only local events", accessibility: "Accessibility permission required", accessibilityText: "macOS requires permission to read the active application and window title.", grantAccess: "Open permission settings",
+      statuses: { running: "Collector is running", starting: "Collector is starting…", paused: "Tracking is paused", stopped: "Collector is stopped", error: "Collector needs attention", unavailable: "Native collector is unavailable", "permission-required": "Accessibility permission required" },
       data: "Data", events: "{count} events", autoDelete: "Automatically deleted after {hours} hours", deviceOnly: "On this device only", openData: "Open data folder",
       clear: "Clear history", clearText: "All local events will be deleted immediately and permanently.", deleteAll: "Delete everything", clearJournal: "Clear local journal",
     },
@@ -110,6 +114,7 @@ export const translations = {
     ask: {
       title: "Спросить о дне", subtitle: "Ответ строится на этом устройстве из событий последних 48 часов.", skills: "Навыки из потоков",
       localAnswer: "Локальный ответ", examples: "Примеры", examplesText: "Можно спросить про утро, конкретное приложение, период или переходы между задачами.",
+      understood: "Понял вопрос как:", engineNote: "LLM не используется: локальный набор правил распознаёт период, приложение и тип вопроса, затем рассчитывает ответ по журналу.", demoInterpretation: "сводка · сегодня утром",
       prompts: ["Что заняло больше всего времени?", "Когда я работал в Figma?", "Где я часто переключался?"],
     },
     skills: {
@@ -123,7 +128,10 @@ export const translations = {
     },
     settings: {
       title: "Настройки", subtitle: "Контроль записи, хранения, языка и локальных данных.", language: "Язык", languageText: "На этом языке отображаются интерфейс, таймлайн, локальные ответы, меню трея и экспортированные навыки.",
-      activity: "Сбор активности", record: "Записывать активность", recordText: "Переключения окон, клики и обезличенные счётчики ввода", private: "Исключать приватные окна", privateText: "Всегда включено для поддерживаемых браузеров",
+      activity: "Сбор активности", record: "Записывать активность", recordText: "Переключения окон и включённые обезличенные сигналы ниже", private: "Исключать приватные окна", privateText: "Incognito, InPrivate и Private Browsing отбрасываются до записи", privateWarning: "Выключено: названия приватных окон могут сохраняться локально",
+      titles: "Названия окон", titlesText: "Добавляет название активного документа, вкладки или чата, но не читает содержимое", inputs: "Обезличенные счётчики ввода", inputsText: "Считает действия клавиатуры и мыши без записи клавиш, координат и введённого текста", tabs: "Число вкладок браузера", tabsText: "Раз в минуту считывает только количество видимых вкладок браузера",
+      system: "Система", autostart: "Запускать при входе", autostartText: "Тихо запускается в трее и начинает локальный сбор", autostartUnavailable: "Доступно в установленном приложении", runtimeText: "Нативный сборщик работает отдельно и пишет только локальные события", accessibility: "Нужен доступ к Универсальному доступу", accessibilityText: "macOS требует разрешение для чтения активного приложения и названия окна.", grantAccess: "Открыть настройки доступа",
+      statuses: { running: "Сборщик работает", starting: "Сборщик запускается…", paused: "Сбор на паузе", stopped: "Сборщик остановлен", error: "Сборщику нужно внимание", unavailable: "Нативный сборщик недоступен", "permission-required": "Нужен доступ macOS" },
       data: "Данные", events: "{count} событий", autoDelete: "Автоудаление через {hours} часов", deviceOnly: "Только на устройстве", openData: "Открыть папку данных",
       clear: "Очистить историю", clearText: "Все локальные события будут удалены немедленно и безвозвратно.", deleteAll: "Удалить всё", clearJournal: "Очистить локальный журнал",
     },

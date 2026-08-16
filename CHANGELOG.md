@@ -2,6 +2,30 @@
 
 All notable changes to Daytrace are documented here.
 
+## [0.3.0] - 2026-08-16
+
+### Added
+
+- Universal macOS 12+ build with a native Swift Accessibility collector and explicit permission status.
+- Launch-at-login settings for installed Windows and macOS applications.
+- Independent controls for active-window titles, anonymous input counts, browser-tab counts, and private-window filtering.
+- Visible collector health and an explanation of how deterministic local answers interpret each question.
+- English and Russian settings screenshots and macOS release artifacts in GitHub Actions.
+
+### Fixed
+
+- Private-window filtering is now a working switch instead of a read-only checkbox.
+- Stable-title debouncing and system-window filtering prevent Telegram, Chrome, and Windows shell noise from inflating context-switch counts.
+- Session duration and context-switch metrics now use observed activities rather than raw event spans.
+- Combined date/time questions such as “yesterday morning” and explicit ranges are parsed correctly.
+
+### Performance
+
+- The desktop window is shown before the native tracker starts, removing the tracker from the critical launch path.
+- Windows uses a non-single-file native collector, avoiding startup extraction and AV blocking.
+- Event and derived-state caches avoid rereading the complete 48-hour journal on every update.
+- Renderer broadcasts are coalesced to 12 seconds; a hidden renderer is released after a 30-second quick-reopen window.
+
 ## [0.2.0] - 2026-08-15
 
 ### Added

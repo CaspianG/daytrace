@@ -1,28 +1,32 @@
 name: CI
-
 on:
   push:
     branches: [main]
   pull_request:
-
 permissions:
   contents: read
-
 jobs:
-  test:
+  test-windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
+        with: { node-version: 22, cache: npm }
       - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 8.0.x
+        with: { dotnet-version: 8.0.x }
       - run: npm ci
-      - run: npm audit
+      - run: npm audit --audit-level=high
       - run: npm test
       - run: npm run build
       - run: npm run test:sites
-      - run: npm run build:tracker
+      - run: npm run build:tracker:win
+  test-macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npm run build:tracker:mac

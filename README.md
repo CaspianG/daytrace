@@ -7,11 +7,11 @@
 <p align="center"><strong>Your day. On your device.</strong></p>
 
 <p align="center">
-  A free, open-source Windows app that turns local application activity into a useful workday timeline — without screenshots, audio, accounts, APIs, or cloud storage.
+  A free, open-source Windows and macOS app that turns local application activity into a useful workday timeline — without screenshots, audio, accounts, APIs, or cloud storage.
 </p>
 
 <p align="center">
-  <a href="https://github.com/CaspianG/daytrace/releases/latest"><strong>Download for Windows</strong></a>
+  <a href="https://github.com/CaspianG/daytrace/releases/latest"><strong>Download for Windows or macOS</strong></a>
   · <a href="README_RU.md">Русская версия</a>
   · <a href="SECURITY.md">Security</a>
 </p>
@@ -20,6 +20,7 @@
   <img alt="GitHub release" src="https://img.shields.io/github/v/release/CaspianG/daytrace?display_name=tag&style=flat-square&color=6f8f67">
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-6f8f67?style=flat-square">
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-c5684b?style=flat-square">
+  <img alt="macOS 12 or newer" src="https://img.shields.io/badge/macOS-12%2B-c5684b?style=flat-square">
   <img alt="Local only" src="https://img.shields.io/badge/data-local%20only-294332?style=flat-square">
 </p>
 
@@ -29,7 +30,7 @@
 
 The useful question is simple: **“What was I working on this morning?”** The answer is usually scattered across editors, browser tabs, documents, chats, and window switches.
 
-OpenAI's announcement of Computer History validated this new category of desktop software. Its initial rollout was described as macOS-only and limited to Pro, Business, and Enterprise plans. Daytrace is an independent, Windows-first alternative for people who want the utility without a subscription or a hosted activity history.
+OpenAI's announcement of Computer History validated this new category of desktop software. Its initial rollout was described as macOS-only and limited to Pro, Business, and Enterprise plans. Daytrace is an independent cross-platform alternative for people who want the utility without a subscription or a hosted activity history.
 
 Daytrace requires no account and no API key. Its shipped desktop runtime contains no network integration: events are captured, filtered, grouped, queried, and deleted on your computer.
 
@@ -47,6 +48,8 @@ The first public build is not code-signed yet, so Windows SmartScreen may show *
 
 Prefer a portable build? Download `Daytrace-Portable-…-x64.zip`, extract it, and run `Daytrace.exe`.
 
+On macOS 12 or newer, download the universal `Daytrace-…-macOS-universal.dmg`, drag Daytrace to Applications, then grant Accessibility permission when the app asks. The current macOS build is not notarized, so Gatekeeper may require **Open** from Finder's context menu.
+
 Minimizing or closing the window releases the heavy renderer while the lightweight native tracker continues from the system tray. Double-click the tray icon or launch Daytrace again to reopen the same instance.
 
 ## What you get
@@ -63,8 +66,12 @@ Minimizing or closing the window releases the heavy renderer while the lightweig
 - **Local workflow detection** that can export a reviewable `SKILL.md` draft from repeated application sequences.
 - **Complete English and Russian localization** for the interface, timeline labels, local answers, tray menu, installer, and exported skills.
 - **First-run language choice** with an instant language switch available later in Settings.
+- **Launch at login** on Windows and macOS, starting quietly in the tray/menu bar.
+- **Fine-grained collection controls** for window titles, anonymous input counts, browser-tab counts, and private-window filtering.
 
 ![Daytrace day overview and latest activity in English](docs/assets/screenshots/timeline-en.png)
+
+![Daytrace collection, privacy, language, and startup settings in English](docs/assets/screenshots/settings-en.png)
 
 The same interface is also available in [Russian](README_RU.md), including localized summaries and system-tray controls.
 
@@ -99,7 +106,7 @@ Uninstalling the application preserves this folder so history is not destroyed u
 
 ```mermaid
 flowchart LR
-    A["Windows foreground, keyboard and mouse hooks"] --> B["Privacy filter"]
+    A["Windows hooks or macOS Accessibility events"] --> B["Privacy filter"]
     B -->|"allowed"| C["Hourly local JSONL files"]
     B -->|"private or excluded"| X["Discarded before disk write"]
     C --> D["Local sessionizer"]
@@ -107,11 +114,13 @@ flowchart LR
     D --> F["Reviewable SKILL.md drafts"]
 ```
 
-The native tracker emits foreground-window and active-title changes, idle-aware heartbeats, a once-per-minute numeric browser-tab count, and aggregate input counts. Electron's local main process applies privacy rules, stores hourly JSONL segments, and exposes state to the sandboxed renderer over a narrow IPC bridge. It never reads message bodies, typed text, URLs, or background-tab titles. There is no cloud backend.
+The native tracker emits foreground-window and active-title changes, idle-aware heartbeats, a once-per-minute numeric browser-tab count on Windows, and aggregate input counts. Electron's local main process applies privacy rules, stores hourly JSONL segments, and exposes state to the sandboxed renderer over a narrow IPC bridge. It never reads message bodies, typed text, URLs, or background-tab titles. There is no cloud backend.
+
+Local answers do not use an LLM. A deterministic on-device parser recognizes the requested day/time range, application, and intent (summary, duration, latest activity, tabs, or context switches), then calculates the response from the local sessions. The interpreted query is shown above each answer so mistakes are visible.
 
 ## Current limitations
 
-- Windows x64 only; tested on Windows 10/11.
+- Windows x64 is tested on Windows 10/11. The macOS universal build targets macOS 12+ and its packaging is checked by CI; broader real-device coverage is still needed.
 - Local Q&A is deterministic and heuristic — it is not a bundled language model.
 - Private-window detection depends on browser title conventions and cannot be guaranteed for every browser/version.
 - The installer is not code-signed yet.
@@ -120,7 +129,7 @@ These boundaries are documented because privacy software should be explicit abou
 
 ## Build from source
 
-Requirements: Node.js 22+, npm, and .NET 8 SDK.
+Requirements: Node.js 22+ and npm. Windows tracker builds also need the .NET 8 SDK; macOS tracker builds need Xcode Command Line Tools.
 
 ```powershell
 git clone https://github.com/CaspianG/daytrace.git
@@ -137,10 +146,14 @@ npm run test:sites
 npm run dist
 ```
 
+Use `npm run dist:win` on Windows or `npm run dist:mac` on macOS.
+
 Artifacts are written to `release/`:
 
 - `Daytrace-Setup-<version>-x64.exe`
 - `Daytrace-Portable-<version>-x64.zip`
+- `Daytrace-<version>-macOS-universal.dmg`
+- `Daytrace-<version>-macOS-universal.zip`
 
 ## Project status
 
