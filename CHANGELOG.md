@@ -2,6 +2,24 @@
 
 All notable changes to Daytrace are documented here.
 
+## [0.5.1] - 2026-08-16
+
+### Fixed
+
+- Returning to the same foreground window after a long idle period, sleep, or an overnight gap now creates a new activity instead of reconnecting the entire gap as active time.
+- Windows and macOS collectors emit explicit local `idle` and `resume` boundaries after five minutes without system input, independently of whether anonymous input counters are enabled.
+- A six-minute signal-gap guard repairs the same failure mode while reading legacy journals and protects against suspended collectors or missed boundary events.
+- macOS now emits minute heartbeats while present, preserving passive reading and video viewing without counting an abandoned window indefinitely.
+- macOS input batches are attributed to the window that was active before a foreground switch rather than the newly focused window.
+
+### Interface
+
+- Gaps of at least five minutes between observed sessions appear as localized **Break / Перерыв** entries in the newest-first timeline and are excluded from active time, application totals, purpose charts, and local answers.
+
+### Verification
+
+- Added regression coverage for an unchanged browser tab left overnight, explicit idle/resume events, and 90 minutes of passive viewing followed by inactivity.
+
 ## [0.5.0] - 2026-08-16
 
 ### Added

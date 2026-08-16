@@ -11,12 +11,14 @@ internal static class Program
     private const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
     private const uint WINEVENT_OUTOFCONTEXT = 0x0000;
     private const uint WINEVENT_SKIPOWNPROCESS = 0x0002;
+    private const uint IDLE_THRESHOLD_MS = 5 * 60_000;
 
     private static WinEventDelegate? _foregroundDelegate;
     private static IntPtr _foregroundHook;
     private static readonly object Sync = new();
     private static int _inputCount;
     private static uint _lastInputTime;
+    private static bool _isIdle;
     private static WindowSnapshot _active = new("Application", "", "", 0, "other");
     private static System.Threading.Timer? _flushTimer;
     private static System.Threading.Timer? _sampleTimer;
@@ -30,14 +32,16 @@ internal static class Program
     {
         Console.OutputEncoding = Encoding.UTF8;
         _active = ReadActiveWindow();
+        _lastInputTime = GetLastInputTime();
+        _isIdle = GetIdleMilliseconds() >= IDLE_THRESHOLD_MS;
         Emit("foreground", 1, _active);
+        if (_isIdle) Emit("idle", 1, _active);
 
         _foregroundDelegate = OnForeground;
         _foregroundHook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, IntPtr.Zero, _foregroundDelegate, 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
         // A one-second last-input sample captures active seconds without global
         // keyboard/mouse hooks, key data, pointer coordinates, or per-event wakeups.
-        _lastInputTime = GetLastInputTime();
-        if (CollectInput) _inputTimer = new System.Threading.Timer(_ => SampleInputActivity(), null, 1000, 1000);
+        _inputTimer = new System.Threading.Timer(_ => SampleInputActivity(), null, 1000, 1000);
         // Sampling only the foreground title avoids the very noisy global
         // accessibility name-change stream while retaining useful context.
         if (CollectTitles) _titleTimer = new System.Threading.Timer(_ => SampleForegroundTitle(), null, 5000, 5000);
@@ -71,11 +75,12 @@ internal static class Program
         FlushCounts();
         var snapshot = ReadWindow(hwnd, true);
         lock (Sync) _active = snapshot;
-        Emit("foreground", 1, snapshot);
+        if (GetIdleMilliseconds() < IDLE_THRESHOLD_MS) Emit("foreground", 1, snapshot);
     }
 
     private static void SampleForegroundTitle()
     {
+        lock (Sync) { if (_isIdle) return; }
         var hwnd = GetForegroundWindow();
         if (hwnd == IntPtr.Zero || hwnd != GetForegroundWindow()) return;
         var snapshot = ReadWindow(hwnd, false);
@@ -94,12 +99,26 @@ internal static class Program
     private static void SampleInputActivity()
     {
         var current = GetLastInputTime();
+        var becameIdle = false;
+        var becameActive = false;
+        WindowSnapshot snapshot;
         lock (Sync)
         {
-            if (current == 0 || current == _lastInputTime) return;
-            _lastInputTime = current;
-            _inputCount++;
+            if (current != 0 && current != _lastInputTime)
+            {
+                _lastInputTime = current;
+                if (CollectInput) _inputCount++;
+                if (_isIdle) { _isIdle = false; becameActive = true; }
+            }
+            else if (!_isIdle && GetIdleMilliseconds() >= IDLE_THRESHOLD_MS)
+            {
+                _isIdle = true;
+                becameIdle = true;
+            }
+            snapshot = _active;
         }
+        if (becameIdle) { FlushCounts(snapshot); Emit("idle", 1, snapshot); }
+        else if (becameActive) Emit("resume", 1, snapshot);
     }
 
     private static void FlushCounts()
@@ -125,18 +144,21 @@ internal static class Program
         var snapshot = ReadWindow(GetForegroundWindow(), true);
         WindowSnapshot previous;
         var changed = false;
+        var idle = false;
         lock (Sync)
         {
             previous = _active;
             changed = snapshot.Process != previous.Process || snapshot.Title != previous.Title;
             _active = snapshot;
+            idle = _isIdle;
         }
+        if (idle) return;
         if (changed)
         {
             FlushCounts(previous);
             Emit("foreground", 1, snapshot);
         }
-        else if (GetIdleMilliseconds() < 5 * 60_000)
+        else if (GetIdleMilliseconds() < IDLE_THRESHOLD_MS)
         {
             Emit("heartbeat", 1, snapshot);
         }

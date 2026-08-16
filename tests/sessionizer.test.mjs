@@ -71,6 +71,49 @@ test("rapid title noise does not receive artificial five-second durations", () =
   assert.ok(sessions.flatMap((item) => item.activities).find((item) => item.app === "Google Chrome").durationMs >= 60_000);
 });
 
+test("returning to the same window after an idle night creates a new activity", () => {
+  const base = new Date("2026-08-15T22:00:00+03:00").getTime();
+  const morning = base + 10 * 60 * 60_000;
+  const events = [
+    { at: new Date(base).toISOString(), kind: "foreground", app: "Google Chrome", title: "Project dashboard", context: "browser" },
+    { at: new Date(base + 60_000).toISOString(), kind: "heartbeat", app: "Google Chrome", title: "Project dashboard", context: "browser" },
+    { at: new Date(morning).toISOString(), kind: "input", app: "Google Chrome", title: "Project dashboard", context: "browser", count: 1 },
+    { at: new Date(morning + 60_000).toISOString(), kind: "heartbeat", app: "Google Chrome", title: "Project dashboard", context: "browser" },
+  ];
+  const activities = sessionizer.sessionize(events, morning + 70_000, "en").flatMap((session) => session.activities);
+  assert.equal(activities.length, 2);
+  assert.ok(activities.reduce((sum, activity) => sum + activity.durationMs, 0) < 4 * 60_000);
+  assert.ok(activities.every((activity) => activity.durationMs <= 135_000));
+});
+
+test("explicit idle and resume events close and reopen the same foreground context", () => {
+  const base = new Date("2026-08-15T09:00:00+03:00").getTime();
+  const events = [
+    { at: new Date(base).toISOString(), kind: "foreground", app: "Telegram Desktop", title: "Project chat", context: "messaging" },
+    { at: new Date(base + 4 * 60_000).toISOString(), kind: "heartbeat", app: "Telegram Desktop", title: "Project chat", context: "messaging" },
+    { at: new Date(base + 5 * 60_000).toISOString(), kind: "idle", app: "Telegram Desktop", title: "Project chat", context: "messaging" },
+    { at: new Date(base + 8 * 60 * 60_000).toISOString(), kind: "resume", app: "Telegram Desktop", title: "Project chat", context: "messaging" },
+    { at: new Date(base + 8 * 60 * 60_000 + 60_000).toISOString(), kind: "heartbeat", app: "Telegram Desktop", title: "Project chat", context: "messaging" },
+  ];
+  const activities = sessionizer.sessionize(events, base + 8 * 60 * 60_000 + 70_000, "en").flatMap((session) => session.activities);
+  assert.equal(activities.length, 2);
+  assert.ok(activities[0].end <= base + 5 * 60_000);
+  assert.equal(activities[1].start, base + 8 * 60 * 60_000);
+});
+
+test("heartbeats preserve passive viewing until idle detection stops them", () => {
+  const base = new Date("2026-08-15T18:00:00+03:00").getTime();
+  const events = [{ at: new Date(base).toISOString(), kind: "foreground", app: "Google Chrome", title: "YouTube — documentary", context: "browser" }];
+  for (let minute = 1; minute <= 90; minute += 1) {
+    events.push({ at: new Date(base + minute * 60_000).toISOString(), kind: "heartbeat", app: "Google Chrome", title: "YouTube — documentary", context: "browser" });
+  }
+  events.push({ at: new Date(base + 95 * 60_000).toISOString(), kind: "idle", app: "Google Chrome", title: "YouTube — documentary", context: "browser" });
+  const [activity] = sessionizer.sessionize(events, base + 8 * 60 * 60_000, "en").flatMap((session) => session.activities);
+  assert.ok(activity.durationMs >= 90 * 60_000);
+  assert.ok(activity.durationMs <= 92 * 60_000);
+  assert.equal(activity.intent, "entertainment");
+});
+
 test("mixed work blocks keep per-activity categories and ignore legacy shell noise", () => {
   const base = new Date("2026-08-15T09:00:00+03:00").getTime();
   const events = [

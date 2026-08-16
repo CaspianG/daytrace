@@ -32,6 +32,9 @@ const FOCUS_LABELS = {
 const { isSystemNoise } = require("./privacy.cjs");
 const { INTENT_LABELS, contextKey, inferIntentDetails } = require("./intent-classifier.cjs");
 
+const SIGNAL_TAIL_MS = 75_000;
+const MAX_CONTINUOUS_SIGNAL_GAP_MS = 6 * 60_000;
+
 function normalizeLanguage(value) {
   return String(value || "").toLowerCase().startsWith("ru") ? "ru" : "en";
 }
@@ -163,7 +166,7 @@ function sessionize(events, now = Date.now(), language = "ru", intentRules = [])
 
   function closeActive(at) {
     if (!active) return;
-    const hardEnd = Math.min(at, active.lastSignal + 75_000);
+    const hardEnd = Math.min(at, active.lastSignal + SIGNAL_TAIL_MS);
     const end = Math.max(active.start, hardEnd);
     activities.push({
       ...active,
@@ -174,11 +177,37 @@ function sessionize(events, now = Date.now(), language = "ru", intentRules = [])
     active = null;
   }
 
+  function startActive(event, at) {
+    const app = canonicalApp(event, lang);
+    active = {
+      start: at,
+      lastSignal: at,
+      app,
+      process: event.process || "",
+      title: safeTitle(event.title || "", app, lang),
+      context: event.context || "other",
+      tabCount: Number(event.tabCount || 0),
+      clicks: 0,
+      inputs: 0,
+    };
+  }
+
   for (const event of sorted) {
     const at = new Date(event.at).getTime();
     if (!Number.isFinite(at)) continue;
     if (isSystemNoise(event) || /^daytrace(?:\.tracker)?$/i.test(String(event.process || ""))) continue;
-    if (event.kind === "foreground") {
+
+    // A suspended machine, an idle night, or a collector restart must never
+    // reconnect the old interval when the same window is used again. Current
+    // trackers also emit explicit idle/resume boundaries; this gap guard keeps
+    // legacy journals and crash/restart cases safe.
+    if (event.kind === "idle") {
+      closeActive(at);
+      continue;
+    }
+    if (active && at - active.lastSignal > MAX_CONTINUOUS_SIGNAL_GAP_MS) closeActive(at);
+
+    if (event.kind === "foreground" || event.kind === "resume") {
       const nextApp = canonicalApp(event, lang);
       const nextTitle = safeTitle(event.title || "", nextApp, lang);
       if (active && active.app === nextApp && nextTitle === active.title) {
@@ -187,19 +216,10 @@ function sessionize(events, now = Date.now(), language = "ru", intentRules = [])
         continue;
       }
       closeActive(at);
-      active = {
-        start: at,
-        lastSignal: at,
-        app: nextApp,
-        process: event.process || "",
-        title: nextTitle,
-        context: event.context || "other",
-        tabCount: Number(event.tabCount || 0),
-        clicks: 0,
-        inputs: 0,
-      };
+      startActive(event, at);
       continue;
     }
+    if (!active && ["heartbeat", "click", "input"].includes(event.kind)) startActive(event, at);
     if (!active) continue;
     if (event.app && canonicalApp(event, lang) !== active.app) continue;
     active.lastSignal = at;

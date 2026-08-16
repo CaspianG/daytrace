@@ -15,6 +15,8 @@ let encoder = JSONSerialization.self
 var active = Snapshot(app: "Application", process: "", title: "", context: "other")
 var inputs = 0
 var clicks = 0
+var isIdle = false
+let idleThreshold: TimeInterval = 5 * 60
 let lock = NSLock()
 var eventTap: CFMachPort?
 
@@ -52,16 +54,33 @@ func emit(kind: String, count: Int, value: Snapshot) {
     if let data = try? encoder.data(withJSONObject: payload), let line = String(data: data, encoding: .utf8) { print(line); fflush(stdout) }
 }
 
-func flush() {
-    lock.lock(); let inputValue = inputs; let clickValue = clicks; inputs = 0; clicks = 0; let current = active; lock.unlock()
+func flush(value: Snapshot? = nil) {
+    lock.lock(); let inputValue = inputs; let clickValue = clicks; inputs = 0; clicks = 0; let current = value ?? active; lock.unlock()
     if inputValue > 0 { emit(kind: "input", count: inputValue, value: current) }
     if clickValue > 0 { emit(kind: "click", count: clickValue, value: current) }
 }
 
 func sample(force: Bool = false) {
     let current = snapshot()
-    lock.lock(); let previous = active; active = current; lock.unlock()
-    if force || current != previous { flush(); emit(kind: "foreground", count: 1, value: current) }
+    lock.lock(); let previous = active; active = current; let idle = isIdle; lock.unlock()
+    if (force || current != previous) && !idle { flush(value: previous); emit(kind: "foreground", count: 1, value: current) }
+}
+
+func secondsSinceInput() -> TimeInterval {
+    let types: [CGEventType] = [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .mouseMoved, .scrollWheel]
+    return types.map { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0) }.min() ?? 0
+}
+
+func samplePresence() {
+    let idleNow = secondsSinceInput() >= idleThreshold
+    lock.lock(); let wasIdle = isIdle; isIdle = idleNow; let current = active; lock.unlock()
+    if idleNow && !wasIdle { flush(value: current); emit(kind: "idle", count: 1, value: current) }
+    if !idleNow && wasIdle { emit(kind: "resume", count: 1, value: current) }
+}
+
+func heartbeat() {
+    lock.lock(); let idle = isIdle; let current = active; lock.unlock()
+    if !idle { emit(kind: "heartbeat", count: 1, value: current) }
 }
 
 let callback: CGEventTapCallBack = { _, type, event, _ in
@@ -87,10 +106,13 @@ if collectInput {
     }
 }
 
-active = snapshot(); emit(kind: "foreground", count: 1, value: active)
+active = snapshot(); isIdle = secondsSinceInput() >= idleThreshold; emit(kind: "foreground", count: 1, value: active)
+if isIdle { emit(kind: "idle", count: 1, value: active) }
 let center = NSWorkspace.shared.notificationCenter
 let observer = center.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { _ in sample(force: false) }
 let sampleTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { _ in sample(force: false) }
 let flushTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { _ in flush() }
+let presenceTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { _ in samplePresence() }
+let heartbeatTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in heartbeat() }
 RunLoop.main.run()
-center.removeObserver(observer); sampleTimer.invalidate(); flushTimer.invalidate(); flush()
+center.removeObserver(observer); sampleTimer.invalidate(); flushTimer.invalidate(); presenceTimer.invalidate(); heartbeatTimer.invalidate(); flush()

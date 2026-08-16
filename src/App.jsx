@@ -59,7 +59,7 @@ function demoState(language = demoLanguage(), onboardingComplete = true) {
   const makeSession = (id, from, to, focus, intent) => ({ id, start: activities[from].start, end: activities[to].end, durationMs: activities[to].end - activities[from].start, focus, label: FOCUS_LABELS[lang][focus], intent, intentLabel: INTENT_LABELS[lang][intent], activities: activities.slice(from, to + 1) });
   return {
     settings: { trackingEnabled: true, retentionHours: 48, excludePrivateWindows: true, collectWindowTitles: true, collectInputCounts: true, collectBrowserTabCount: true, autoStartEnabled: false, excludedApps: ["1Password", "Bitwarden", "KeePass"], intentRules: [{ id: "demo-friends", match: lang === "ru" ? "Друзья" : "Friends", intent: "personal" }], language: lang, onboardingComplete },
-    runtime: { platform: updatePreview ? "win32" : "browser", trackerStatus: "running", accessibilityTrusted: true, autoStartSupported: false, autoStartEnabled: false, update: { status: updatePreview ? "available" : "up-to-date", currentVersion: "0.5.0", latestVersion: updatePreview ? "0.5.1" : "0.5.0", checkedAt: Date.now(), progress: 0 } },
+    runtime: { platform: updatePreview ? "win32" : "browser", trackerStatus: "running", accessibilityTrusted: true, autoStartSupported: false, autoStartEnabled: false, update: { status: updatePreview ? "available" : "up-to-date", currentVersion: "0.5.1", latestVersion: updatePreview ? "0.5.2" : "0.5.1", checkedAt: Date.now(), progress: 0 } },
     sessions: [
       makeSession("demo-1", 0, 2, "mixed", "work"), makeSession("demo-2", 3, 6, "mixed", "work"), makeSession("demo-3", 7, 8, "communication", "mixed"),
       { id: "demo-break", start: startOfToday(12, 5), end: startOfToday(12, 20), durationMs: 15 * 60_000, focus: "break", label: FOCUS_LABELS[lang].break, intent: "unknown", intentLabel: INTENT_LABELS[lang].unknown, activities: [] },
@@ -78,10 +78,10 @@ function startOfLocalDay(value) {
   return day.getTime();
 }
 
-function daySessions(sessions, selectedDay) {
+function daySessions(sessions, selectedDay, language = "en") {
   const start = startOfLocalDay(selectedDay);
   const end = start + 24 * 60 * 60_000;
-  return sessions
+  const observed = sessions
     .filter((session) => session.end > start && session.start < end)
     .map((session) => ({
       ...session,
@@ -89,7 +89,18 @@ function daySessions(sessions, selectedDay) {
         .filter((activity) => activity.end > start && activity.start < end)
         .sort((a, b) => b.end - a.end),
     }))
-    .sort((a, b) => b.end - a.end);
+    .sort((a, b) => a.start - b.start);
+  const withBreaks = [];
+  for (const session of observed) {
+    const previous = withBreaks.filter((item) => item.focus !== "break").at(-1);
+    const gapStart = previous ? Math.max(start, previous.end) : null;
+    const gapEnd = Math.min(end, session.start);
+    if (gapStart !== null && gapEnd - gapStart >= 5 * 60_000) {
+      withBreaks.push({ id: `break-${gapStart}-${gapEnd}`, start: gapStart, end: gapEnd, durationMs: gapEnd - gapStart, focus: "break", label: FOCUS_LABELS[normalizeLanguage(language)].break, activities: [], synthetic: true });
+    }
+    withBreaks.push(session);
+  }
+  return withBreaks.sort((a, b) => b.end - a.end);
 }
 
 function buildOverview(sessions, selectedDay) {
@@ -264,7 +275,7 @@ function IntentPicker({ activity, onClassify, t }) {
 
 function Session({ session, onDelete, onClassify, language, t }) {
   const isBreak = session.focus === "break";
-  return <section className={`timeline-session ${isBreak ? "break-session" : ""}`}><span className="timeline-node" /><header className="session-header"><div className="session-chip"><strong>{formatTime(session.start, language)} – {formatTime(session.end, language)}</strong>{!isBreak && <><span>•</span><span>{t.session.intent}: {(session.intentLabel || t.intent.unknown).toLocaleLowerCase(t.locale)}</span></>}</div><span className="session-line" /><strong className="duration">{formatDuration(session.durationMs, language)}</strong><button className="icon-button delete-session" onClick={() => onDelete(session)} title={t.session.delete}><Trash size={17} /></button></header><div className="activity-list">{session.activities.map((activity, index) => <div className="activity" key={`${activity.start}-${index}`}><time>{formatTime(activity.start, language)} – {formatTime(activity.end, language)}</time><AppIcon app={activity.app} /><div className="activity-copy"><strong>{activity.app}</strong><span>{activity.title || t.common.activeWindow}</span><div className="activity-meta"><IntentPicker activity={activity} onClassify={onClassify} t={t} /><small>{activity.focusLabel || session.label}</small>{activity.tabCount > 0 && <small><Browsers size={13} /> {text(t.overview.tabsCount, { count: activity.tabCount })}</small>}{Number(activity.inputs || 0) + Number(activity.clicks || 0) > 0 && <small><ArrowsLeftRight size={13} /> {text(t.overview.inputCount, { count: Number(activity.inputs || 0) + Number(activity.clicks || 0) })}</small>}</div></div></div>)}</div></section>;
+  return <section className={`timeline-session ${isBreak ? "break-session" : ""}`}><span className="timeline-node" /><header className="session-header"><div className="session-chip"><strong>{formatTime(session.start, language)} – {formatTime(session.end, language)}</strong><span>•</span><span>{isBreak ? session.label : `${t.session.intent}: ${(session.intentLabel || t.intent.unknown).toLocaleLowerCase(t.locale)}`}</span></div><span className="session-line" /><strong className="duration">{formatDuration(session.durationMs, language)}</strong>{!isBreak && <button className="icon-button delete-session" onClick={() => onDelete(session)} title={t.session.delete}><Trash size={17} /></button>}</header><div className="activity-list">{session.activities.map((activity, index) => <div className="activity" key={`${activity.start}-${index}`}><time>{formatTime(activity.start, language)} – {formatTime(activity.end, language)}</time><AppIcon app={activity.app} /><div className="activity-copy"><strong>{activity.app}</strong><span>{activity.title || t.common.activeWindow}</span><div className="activity-meta"><IntentPicker activity={activity} onClassify={onClassify} t={t} /><small>{activity.focusLabel || session.label}</small>{activity.tabCount > 0 && <small><Browsers size={13} /> {text(t.overview.tabsCount, { count: activity.tabCount })}</small>}{Number(activity.inputs || 0) + Number(activity.clicks || 0) > 0 && <small><ArrowsLeftRight size={13} /> {text(t.overview.inputCount, { count: Number(activity.inputs || 0) + Number(activity.clicks || 0) })}</small>}</div></div></div>)}</div></section>;
 }
 
 function Summary({ result, sessions, stats, language, t }) {
@@ -276,7 +287,7 @@ function Summary({ result, sessions, stats, language, t }) {
 
 function HistoryPage({ state, actions, setPage, selectedDay, language, t }) {
   const [result, setResult] = useState(null);
-  const sessions = useMemo(() => daySessions(state.sessions, selectedDay), [state.sessions, selectedDay]);
+  const sessions = useMemo(() => daySessions(state.sessions, selectedDay, language), [state.sessions, selectedDay, language]);
   const stats = useMemo(() => buildOverview(sessions, selectedDay), [sessions, selectedDay]);
   useEffect(() => { setResult(null); }, [language, selectedDay]);
   const classify = (activity, intent) => {

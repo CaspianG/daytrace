@@ -16,10 +16,10 @@
   · <a href="SECURITY.md">Security</a>
 </p>
 
-<p align="center"><strong>Current release: v0.5.0</strong> — Windows and macOS artifacts are built from the same tag and published together.</p>
+<p align="center"><strong>Current release: v0.5.1</strong> — Windows and macOS artifacts are built from the same tag and published together.</p>
 
 <p align="center">
-  <img alt="Current version v0.5.0" src="https://img.shields.io/badge/current-v0.5.0-6f8f67?style=flat-square">
+  <img alt="Current version v0.5.1" src="https://img.shields.io/badge/current-v0.5.1-6f8f67?style=flat-square">
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-6f8f67?style=flat-square">
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-c5684b?style=flat-square">
   <img alt="macOS 12 or newer" src="https://img.shields.io/badge/macOS-12%2B-c5684b?style=flat-square">
@@ -60,6 +60,7 @@ Installed builds check for a stable update shortly after launch and every six ho
 
 - **A complete day overview** with active time, applications, context switches, browser-tab maximum, focus distribution, top applications, and an hourly rhythm chart.
 - **A newest-first timeline** grouped into focus sessions instead of a raw event dump, with previous-day navigation inside the retention window.
+- **Explicit away-time boundaries**: five minutes without system input closes active tracking, returning to the same window starts a new interval, and gaps between sessions appear as localized Break entries.
 - **Local questions about your day**, including morning, afternoon, evening, today, yesterday, and purpose-specific questions such as “How long did I study?”
 - **A selected-day summary** showing work, learning, personal, entertainment, and honestly unknown time separately.
 - **Richer application context** from Windows event and accessibility APIs: active Chrome tab-title changes, numeric tab count, Telegram active-window/chat-title changes, and idle-aware reading time.
@@ -145,9 +146,9 @@ flowchart LR
     V -->|"SHA-256 verified installer"| G["Windows setup or macOS DMG"]
 ```
 
-The native tracker emits foreground-window changes, samples only the foreground title every five seconds, writes idle-aware heartbeats, checks a numeric browser-tab count once per minute on Windows, and records only anonymous active seconds. The Windows collector uses no global keyboard or mouse hook. Electron's local main process applies privacy rules, stores hourly JSONL segments, and exposes state to the sandboxed renderer over a narrow IPC bridge. It never reads message bodies, typed text, URLs, pointer coordinates, or background-tab titles. There is no cloud backend; only release metadata and verified installer downloads use the network.
+The native tracker emits foreground-window changes, samples only the foreground title every few seconds, writes idle-aware heartbeats, checks a numeric browser-tab count once per minute on Windows, and records only anonymous activity aggregates. Both platforms detect five minutes without system input and emit local idle/resume boundaries. The Windows collector uses no global keyboard or mouse hook. Electron's local main process applies privacy rules, stores hourly JSONL segments, and exposes state to the sandboxed renderer over a narrow IPC bridge. It never reads message bodies, typed text, URLs, pointer coordinates, or background-tab titles. There is no cloud backend; only release metadata and verified installer downloads use the network.
 
-Durations are observed foreground intervals, not the time an application merely remained open. Repeated title events are collapsed, sub-second fragments and system windows are ignored, and overview totals are calculated per activity rather than inherited from the first application in a work block. The classifier combines weighted bilingual semantics with service and specialized-app knowledge, then resolves opaque foreground intervals from repeated and neighboring local context. Conflicts stay visible instead of being overwritten by an application stereotype.
+Durations are observed foreground intervals, not the time an application merely remained open. Leaving a browser tab open overnight cannot reconnect the previous evening to the next morning: an explicit idle event closes it, and a six-minute signal-gap guard also protects legacy journals, sleep/wake cycles, and collector restarts. Minute heartbeats still preserve passive reading or video viewing while the computer remains in use. Repeated title events are collapsed, sub-second fragments and system windows are ignored, and overview totals are calculated per activity rather than inherited from the first application in a work block.
 
 Local answers do not use an LLM. A deterministic on-device parser recognizes the requested day/time range, application, purpose, and question type (summary, duration, latest activity, tabs, or context switches), then calculates the response from local sessions. Questions about work, learning, personal time, or entertainment include only activities supported by the classifier and local rules. The interpreted query is shown above each answer so mistakes are visible.
 
