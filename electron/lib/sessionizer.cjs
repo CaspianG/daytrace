@@ -30,6 +30,7 @@ const FOCUS_LABELS = {
 };
 
 const { isSystemNoise } = require("./privacy.cjs");
+const { INTENT_LABELS, inferIntentDetails } = require("./intent-classifier.cjs");
 
 function normalizeLanguage(value) {
   return String(value || "").toLowerCase().startsWith("ru") ? "ru" : "en";
@@ -80,9 +81,10 @@ function safeTitle(title, app, language = "ru") {
     .slice(0, 140);
 }
 
-function sessionize(events, now = Date.now(), language = "ru") {
+function sessionize(events, now = Date.now(), language = "ru", intentRules = []) {
   const lang = normalizeLanguage(language);
   const labels = FOCUS_LABELS[lang];
+  const intentLabels = INTENT_LABELS[lang];
   const sorted = [...events].sort((a, b) => new Date(a.at) - new Date(b.at));
   const activities = [];
   let active = null;
@@ -157,6 +159,12 @@ function sessionize(events, now = Date.now(), language = "ru") {
     activity.focusLabel = labels[focus];
     activity.focusConfidence = classification.confidence;
     activity.focusReason = classification.reason;
+    const intentClassification = inferIntentDetails(activity, intentRules);
+    activity.intent = intentClassification.intent;
+    activity.intentLabel = intentLabels[intentClassification.intent];
+    activity.intentConfidence = intentClassification.confidence;
+    activity.intentReason = intentClassification.reason;
+    activity.intentEvidence = intentClassification.evidence;
     const previous = sessions.at(-1);
     const gap = previous ? activity.start - previous.end : Infinity;
     if (previous && gap < 8 * 60_000 && activity.start - previous.start < 45 * 60_000) {
@@ -179,8 +187,25 @@ function sessionize(events, now = Date.now(), language = "ru") {
     }
   }
   for (const session of sessions) {
+    for (let index = 0; index < session.activities.length; index += 1) {
+      const activity = session.activities[index];
+      if (activity.intent !== "unknown" || activity.durationMs > 10 * 60_000) continue;
+      const previous = session.activities[index - 1];
+      const next = session.activities[index + 1];
+      const previousNear = previous && activity.start - previous.end < 5 * 60_000;
+      const nextNear = next && next.start - activity.end < 5 * 60_000;
+      if (previousNear && nextNear && previous.intent !== "unknown" && previous.intent === next.intent) {
+        activity.intent = previous.intent;
+        activity.intentLabel = intentLabels[previous.intent];
+        activity.intentConfidence = "low";
+        activity.intentReason = "sequence-context";
+        activity.intentEvidence = `${previous.app} → ${activity.app} → ${next.app}`;
+      }
+    }
     const totals = new Map();
+    const intentTotals = new Map();
     for (const activity of session.activities) totals.set(activity.focus, (totals.get(activity.focus) || 0) + activity.durationMs);
+    for (const activity of session.activities) intentTotals.set(activity.intent, (intentTotals.get(activity.intent) || 0) + activity.durationMs);
     const ranked = [...totals.entries()].sort((a, b) => b[1] - a[1]);
     const [topFocus, topDuration] = ranked[0] || ["other", 0];
     const topShare = session.durationMs > 0 ? topDuration / session.durationMs : 0;
@@ -188,6 +213,13 @@ function sessionize(events, now = Date.now(), language = "ru") {
     session.label = labels[session.focus];
     session.focusBreakdown = ranked.map(([itemFocus, durationMs]) => ({ focus: itemFocus, label: labels[itemFocus], durationMs }));
     session.confidence = session.lowConfidenceActivities / Math.max(1, session.activities.length) > 0.4 ? "low" : "high";
+    const rankedIntents = [...intentTotals.entries()].sort((a, b) => b[1] - a[1]);
+    const [topIntent, topIntentDuration] = rankedIntents[0] || ["unknown", 0];
+    const topIntentShare = session.durationMs > 0 ? topIntentDuration / session.durationMs : 0;
+    session.intent = rankedIntents.length > 1 && topIntentShare < 0.65 ? "mixed" : topIntent;
+    session.intentLabel = intentLabels[session.intent];
+    session.intentBreakdown = rankedIntents.map(([intent, durationMs]) => ({ intent, label: intentLabels[intent], durationMs }));
+    session.intentConfidence = session.activities.some((activity) => activity.intentConfidence === "low") ? "low" : "high";
   }
   return sessions;
 }

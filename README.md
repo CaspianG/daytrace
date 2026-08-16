@@ -16,10 +16,10 @@
   · <a href="SECURITY.md">Security</a>
 </p>
 
-<p align="center"><strong>Current release: v0.3.1</strong> — Windows and macOS artifacts are built from the same tag and published together.</p>
+<p align="center"><strong>Current release: v0.4.0</strong> — Windows and macOS artifacts are built from the same tag and published together.</p>
 
 <p align="center">
-  <img alt="Current version v0.3.1" src="https://img.shields.io/badge/current-v0.3.1-6f8f67?style=flat-square">
+  <img alt="Current version v0.4.0" src="https://img.shields.io/badge/current-v0.4.0-6f8f67?style=flat-square">
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-6f8f67?style=flat-square">
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-c5684b?style=flat-square">
   <img alt="macOS 12 or newer" src="https://img.shields.io/badge/macOS-12%2B-c5684b?style=flat-square">
@@ -58,8 +58,8 @@ Minimizing or closing the window releases the heavy renderer while the lightweig
 
 - **A complete day overview** with active time, applications, context switches, browser-tab maximum, focus distribution, top applications, and an hourly rhythm chart.
 - **A newest-first timeline** grouped into focus sessions instead of a raw event dump, with previous-day navigation inside the retention window.
-- **Local questions about your day**, including morning, afternoon, evening, today, and yesterday.
-- **A selected-day summary** showing the main areas of work and how long they took.
+- **Local questions about your day**, including morning, afternoon, evening, today, yesterday, and purpose-specific questions such as “How long did I study?”
+- **A selected-day summary** showing work, learning, personal, entertainment, and honestly unknown time separately.
 - **Richer application context** from Windows event and accessibility APIs: active Chrome tab-title changes, numeric tab count, Telegram active-window/chat-title changes, and idle-aware reading time.
 - **Private-window filtering** for common Incognito, InPrivate, and Private Browsing titles before disk writes.
 - **Application exclusions** with password managers excluded by default.
@@ -70,13 +70,31 @@ Minimizing or closing the window releases the heavy renderer while the lightweig
 - **First-run language choice** with an instant language switch available later in Settings.
 - **Launch at login** on Windows and macOS, starting quietly in the tray/menu bar.
 - **Fine-grained collection controls** for window titles, anonymous active-second samples, browser-tab counts, and private-window filtering.
-- **Conservative activity classification** based first on the foreground application. Window titles refine a category only when there is clear evidence; unknown and mixed work remain labelled as such.
+- **Two-layer classification** that keeps the application type separate from the inferred purpose. Telegram can be work or personal; a browser can be work, learning, entertainment, or unknown.
+- **One-click local corrections** on timeline entries plus reusable substring rules for chats, page titles, projects, and keywords. Rules never leave the device.
 
 ![Daytrace day overview and latest activity in English](docs/assets/screenshots/timeline-en.png)
 
 ![Daytrace collection, privacy, language, and startup settings in English](docs/assets/screenshots/settings-en.png)
 
 The same interface is also available in [Russian](README_RU.md), including localized summaries and system-tray controls.
+
+## Purpose, not application stereotypes
+
+Daytrace never treats “messenger” as a synonym for work or “browser” as a synonym for distraction. Every foreground interval has two independent labels:
+
+| Layer | Example | What it answers |
+| --- | --- | --- |
+| Activity type | Messaging, browser, development, audio | What kind of application was active? |
+| Inferred purpose | Work, learning, personal, entertainment, unknown | Why was that context most likely being used? |
+
+Purpose is inferred from clear words in the active title, a short surrounding sequence, dedicated application signals, and user-authored local rules. Conflicting or insufficient evidence becomes **Unknown purpose**. Use the purpose picker beside any timeline item to correct it; Daytrace stores a local rule for that chat, title, project, or keyword and recalculates the timeline, charts, answers, and workflow suggestions.
+
+This is deliberately not message-content analysis. Daytrace can know that a Telegram chat named “Project Atlas” matches your work rule, but it cannot know what an unnamed chat conversation means unless you classify it. The same boundary applies to browser pages, documents, editors, and every other application.
+
+![Correcting activity purpose and reviewing evidence in English](docs/assets/screenshots/purpose-en.png)
+
+![Local purpose rules in English](docs/assets/screenshots/rules-en.png)
 
 ## Privacy model
 
@@ -112,8 +130,8 @@ flowchart LR
     A["Windows foreground events or macOS Accessibility"] --> B["Privacy filter"]
     B -->|"allowed"| C["Hourly local JSONL files"]
     B -->|"private or excluded"| X["Discarded before disk write"]
-    C --> D["Local sessionizer"]
-    D --> E["Day overview, reverse timeline and local answers"]
+    C --> D["Local sessionizer and purpose classifier"]
+    D --> E["Purpose charts, reverse timeline and local answers"]
     D --> F["Reviewable SKILL.md drafts"]
 ```
 
@@ -121,16 +139,17 @@ The native tracker emits foreground-window changes, samples only the foreground 
 
 Durations are observed foreground intervals, not the time an application merely remained open. Repeated title events are collapsed, sub-second fragments and system windows are ignored, and overview totals are calculated per activity rather than inherited from the first application in a work block. Daytrace does not claim to know the semantic task when the available signals do not support it.
 
-Local answers do not use an LLM. A deterministic on-device parser recognizes the requested day/time range, application, and intent (summary, duration, latest activity, tabs, or context switches), then calculates the response from the local sessions. The interpreted query is shown above each answer so mistakes are visible.
+Local answers do not use an LLM. A deterministic on-device parser recognizes the requested day/time range, application, purpose, and question type (summary, duration, latest activity, tabs, or context switches), then calculates the response from local sessions. Questions about work, learning, personal time, or entertainment include only activities supported by the classifier and local rules. The interpreted query is shown above each answer so mistakes are visible.
 
 ## System load
 
-Daytrace uses native foreground events and coarse samples instead of screenshots or continuous screen polling. On the Windows verification machine, v0.3.1 measured **at or below 0.04% total background CPU** in 30-second samples and **188 MiB combined working memory** after the renderer was released. Window startup measured **0.82 s** from process start to visible and **0.22 s** for a quick reopen from the tray. Measurements vary by hardware, antivirus, event volume, and operating system; macOS packaging is verified in CI, but equivalent physical-Mac load measurements are still being collected.
+Daytrace uses native foreground events and coarse samples instead of screenshots or continuous screen polling. On the Windows verification machine, the packaged v0.4.0 background process measured **0.039% total CPU** over a 30-second sample and **199 MiB combined working memory** across Electron and the native collector with no renderer process. A clean packaged launch reached a validated non-empty window in **1.14 s**. Measurements vary by hardware, antivirus, event volume, and operating system; macOS packaging is verified in CI, but equivalent physical-Mac load measurements are still being collected.
 
 ## Current limitations
 
 - Windows x64 is tested on Windows 10/11. The macOS universal build targets macOS 12+ and its packaging is checked by CI; broader real-device coverage is still needed.
 - Local Q&A is deterministic and heuristic — it is not a bundled language model.
+- Daytrace does not read message bodies or page contents. Purpose accuracy depends on visible active-window titles, surrounding activity, and local corrections; ambiguous time remains unknown.
 - Private-window detection depends on browser title conventions and cannot be guaranteed for every browser/version.
 - The installer is not code-signed yet.
 

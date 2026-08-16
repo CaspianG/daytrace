@@ -3,6 +3,7 @@ const path = require("node:path");
 const { shouldRecord } = require("./privacy.cjs");
 const { sessionize } = require("./sessionizer.cjs");
 const { answerQuestion, suggestSkills } = require("./local-answer.cjs");
+const { normalizeIntentRules } = require("./intent-classifier.cjs");
 
 const DEFAULT_SETTINGS = {
   trackingEnabled: true,
@@ -13,6 +14,7 @@ const DEFAULT_SETTINGS = {
   collectBrowserTabCount: true,
   autoStartEnabled: false,
   excludedApps: ["1Password", "Bitwarden", "KeePass"],
+  intentRules: [],
   language: "en",
   onboardingComplete: false,
 };
@@ -44,6 +46,7 @@ class EventStore {
     this.settings = { ...defaults, ...readJson(this.settingsFile, {}) };
     this.settings.language = normalizeLanguage(this.settings.language);
     this.settings.onboardingComplete = Boolean(this.settings.onboardingComplete);
+    this.settings.intentRules = normalizeIntentRules(this.settings.intentRules);
     for (const key of ["trackingEnabled", "excludePrivateWindows", "collectWindowTitles", "collectInputCounts", "collectBrowserTabCount", "autoStartEnabled"]) {
       this.settings[key] = Boolean(this.settings[key]);
     }
@@ -64,6 +67,7 @@ class EventStore {
   updateSettings(patch) {
     this.settings = { ...this.settings, ...patch };
     this.settings.language = normalizeLanguage(this.settings.language);
+    this.settings.intentRules = normalizeIntentRules(this.settings.intentRules);
     for (const key of ["trackingEnabled", "excludePrivateWindows", "collectWindowTitles", "collectInputCounts", "collectBrowserTabCount", "autoStartEnabled"]) {
       this.settings[key] = Boolean(this.settings[key]);
     }
@@ -164,10 +168,10 @@ class EventStore {
     const events = this.loadEvents();
     this.stateCache = {
       settings: this.settings,
-      sessions: sessionize(events, Date.now(), this.settings.language),
+      sessions: sessionize(events, Date.now(), this.settings.language, this.settings.intentRules),
       eventCount: events.length,
       lastEventAt: events.length ? events.at(-1).at : null,
-      skills: suggestSkills(events, new Date(), this.settings.language),
+      skills: suggestSkills(events, new Date(), this.settings.language, this.settings.intentRules),
       dataPath: this.root,
       retentionCutoff: Date.now() - this.settings.retentionHours * 60 * 60_000,
     };
@@ -175,7 +179,7 @@ class EventStore {
   }
 
   ask(question) {
-    return answerQuestion(question, this.loadEvents(), new Date(), this.settings.language);
+    return answerQuestion(question, this.loadEvents(), new Date(), this.settings.language, this.settings.intentRules);
   }
 
   exportSkill(skill) {

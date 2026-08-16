@@ -1,6 +1,6 @@
 {
   "name": "daytrace-local",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "private": true,
   "description": "Private, fully local activity timeline and workday recall for Windows and macOS.",
   "author": "Daytrace contributors",
@@ -36,8 +36,8 @@
     "build:brand": "node scripts/build-brand-assets.mjs",
     "screenshots": "npm run build && electron scripts/capture-screenshots.cjs",
     "preview": "vite preview",
-    "test": "node --test tests/privacy.test.mjs tests/sessionizer.test.mjs tests/event-store.test.mjs tests/localization.test.mjs tests/release-docs.test.mjs",
-    "test:sites": "node --test tests/sites-worker.test.mjs"
+    "test": "node --test tests/privacy.test.mjs tests/sessionizer.test.mjs tests/intent-classifier.test.mjs tests/event-store.test.mjs tests/localization.test.mjs tests/release-docs.test.mjs",
+    "test:sites": "npm run build && node --test tests/sites-worker.test.mjs"
   },
   "dependencies": {},
   "devDependencies": {
@@ -94,7 +94,15 @@
     },
     "win": {
       "icon": "build/icon.ico",
-      "extraResources": [{ "from": "native/windows-tracker/bin/Release/net8.0-windows/win-x64/publish/", "to": "tracker/windows", "filter": ["**/*"] }],
+      "extraResources": [
+        {
+          "from": "native/windows-tracker/bin/Release/net8.0-windows/win-x64/publish/",
+          "to": "tracker/windows",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ],
       "target": [
         {
           "target": "nsis",
@@ -116,8 +124,26 @@
       "category": "public.app-category.productivity",
       "minimumSystemVersion": "12.0",
       "artifactName": "Daytrace-${version}-macOS-${arch}.${ext}",
-      "extraResources": [{ "from": "native/macos-tracker/build/daytrace-tracker", "to": "tracker/macos/daytrace-tracker" }],
-      "target": [{ "target": "dmg", "arch": ["universal"] }, { "target": "zip", "arch": ["universal"] }]
+      "extraResources": [
+        {
+          "from": "native/macos-tracker/build/daytrace-tracker",
+          "to": "tracker/macos/daytrace-tracker"
+        }
+      ],
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
+      ]
     },
     "nsis": {
       "artifactName": "Daytrace-Setup-${version}-${arch}.${ext}",

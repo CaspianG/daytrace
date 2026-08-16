@@ -27,6 +27,11 @@ const FOCUS_LABELS = {
   ru: { planning: "Планирование и подготовка", development: "Разработка", communication: "Мессенджеры и почта", design: "Дизайн", research: "Исследование", browser: "Работа в браузере", ai: "Работа с ИИ-ассистентами", audio: "Работа со звуком", remote: "Удалённая работа", files: "Работа с файлами", other: "Другая активность", mixed: "Смешанная работа", break: "Перерыв" },
 };
 
+const INTENT_LABELS = {
+  en: { work: "Work", learning: "Learning", personal: "Personal", entertainment: "Entertainment", unknown: "Unknown purpose", mixed: "Mixed purpose" },
+  ru: { work: "Работа", learning: "Обучение", personal: "Личное", entertainment: "Развлечения", unknown: "Цель не определена", mixed: "Смешанная цель" },
+};
+
 function startOfToday(hour, minute) {
   const date = new Date();
   date.setHours(hour, minute, 0, 0);
@@ -43,19 +48,20 @@ function demoState(language = demoLanguage(), onboardingComplete = true) {
   const t = translations[lang];
   const apps = ["Visual Studio Code", "Google Chrome", "Telegram Desktop", "Visual Studio Code", "Visual Studio Code", "Google Chrome", "Figma", "Telegram Desktop", "Gmail"];
   const focuses = ["development", "planning", "communication", "development", "development", "research", "design", "communication", "communication"];
+  const intents = ["work", "work", "work", "work", "work", "learning", "work", "personal", "work"];
   const times = [[9, 5, 9, 30], [9, 30, 9, 45], [9, 45, 10, 0], [10, 0, 10, 15], [10, 15, 10, 45], [10, 45, 11, 15], [11, 15, 11, 30], [11, 30, 11, 50], [11, 50, 12, 5]];
   const activities = times.map(([sh, sm, eh, em], index) => ({
     start: startOfToday(sh, sm), end: startOfToday(eh, em), durationMs: startOfToday(eh, em) - startOfToday(sh, sm),
-    app: apps[index], title: t.demo.titles[index], focus: focuses[index], focusLabel: FOCUS_LABELS[lang][focuses[index]], context: apps[index].includes("Chrome") ? "browser" : apps[index].includes("Telegram") ? "messaging" : "other",
+    app: apps[index], title: t.demo.titles[index], focus: focuses[index], focusLabel: FOCUS_LABELS[lang][focuses[index]], intent: intents[index], intentLabel: INTENT_LABELS[lang][intents[index]], intentConfidence: index === 7 ? "high" : "medium", context: apps[index].includes("Chrome") ? "browser" : apps[index].includes("Telegram") ? "messaging" : "other",
     tabCount: apps[index].includes("Chrome") ? (index === 1 ? 7 : 11) : 0, clicks: 4, inputs: 18,
   }));
-  const makeSession = (id, from, to, focus) => ({ id, start: activities[from].start, end: activities[to].end, durationMs: activities[to].end - activities[from].start, focus, label: FOCUS_LABELS[lang][focus], activities: activities.slice(from, to + 1) });
+  const makeSession = (id, from, to, focus, intent) => ({ id, start: activities[from].start, end: activities[to].end, durationMs: activities[to].end - activities[from].start, focus, label: FOCUS_LABELS[lang][focus], intent, intentLabel: INTENT_LABELS[lang][intent], activities: activities.slice(from, to + 1) });
   return {
-    settings: { trackingEnabled: true, retentionHours: 48, excludePrivateWindows: true, collectWindowTitles: true, collectInputCounts: true, collectBrowserTabCount: true, autoStartEnabled: false, excludedApps: ["1Password", "Bitwarden", "KeePass"], language: lang, onboardingComplete },
+    settings: { trackingEnabled: true, retentionHours: 48, excludePrivateWindows: true, collectWindowTitles: true, collectInputCounts: true, collectBrowserTabCount: true, autoStartEnabled: false, excludedApps: ["1Password", "Bitwarden", "KeePass"], intentRules: [{ id: "demo-friends", match: lang === "ru" ? "Друзья" : "Friends", intent: "personal" }], language: lang, onboardingComplete },
     runtime: { platform: "browser", trackerStatus: "running", accessibilityTrusted: true, autoStartSupported: false, autoStartEnabled: false },
     sessions: [
-      makeSession("demo-1", 0, 2, "mixed"), makeSession("demo-2", 3, 6, "mixed"), makeSession("demo-3", 7, 8, "communication"),
-      { id: "demo-break", start: startOfToday(12, 5), end: startOfToday(12, 20), durationMs: 15 * 60_000, focus: "break", label: FOCUS_LABELS[lang].break, activities: [] },
+      makeSession("demo-1", 0, 2, "mixed", "work"), makeSession("demo-2", 3, 6, "mixed", "work"), makeSession("demo-3", 7, 8, "communication", "mixed"),
+      { id: "demo-break", start: startOfToday(12, 5), end: startOfToday(12, 20), durationMs: 15 * 60_000, focus: "break", label: FOCUS_LABELS[lang].break, intent: "unknown", intentLabel: INTENT_LABELS[lang].unknown, activities: [] },
     ],
     eventCount: 128, retentionCutoff: Date.now() - 48 * 60 * 60_000, dataPath: t.demo.dataPath,
     skills: [
@@ -88,8 +94,15 @@ function daySessions(sessions, selectedDay) {
 function buildOverview(sessions, selectedDay) {
   const dayStart = startOfLocalDay(selectedDay);
   const dayEnd = dayStart + 24 * 60 * 60_000;
-  const activities = sessions.flatMap((session) => session.activities.map((activity) => ({ ...activity, focus: activity.focus || session.focus, label: activity.focusLabel || session.label })));
+  const activities = sessions.flatMap((session) => session.activities.map((activity) => ({
+    ...activity,
+    focus: activity.focus || session.focus,
+    label: activity.focusLabel || session.label,
+    intent: activity.intent || session.intent || "unknown",
+    intentLabel: activity.intentLabel || session.intentLabel || INTENT_LABELS.en.unknown,
+  })));
   const focus = new Map();
+  const intents = new Map();
   const apps = new Map();
   const hours = Array.from({ length: 24 }, (_, hour) => ({ hour, durationMs: 0 }));
   let activeMs = 0;
@@ -100,6 +113,7 @@ function buildOverview(sessions, selectedDay) {
     const duration = Math.max(0, end - start);
     activeMs += duration;
     focus.set(activity.focus, { focus: activity.focus, label: activity.label, durationMs: (focus.get(activity.focus)?.durationMs || 0) + duration });
+    intents.set(activity.intent, { intent: activity.intent, label: activity.intentLabel, durationMs: (intents.get(activity.intent)?.durationMs || 0) + duration });
     apps.set(activity.app, (apps.get(activity.app) || 0) + duration);
     maxTabs = Math.max(maxTabs, Number(activity.tabCount || 0));
     let cursor = start;
@@ -112,6 +126,7 @@ function buildOverview(sessions, selectedDay) {
     }
   }
   const focusTotals = [...focus.values()].sort((a, b) => b.durationMs - a.durationMs);
+  const intentTotals = [...intents.values()].sort((a, b) => b.durationMs - a.durationMs);
   const appTotals = [...apps.entries()].map(([app, durationMs]) => ({ app, durationMs })).sort((a, b) => b.durationMs - a.durationMs);
   const usedHours = hours.filter((item) => item.durationMs > 0);
   const firstHour = usedHours.length ? Math.max(0, usedHours[0].hour - 1) : 8;
@@ -126,9 +141,11 @@ function buildOverview(sessions, selectedDay) {
     }, 0),
     maxTabs,
     focusTotals,
+    intentTotals,
     appTotals,
     hours: hours.slice(firstHour, lastHour + 1),
     topFocus: focusTotals[0],
+    topIntent: intentTotals[0],
     topApp: appTotals[0],
   };
 }
@@ -156,6 +173,7 @@ function useDaytrace() {
     async setAutoStart(enabled) { if (window.daytrace) setState(await window.daytrace.setAutoStart(enabled)); else setState((current) => ({ ...current, settings: { ...current.settings, autoStartEnabled: enabled }, runtime: { ...current.runtime, autoStartEnabled: enabled } })); },
     async requestAccessibility() { if (window.daytrace) setState(await window.daytrace.requestAccessibility()); },
     async setExclusions(apps) { if (window.daytrace) setState(await window.daytrace.setExclusions(apps)); else setState((current) => ({ ...current, settings: { ...current.settings, excludedApps: apps } })); },
+    async setIntentRules(rules) { if (window.daytrace) setState(await window.daytrace.setIntentRules(rules)); else setState((current) => ({ ...current, settings: { ...current.settings, intentRules: rules } })); },
     async setLanguage(nextLanguage) { const next = normalizeLanguage(nextLanguage); if (window.daytrace) setState(await window.daytrace.setLanguage(next)); else setState(demoState(next, true)); },
     async completeOnboarding(nextLanguage) { const next = normalizeLanguage(nextLanguage); if (window.daytrace) setState(await window.daytrace.completeOnboarding(next)); else setState(demoState(next, true)); },
     async deleteAll() { if (window.daytrace) setState(await window.daytrace.deleteAll()); else setState((current) => ({ ...current, sessions: [], eventCount: 0 })); },
@@ -163,8 +181,8 @@ function useDaytrace() {
     async ask(question) {
       if (window.daytrace) return window.daytrace.ask(question);
       const t = translations[language];
-      const sources = state.sessions.map((session) => ({ ...session, duration: formatDuration(session.durationMs, language), apps: [...new Set(session.activities.map((item) => item.app))] }));
-      return { answer: t.summary.default, interpretation: t.ask.demoInterpretation, points: state.sessions.map((session) => ({ label: session.label, duration: formatDuration(session.durationMs, language) })), sources };
+      const sources = state.sessions.map((session) => ({ ...session, label: session.intentLabel, duration: formatDuration(session.durationMs, language), apps: [...new Set(session.activities.map((item) => item.app))] }));
+      return { answer: text(t.summary.default, { intent: INTENT_LABELS[language].work.toLocaleLowerCase(t.locale), app: "Visual Studio Code" }), interpretation: t.ask.demoInterpretation, points: state.sessions.filter((session) => session.activities.length).map((session) => ({ label: session.intentLabel, duration: formatDuration(session.durationMs, language) })), sources };
     },
     async exportSkill(skill) { if (window.daytrace) return window.daytrace.exportSkill(skill); return text(translations[language].skills.draft, { title: skill.title }); },
     revealData() { return window.daytrace?.revealData(); },
@@ -229,20 +247,24 @@ function ActivityRhythm({ stats, t }) {
 }
 
 function DayOverview({ stats, language, t }) {
-  const focusMax = Math.max(1, ...stats.focusTotals.map((item) => item.durationMs));
+  const intentMax = Math.max(1, ...stats.intentTotals.map((item) => item.durationMs));
   const appMax = Math.max(1, ...stats.appTotals.map((item) => item.durationMs));
-  return <div className="day-overview"><OverviewMetrics stats={stats} language={language} t={t} /><div className="overview-charts"><RankedBars title={t.overview.focusTitle} subtitle={t.overview.focusSubtitle} items={stats.focusTotals} max={focusMax} renderLabel={(item) => item.label} renderValue={(item) => formatDuration(item.durationMs, language)} /><RankedBars title={t.overview.appsTitle} subtitle={t.overview.appsSubtitle} items={stats.appTotals} max={appMax} renderLabel={(item) => item.app} renderValue={(item) => formatDuration(item.durationMs, language)} /></div><ActivityRhythm stats={stats} t={t} /></div>;
+  return <div className="day-overview"><OverviewMetrics stats={stats} language={language} t={t} /><div className="overview-charts"><RankedBars title={t.overview.intentTitle} subtitle={t.overview.intentSubtitle} items={stats.intentTotals} max={intentMax} renderLabel={(item) => item.label} renderValue={(item) => formatDuration(item.durationMs, language)} /><RankedBars title={t.overview.appsTitle} subtitle={t.overview.appsSubtitle} items={stats.appTotals} max={appMax} renderLabel={(item) => item.app} renderValue={(item) => formatDuration(item.durationMs, language)} /></div><ActivityRhythm stats={stats} t={t} /></div>;
 }
 
-function Session({ session, onDelete, language, t }) {
+function IntentPicker({ activity, onClassify, t }) {
+  return <label className={`intent-badge ${activity.intentConfidence || "low"}`} title={`${t.intent.classify}: ${t.intent.reasons[activity.intentReason] || t.intent.reasons.insufficient}`}><Sparkle size={13} /><select value={activity.intent || "unknown"} onChange={(event) => onClassify(activity, event.target.value)} aria-label={t.intent.classify}>{Object.entries(t.intent.labels).filter(([key]) => key !== "mixed").map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>;
+}
+
+function Session({ session, onDelete, onClassify, language, t }) {
   const isBreak = session.focus === "break";
-  return <section className={`timeline-session ${isBreak ? "break-session" : ""}`}><span className="timeline-node" /><header className="session-header"><div className="session-chip"><strong>{formatTime(session.start, language)} – {formatTime(session.end, language)}</strong>{!isBreak && <><span>•</span><span>{t.session.focus}: {session.label.toLocaleLowerCase(t.locale)}</span></>}</div><span className="session-line" /><strong className="duration">{formatDuration(session.durationMs, language)}</strong><button className="icon-button delete-session" onClick={() => onDelete(session)} title={t.session.delete}><Trash size={17} /></button></header><div className="activity-list">{session.activities.map((activity, index) => <div className="activity" key={`${activity.start}-${index}`}><time>{formatTime(activity.start, language)} – {formatTime(activity.end, language)}</time><AppIcon app={activity.app} /><div className="activity-copy"><strong>{activity.app}</strong><span>{activity.title || t.common.activeWindow}</span>{(activity.tabCount > 0 || activity.inputs + activity.clicks > 0) && <div className="activity-meta">{activity.tabCount > 0 && <small><Browsers size={13} /> {text(t.overview.tabsCount, { count: activity.tabCount })}</small>}{activity.inputs + activity.clicks > 0 && <small><ArrowsLeftRight size={13} /> {text(t.overview.inputCount, { count: activity.inputs + activity.clicks })}</small>}</div>}</div></div>)}</div></section>;
+  return <section className={`timeline-session ${isBreak ? "break-session" : ""}`}><span className="timeline-node" /><header className="session-header"><div className="session-chip"><strong>{formatTime(session.start, language)} – {formatTime(session.end, language)}</strong>{!isBreak && <><span>•</span><span>{t.session.intent}: {(session.intentLabel || t.intent.unknown).toLocaleLowerCase(t.locale)}</span></>}</div><span className="session-line" /><strong className="duration">{formatDuration(session.durationMs, language)}</strong><button className="icon-button delete-session" onClick={() => onDelete(session)} title={t.session.delete}><Trash size={17} /></button></header><div className="activity-list">{session.activities.map((activity, index) => <div className="activity" key={`${activity.start}-${index}`}><time>{formatTime(activity.start, language)} – {formatTime(activity.end, language)}</time><AppIcon app={activity.app} /><div className="activity-copy"><strong>{activity.app}</strong><span>{activity.title || t.common.activeWindow}</span><div className="activity-meta"><IntentPicker activity={activity} onClassify={onClassify} t={t} /><small>{activity.focusLabel || session.label}</small>{activity.tabCount > 0 && <small><Browsers size={13} /> {text(t.overview.tabsCount, { count: activity.tabCount })}</small>}{Number(activity.inputs || 0) + Number(activity.clicks || 0) > 0 && <small><ArrowsLeftRight size={13} /> {text(t.overview.inputCount, { count: Number(activity.inputs || 0) + Number(activity.clicks || 0) })}</small>}</div></div></div>)}</div></section>;
 }
 
 function Summary({ result, sessions, stats, language, t }) {
-  const sessionPoints = stats.focusTotals.map((item) => ({ label: item.label, duration: formatDuration(item.durationMs, language), detail: t.summary.details[item.focus] || t.summary.grouped }));
+  const sessionPoints = stats.intentTotals.map((item) => ({ label: item.label, duration: formatDuration(item.durationMs, language), detail: t.summary.intentDetails[item.intent] || t.summary.grouped }));
   const points = result?.points?.length ? result.points.map((point) => ({ ...sessionPoints.find((item) => item.label === point.label), ...point })) : sessionPoints;
-  const answer = result?.answer || (sessions.length ? text(t.summary.default, { focus: stats.topFocus?.label.toLocaleLowerCase(t.locale), app: stats.topApp?.app }) : t.summary.empty);
+  const answer = result?.answer || (sessions.length ? text(t.summary.default, { intent: stats.topIntent?.label.toLocaleLowerCase(t.locale), app: stats.topApp?.app }) : t.summary.empty);
   return <aside className="summary-panel"><img className="sage-branch" src={sageBranch} alt="" /><h2>{t.summary.title}</h2><span className="summary-time">{text(t.summary.generated, { time: formatTime(Date.now(), language) })}</span><p className="summary-answer">{answer}</p><div className="summary-points">{points.slice(0, 3).map((point) => <div className="summary-point" key={point.label}><span className="summary-dot" /><div><strong>{point.label}</strong><small>{point.time ? `${point.time} (${point.duration})` : point.duration}</small>{point.detail && <p>{point.detail}</p>}</div></div>)}</div><div className="privacy-note"><strong>{t.summary.how}</strong><p>{t.summary.explanation}</p><div><LockKey size={16} /> {t.summary.private}</div><div><EyeSlash size={16} /> {t.summary.excluded}</div></div></aside>;
 }
 
@@ -251,7 +273,13 @@ function HistoryPage({ state, actions, setPage, selectedDay, language, t }) {
   const sessions = useMemo(() => daySessions(state.sessions, selectedDay), [state.sessions, selectedDay]);
   const stats = useMemo(() => buildOverview(sessions, selectedDay), [sessions, selectedDay]);
   useEffect(() => { setResult(null); }, [language, selectedDay]);
-  return <div className="history-page"><QuestionBar t={t} onAsk={async (question) => setResult(await actions.ask(question))} /><div className="history-layout"><main className="timeline-column"><DayOverview stats={stats} language={language} t={t} /><div className="section-title timeline-title"><h2>{t.history.title}</h2><span>{t.history.newestFirst}</span></div>{sessions.length ? <div className="timeline reverse-timeline">{sessions.map((session) => <Session key={session.id} session={session} onDelete={actions.deleteSession} language={language} t={t} />)}</div> : <div className="empty-state"><Clock size={34} /><h3>{t.history.emptyTitle}</h3><p>{t.history.emptyText}</p><button onClick={() => setPage("settings")}>{t.history.checkSettings} <ArrowRight size={17} /></button></div>}</main><Summary result={result} sessions={sessions} stats={stats} language={language} t={t} /></div></div>;
+  const classify = (activity, intent) => {
+    const genericTitle = /^(active window|активное окно|telegramdesktop)$/i.test(String(activity.title || ""));
+    const match = genericTitle || !activity.title ? activity.app : activity.title;
+    const rules = (state.settings.intentRules || []).filter((rule) => rule.match.toLocaleLowerCase(t.locale) !== match.toLocaleLowerCase(t.locale));
+    actions.setIntentRules([...rules, { id: `${Date.now()}`, match, intent }]);
+  };
+  return <div className="history-page"><QuestionBar t={t} onAsk={async (question) => setResult(await actions.ask(question))} /><div className="history-layout"><main className="timeline-column"><DayOverview stats={stats} language={language} t={t} /><div className="section-title timeline-title"><h2>{t.history.title}</h2><span>{t.history.newestFirst}</span></div>{sessions.length ? <div className="timeline reverse-timeline">{sessions.map((session) => <Session key={session.id} session={session} onDelete={actions.deleteSession} onClassify={classify} language={language} t={t} />)}</div> : <div className="empty-state"><Clock size={34} /><h3>{t.history.emptyTitle}</h3><p>{t.history.emptyText}</p><button onClick={() => setPage("settings")}>{t.history.checkSettings} <ArrowRight size={17} /></button></div>}</main><Summary result={result} sessions={sessions} stats={stats} language={language} t={t} /></div></div>;
 }
 
 function AskPage({ actions, setPage, language, t }) {
@@ -276,6 +304,18 @@ function LanguageSelector({ language, onChange, t }) {
   return <div className="language-setting"><div><Globe size={22} /><span><strong>{t.settings.language}</strong><small>{t.settings.languageText}</small></span></div><div className="segmented-language" role="radiogroup" aria-label={t.settings.language}><button className={language === "en" ? "active" : ""} onClick={() => onChange("en")} role="radio" aria-checked={language === "en"}>English</button><button className={language === "ru" ? "active" : ""} onClick={() => onChange("ru")} role="radio" aria-checked={language === "ru"}>Русский</button></div></div>;
 }
 
+function IntentRuleEditor({ rules, onChange, t }) {
+  const [match, setMatch] = useState("");
+  const [intent, setIntent] = useState("work");
+  function addRule() {
+    const value = match.replace(/\s+/g, " ").trim();
+    if (!value) return;
+    onChange([...rules, { id: `${Date.now()}`, match: value, intent }]);
+    setMatch("");
+  }
+  return <div className="intent-rule-editor"><p>{t.settings.analysisText}</p><div className="intent-rule-form"><input value={match} onChange={(event) => setMatch(event.target.value)} onKeyDown={(event) => event.key === "Enter" && addRule()} placeholder={t.settings.rulePlaceholder} maxLength={120} /><select value={intent} onChange={(event) => setIntent(event.target.value)} aria-label={t.settings.rulePurpose}>{Object.entries(t.intent.labels).filter(([key]) => key !== "unknown" && key !== "mixed").map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select><button onClick={addRule} disabled={!match.trim()}><Plus size={17} /> {t.common.add}</button></div>{rules.length ? <div className="intent-rule-list">{rules.map((rule) => <div key={rule.id}><span><strong>{rule.match}</strong><small>{t.intent.labels[rule.intent] || t.intent.unknown}</small></span><button onClick={() => onChange(rules.filter((item) => item.id !== rule.id))} title={t.settings.removeRule}><X size={17} /></button></div>)}</div> : <div className="rule-empty">{t.settings.ruleEmpty}</div>}</div>;
+}
+
 function SettingSwitch({ checked, disabled, label, onChange }) {
   return <button type="button" role="switch" aria-checked={checked} aria-label={label} disabled={disabled} className={`setting-switch ${checked ? "on" : ""}`} onClick={() => onChange(!checked)}><span /></button>;
 }
@@ -287,7 +327,7 @@ function SettingsPage({ state, actions, isDesktop, language, t }) {
   const runtime = state.runtime || {};
   const statusLabel = t.settings.statuses[runtime.trackerStatus] || t.settings.statuses.stopped;
   const setting = (key, title, description) => <div className="setting-row" key={key}><div><strong>{title}</strong><span>{description}</span></div><SettingSwitch checked={Boolean(state.settings[key])} disabled={Boolean(pending) || !state.settings.trackingEnabled} label={title} onChange={(enabled) => run(key, () => actions.setSetting(key, enabled))} /></div>;
-  return <div className="subpage narrow-page"><div className="subpage-heading"><Gear size={29} /><div><h2>{t.settings.title}</h2><p>{t.settings.subtitle}</p></div></div><div className={`runtime-card ${runtime.trackerStatus || "stopped"}`}><span className="status-dot on" /><div><strong>{statusLabel}</strong><small>{t.settings.runtimeText}</small></div>{runtime.platform && <em>{runtime.platform === "darwin" ? "macOS" : runtime.platform === "win32" ? "Windows" : runtime.platform}</em>}</div>{runtime.platform === "darwin" && !runtime.accessibilityTrusted && <div className="permission-card"><ShieldCheck size={22} /><div><strong>{t.settings.accessibility}</strong><span>{t.settings.accessibilityText}</span></div><button onClick={() => run("accessibility", actions.requestAccessibility)} disabled={Boolean(pending)}>{t.settings.grantAccess}</button></div>}<div className="settings-section"><h3>{t.settings.language}</h3><LanguageSelector language={language} onChange={actions.setLanguage} t={t} /></div><div className="settings-section"><h3>{t.settings.activity}</h3><div className="setting-row"><div><strong>{t.settings.record}</strong><span>{t.settings.recordText}</span></div><SettingSwitch checked={state.settings.trackingEnabled} disabled={Boolean(pending)} label={t.settings.record} onChange={(enabled) => run("tracking", () => actions.setTracking(enabled))} /></div>{setting("collectWindowTitles", t.settings.titles, t.settings.titlesText)}{setting("collectInputCounts", t.settings.inputs, t.settings.inputsText)}{setting("collectBrowserTabCount", t.settings.tabs, t.settings.tabsText)}<div className="setting-row"><div><strong>{t.settings.private}</strong><span>{state.settings.excludePrivateWindows ? t.settings.privateText : t.settings.privateWarning}</span></div><SettingSwitch checked={state.settings.excludePrivateWindows} disabled={Boolean(pending) || !state.settings.trackingEnabled} label={t.settings.private} onChange={(enabled) => run("private", () => actions.setSetting("excludePrivateWindows", enabled))} /></div></div><div className="settings-section"><h3>{t.settings.system}</h3><div className="setting-row"><div><strong>{t.settings.autostart}</strong><span>{runtime.autoStartSupported ? t.settings.autostartText : t.settings.autostartUnavailable}</span></div><SettingSwitch checked={Boolean(runtime.autoStartEnabled)} disabled={Boolean(pending) || !runtime.autoStartSupported} label={t.settings.autostart} onChange={(enabled) => run("autostart", () => actions.setAutoStart(enabled))} /></div></div><div className="settings-section"><h3>{t.settings.data}</h3><div className="data-facts"><div><Database size={21} /><span><strong>{text(t.settings.events, { count: state.eventCount })}</strong><small>{text(t.settings.autoDelete, { hours: state.settings.retentionHours })}</small></span></div><div><FolderOpen size={21} /><span><strong>{t.settings.deviceOnly}</strong><small>{state.dataPath}</small></span></div></div>{isDesktop && <button className="secondary-button" onClick={actions.revealData}><FolderOpen size={18} /> {t.settings.openData}</button>}</div><div className="danger-zone"><h3>{t.settings.clear}</h3><p>{t.settings.clearText}</p>{confirming ? <div className="confirm-row"><button onClick={() => { actions.deleteAll(); setConfirming(false); }}><Trash size={18} /> {t.settings.deleteAll}</button><button className="cancel" onClick={() => setConfirming(false)}>{t.common.cancel}</button></div> : <button onClick={() => setConfirming(true)}><Trash size={18} /> {t.settings.clearJournal}</button>}</div></div>;
+  return <div className="subpage narrow-page"><div className="subpage-heading"><Gear size={29} /><div><h2>{t.settings.title}</h2><p>{t.settings.subtitle}</p></div></div><div className={`runtime-card ${runtime.trackerStatus || "stopped"}`}><span className="status-dot on" /><div><strong>{statusLabel}</strong><small>{t.settings.runtimeText}</small></div>{runtime.platform && <em>{runtime.platform === "darwin" ? "macOS" : runtime.platform === "win32" ? "Windows" : runtime.platform}</em>}</div>{runtime.platform === "darwin" && !runtime.accessibilityTrusted && <div className="permission-card"><ShieldCheck size={22} /><div><strong>{t.settings.accessibility}</strong><span>{t.settings.accessibilityText}</span></div><button onClick={() => run("accessibility", actions.requestAccessibility)} disabled={Boolean(pending)}>{t.settings.grantAccess}</button></div>}<div className="settings-section"><h3>{t.settings.language}</h3><LanguageSelector language={language} onChange={actions.setLanguage} t={t} /></div><div className="settings-section"><h3>{t.settings.activity}</h3><div className="setting-row"><div><strong>{t.settings.record}</strong><span>{t.settings.recordText}</span></div><SettingSwitch checked={state.settings.trackingEnabled} disabled={Boolean(pending)} label={t.settings.record} onChange={(enabled) => run("tracking", () => actions.setTracking(enabled))} /></div>{setting("collectWindowTitles", t.settings.titles, t.settings.titlesText)}{setting("collectInputCounts", t.settings.inputs, t.settings.inputsText)}{setting("collectBrowserTabCount", t.settings.tabs, t.settings.tabsText)}<div className="setting-row"><div><strong>{t.settings.private}</strong><span>{state.settings.excludePrivateWindows ? t.settings.privateText : t.settings.privateWarning}</span></div><SettingSwitch checked={state.settings.excludePrivateWindows} disabled={Boolean(pending) || !state.settings.trackingEnabled} label={t.settings.private} onChange={(enabled) => run("private", () => actions.setSetting("excludePrivateWindows", enabled))} /></div></div><div className="settings-section"><h3>{t.settings.analysis}</h3><IntentRuleEditor rules={state.settings.intentRules || []} onChange={actions.setIntentRules} t={t} /></div><div className="settings-section"><h3>{t.settings.system}</h3><div className="setting-row"><div><strong>{t.settings.autostart}</strong><span>{runtime.autoStartSupported ? t.settings.autostartText : t.settings.autostartUnavailable}</span></div><SettingSwitch checked={Boolean(runtime.autoStartEnabled)} disabled={Boolean(pending) || !runtime.autoStartSupported} label={t.settings.autostart} onChange={(enabled) => run("autostart", () => actions.setAutoStart(enabled))} /></div></div><div className="settings-section"><h3>{t.settings.data}</h3><div className="data-facts"><div><Database size={21} /><span><strong>{text(t.settings.events, { count: state.eventCount })}</strong><small>{text(t.settings.autoDelete, { hours: state.settings.retentionHours })}</small></span></div><div><FolderOpen size={21} /><span><strong>{t.settings.deviceOnly}</strong><small>{state.dataPath}</small></span></div></div>{isDesktop && <button className="secondary-button" onClick={actions.revealData}><FolderOpen size={18} /> {t.settings.openData}</button>}</div><div className="danger-zone"><h3>{t.settings.clear}</h3><p>{t.settings.clearText}</p>{confirming ? <div className="confirm-row"><button onClick={() => { actions.deleteAll(); setConfirming(false); }}><Trash size={18} /> {t.settings.deleteAll}</button><button className="cancel" onClick={() => setConfirming(false)}>{t.common.cancel}</button></div> : <button onClick={() => setConfirming(true)}><Trash size={18} /> {t.settings.clearJournal}</button>}</div></div>;
 }
 
 export function App() {

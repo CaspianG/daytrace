@@ -1,4 +1,5 @@
 const { normalizeLanguage, sessionize } = require("./sessionizer.cjs");
+const { labelForIntent } = require("./intent-classifier.cjs");
 
 const APP_ALIASES = [
   { key: "telegram", names: ["Telegram"], pattern: /telegram|телеграм/i },
@@ -65,6 +66,13 @@ function questionWindow(question, now = new Date(), language = "ru") {
 function interpretQuestion(question, now = new Date(), language = "ru") {
   const text = String(question || "").toLowerCase();
   const requestedApp = APP_ALIASES.find((item) => item.pattern.test(text)) || null;
+  const intentRequests = [
+    { key: "learning", pattern: /(?:сколько|как долго|когда|чем|что).*(?:учил|учился|изучал|обучал)|(?:how (?:much|long)|when|what).*(?:learn|stud|course)/i },
+    { key: "entertainment", pattern: /(?:сколько|как долго|когда|чем|что).*(?:развлек|играл|смотрел|отдыхал)|(?:how (?:much|long)|when|what).*(?:entertain|gaming|played|watched|leisure)/i },
+    { key: "personal", pattern: /(?:сколько|как долго|когда|чем|что).*(?:личн|своими делами)|(?:how (?:much|long)|when|what).*(?:personal|private errands)/i },
+    { key: "work", pattern: /(?:сколько|как долго|когда|над чем|чем).*(?:работал|работа)|(?:how (?:much|long)|when|what).*(?:work(?:ed|ing)? on|work time)/i },
+  ];
+  const requestedIntent = intentRequests.find((item) => item.pattern.test(text))?.key || null;
   let intent = "summary";
   if (/вклад|tabs?/.test(text)) intent = "tabs";
   else if (/переключ|switch/.test(text)) intent = "switches";
@@ -73,7 +81,7 @@ function interpretQuestion(question, now = new Date(), language = "ru") {
   else if (/с чего начал|начал|start(?:ed)? with/.test(text)) intent = "start";
   else if (/сколько времени|как долго|how long|duration/.test(text)) intent = "duration";
   else if (requestedApp) intent = "app";
-  return { intent, requestedApp, window: questionWindow(question, now, language) };
+  return { intent, requestedApp, requestedIntent, window: questionWindow(question, now, language) };
 }
 
 function activityDuration(activity) {
@@ -99,13 +107,14 @@ function interpretationText(parsed, language) {
     ? { summary: "сводка", tabs: "вкладки", switches: "переключения", top: "главная активность", latest: "последняя активность", start: "начало дня", duration: "длительность", app: "приложение" }
     : { summary: "summary", tabs: "tabs", switches: "switches", top: "top activity", latest: "latest activity", start: "start of day", duration: "duration", app: "application" };
   const app = parsed.requestedApp ? ` · ${parsed.requestedApp.names[0]}` : "";
-  return `${intents[parsed.intent]}${app} · ${parsed.window.label}`;
+  const purpose = parsed.requestedIntent ? ` · ${labelForIntent(parsed.requestedIntent, lang)}` : "";
+  return `${intents[parsed.intent]}${app}${purpose} · ${parsed.window.label}`;
 }
 
-function answerQuestion(question, events, now = new Date(), language = "ru") {
+function answerQuestion(question, events, now = new Date(), language = "ru", intentRules = []) {
   const lang = normalizeLanguage(language);
   const parsed = interpretQuestion(question, now, lang);
-  const sessions = sessionize(events, now.getTime(), lang);
+  const sessions = sessionize(events, now.getTime(), lang, intentRules);
   const relevant = sessions.filter((item) => item.end >= parsed.window.start && item.start <= parsed.window.end);
   const interpretation = interpretationText(parsed, lang);
   if (!relevant.length) {
@@ -115,14 +124,16 @@ function answerQuestion(question, events, now = new Date(), language = "ru") {
     };
   }
 
-  let activities = relevant.flatMap((session) => session.activities).filter((item) => item.end >= parsed.window.start && item.start <= parsed.window.end);
+  const allActivities = relevant.flatMap((session) => session.activities).filter((item) => item.end >= parsed.window.start && item.start <= parsed.window.end);
+  let activities = allActivities;
   if (parsed.requestedApp) activities = activities.filter((item) => parsed.requestedApp.pattern.test(`${item.app} ${item.title || ""}`));
+  if (parsed.requestedIntent) activities = activities.filter((item) => item.intent === parsed.requestedIntent);
   const appTotals = new Map();
-  for (const activity of relevant.flatMap((session) => session.activities)) appTotals.set(activity.app, (appTotals.get(activity.app) || 0) + activityDuration(activity));
+  for (const activity of activities) appTotals.set(activity.app, (appTotals.get(activity.app) || 0) + activityDuration(activity));
   const topApps = [...appTotals.entries()].sort((a, b) => b[1] - a[1]);
   const totals = new Map();
-  for (const activity of relevant.flatMap((session) => session.activities)) {
-    const label = activity.focusLabel || (lang === "ru" ? "Другая активность" : "Other activity");
+  for (const activity of activities) {
+    const label = activity.intentLabel || (lang === "ru" ? "Цель не определена" : "Unknown purpose");
     totals.set(label, (totals.get(label) || 0) + activityDuration(activity));
   }
   const points = [...totals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([label, ms]) => ({ label, duration: durationText(ms, lang) }));
@@ -130,8 +141,9 @@ function answerQuestion(question, events, now = new Date(), language = "ru") {
   const duration = activities.reduce((sum, item) => sum + activityDuration(item), 0);
   let answer;
 
-  if (parsed.requestedApp && !activities.length) {
-    answer = lang === "ru" ? `За выбранный период активность ${parsed.requestedApp.names[0]} не найдена.` : `No ${parsed.requestedApp.names[0]} activity was found in the selected period.`;
+  if ((parsed.requestedApp || parsed.requestedIntent) && !activities.length) {
+    const target = parsed.requestedApp?.names[0] || labelForIntent(parsed.requestedIntent, lang).toLowerCase();
+    answer = lang === "ru" ? `За выбранный период подтверждённая активность «${target}» не найдена. Неоднозначные записи остаются в категории «цель не определена», а не подгоняются под ответ.` : `No confirmed “${target}” activity was found in the selected period. Ambiguous records remain “unknown purpose” instead of being forced into the answer.`;
   } else if (parsed.intent === "tabs") {
     const maxTabs = Math.max(0, ...activities.map((item) => Number(item.tabCount || 0)));
     answer = lang === "ru" ? `В браузере было ${durationText(duration, lang)} активности. Максимально наблюдалось ${maxTabs || "неизвестное число"} вкладок${titles.length ? `; видимые контексты: ${titles.join(", ")}` : ""}.` : `Browser activity totalled ${durationText(duration, lang)}. Up to ${maxTabs || "an unknown number of"} tabs were observed${titles.length ? `; visible contexts: ${titles.join(", ")}` : ""}.`;
@@ -139,7 +151,7 @@ function answerQuestion(question, events, now = new Date(), language = "ru") {
     const transitions = meaningfulTransitions(relevant.flatMap((session) => session.activities));
     answer = lang === "ru" ? `За выбранный период было ${transitions} осмысленных переключений между приложениями или типами работы. Чаще всего использовались ${topApps.slice(0, 3).map(([app]) => app).join(", ")}.` : `${transitions} meaningful switches between applications or work contexts were observed. The most-used apps were ${topApps.slice(0, 3).map(([app]) => app).join(", ")}.`;
   } else if (parsed.intent === "top" && topApps.length) {
-    answer = lang === "ru" ? `Больше всего времени заняло приложение ${topApps[0][0]}: ${durationText(topApps[0][1], lang)}. Главный тип активности — ${points[0].label.toLowerCase()} (${points[0].duration}).` : `${topApps[0][0]} took the most time: ${durationText(topApps[0][1], lang)}. The leading activity was ${points[0].label.toLowerCase()} (${points[0].duration}).`;
+    answer = lang === "ru" ? `Больше всего времени заняло приложение ${topApps[0][0]}: ${durationText(topApps[0][1], lang)}. Главная предполагаемая цель — ${points[0].label.toLowerCase()} (${points[0].duration}).` : `${topApps[0][0]} took the most time: ${durationText(topApps[0][1], lang)}. The leading inferred purpose was ${points[0].label.toLowerCase()} (${points[0].duration}).`;
   } else if (parsed.intent === "latest") {
     const latest = [...activities].sort((a, b) => b.end - a.end)[0];
     answer = lang === "ru" ? `Последняя зафиксированная активность — ${latest.app}${latest.title ? `: ${latest.title}` : ""}.` : `The latest recorded activity was ${latest.app}${latest.title ? `: ${latest.title}` : ""}.`;
@@ -148,7 +160,13 @@ function answerQuestion(question, events, now = new Date(), language = "ru") {
     answer = lang === "ru" ? `День начался с ${first.app}${first.title ? `: ${first.title}` : ""}.` : `The day started with ${first.app}${first.title ? `: ${first.title}` : ""}.`;
   } else if (parsed.requestedApp) {
     const privacy = parsed.requestedApp.key === "telegram" ? (lang === "ru" ? " содержимое сообщений не записывается." : " message contents are never recorded.") : "";
-    answer = lang === "ru" ? `В ${parsed.requestedApp.names[0]} было ${durationText(duration, lang)} активности${titles.length ? `; контексты: ${titles.join(", ")}` : ""}.${privacy}` : `${parsed.requestedApp.names[0]} activity totalled ${durationText(duration, lang)}${titles.length ? `; contexts: ${titles.join(", ")}` : ""}.${privacy}`;
+    const purposeTotals = new Map();
+    for (const activity of activities) purposeTotals.set(activity.intentLabel, (purposeTotals.get(activity.intentLabel) || 0) + activityDuration(activity));
+    const purposes = [...purposeTotals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([label, ms]) => `${label.toLowerCase()} — ${durationText(ms, lang)}`).join(", ");
+    answer = lang === "ru" ? `В ${parsed.requestedApp.names[0]} было ${durationText(duration, lang)} активности. По доступным локальным сигналам: ${purposes}${titles.length ? `; контексты: ${titles.join(", ")}` : ""}.${privacy}` : `${parsed.requestedApp.names[0]} activity totalled ${durationText(duration, lang)}. From the available local signals: ${purposes}${titles.length ? `; contexts: ${titles.join(", ")}` : ""}.${privacy}`;
+  } else if (parsed.requestedIntent) {
+    const purpose = labelForIntent(parsed.requestedIntent, lang);
+    answer = lang === "ru" ? `${purpose}: ${durationText(duration, lang)} подтверждённой активности. Больше всего времени — ${topApps.slice(0, 3).map(([app, ms]) => `${app} (${durationText(ms, lang)})`).join(", ")}${titles.length ? `; контексты: ${titles.join(", ")}` : ""}.` : `${purpose}: ${durationText(duration, lang)} of confirmed activity. Most time was spent in ${topApps.slice(0, 3).map(([app, ms]) => `${app} (${durationText(ms, lang)})`).join(", ")}${titles.length ? `; contexts: ${titles.join(", ")}` : ""}.`;
   } else {
     const labels = points.map((item) => item.label.toLowerCase());
     const phrase = labels.length > 1 ? `${labels.slice(0, -1).join(", ")} ${lang === "ru" ? "и" : "and"} ${labels.at(-1)}` : labels[0];
@@ -156,18 +174,21 @@ function answerQuestion(question, events, now = new Date(), language = "ru") {
   }
 
   return {
-    answer, points, interpretation, intent: parsed.intent, confidence: activities.length >= 3 ? "high" : "medium",
-    sources: [...relevant].sort((a, b) => b.end - a.end).slice(0, 6).map((session) => ({ id: session.id, label: session.label, start: session.start, end: session.end, duration: durationText(session.durationMs, lang), apps: [...new Set(session.activities.map((item) => item.app))] })),
+    answer, points, interpretation, intent: parsed.intent, confidence: !activities.length ? "low" : activities.length >= 3 ? "high" : "medium",
+    sources: [...relevant].sort((a, b) => b.end - a.end).filter((session) => session.activities.some((activity) => activities.includes(activity))).slice(0, 6).map((session) => {
+      const matched = session.activities.filter((activity) => activities.includes(activity));
+      return { id: session.id, label: parsed.requestedIntent ? labelForIntent(parsed.requestedIntent, lang) : session.intentLabel || session.label, start: Math.min(...matched.map((item) => item.start)), end: Math.max(...matched.map((item) => item.end)), duration: durationText(matched.reduce((sum, item) => sum + activityDuration(item), 0), lang), apps: [...new Set(matched.map((item) => item.app))] };
+    }),
   };
 }
 
-function suggestSkills(events, now = new Date(), language = "ru") {
+function suggestSkills(events, now = new Date(), language = "ru", intentRules = []) {
   const lang = normalizeLanguage(language);
   const groups = new Map();
-  for (const session of sessionize(events, now.getTime(), lang)) {
+  for (const session of sessionize(events, now.getTime(), lang, intentRules)) {
     const apps = [...new Set(session.activities.map((item) => item.app))].slice(0, 4);
-    const key = `${session.focus}:${apps.join(">").toLowerCase()}`;
-    const item = groups.get(key) || { key, focus: session.focus, label: session.label, apps, count: 0, durationMs: 0 };
+    const key = `${session.intent}:${session.focus}:${apps.join(">").toLowerCase()}`;
+    const item = groups.get(key) || { key, focus: session.focus, label: `${session.intentLabel}: ${session.label}`, apps, count: 0, durationMs: 0 };
     item.count += 1; item.durationMs += session.durationMs; groups.set(key, item);
   }
   return [...groups.values()].filter((item) => item.count >= 2 || item.durationMs >= 45 * 60_000).sort((a, b) => b.durationMs - a.durationMs).slice(0, 6).map((item) => ({

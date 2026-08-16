@@ -115,6 +115,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid #748e6c; outline-
 .activity span { overflow: hidden; color: #8b8881; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .activity-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 3px; }
 .activity-meta small { display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px; border-radius: 999px; color: #74806f; background: #f0f3ed; font-size: 9px; }
+.activity-meta .intent-badge { color: #536b4e; background: #e7eee3; font-weight: 700; }
+.activity-meta .intent-badge.low { color: #806f59; background: #f4eee4; }
+.activity-meta label.intent-badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 4px 2px 6px; border-radius: 999px; font-size: 9px; }
+.intent-badge select { max-width: 145px; padding: 1px 15px 1px 1px; border: 0; color: inherit; background: transparent; cursor: pointer; font: inherit; font-weight: 700; outline: 0; }
 .generic-app-icon { display: grid; place-items: center; border-radius: 7px; color: white; background: #8a9384; font-size: 13px; font-weight: 700; }
 
 .summary-panel { position: sticky; top: 20px; grid-column: 2; grid-row: 1 / span 2; align-self: start; min-height: min(870px, calc(100vh - 90px)); padding: 26px 20px 22px; border: 1px solid #e1ddd5; border-radius: 11px; background: #fffefa; overflow: hidden; }
@@ -173,6 +177,20 @@ button:focus-visible, input:focus-visible { outline: 2px solid #748e6c; outline-
 .privacy-banner span { color: #748071; font-size: 12px; }
 .settings-section { margin-top: 14px; padding: 23px; border: 1px solid var(--line); border-radius: 11px; background: var(--white); }
 .settings-section h3, .danger-zone h3 { margin: 0 0 17px; font-family: "Source Serif 4", Georgia, serif; font-size: 18px; }
+.intent-rule-editor > p { margin: -5px 0 16px; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.intent-rule-form { display: grid; grid-template-columns: minmax(0, 1fr) 160px auto; gap: 8px; }
+.intent-rule-form input, .intent-rule-form select { min-height: 41px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: #fff; outline: 0; }
+.intent-rule-form input:focus, .intent-rule-form select:focus { border-color: #91a48c; box-shadow: 0 0 0 3px rgba(113, 143, 105, .1); }
+.intent-rule-form button { display: flex; align-items: center; gap: 6px; min-height: 41px; padding: 0 13px; border: 1px solid #bfc9b9; border-radius: 8px; color: #526e4d; background: #fbfdf9; cursor: pointer; font-size: 12px; font-weight: 700; }
+.intent-rule-form button:disabled { cursor: default; opacity: .45; }
+.intent-rule-list { display: grid; gap: 1px; margin-top: 13px; border: 1px solid #e4e0d8; border-radius: 8px; overflow: hidden; }
+.intent-rule-list > div { display: flex; min-height: 48px; align-items: center; justify-content: space-between; padding: 7px 10px 7px 13px; background: #fbfaf7; }
+.intent-rule-list > div + div { border-top: 1px solid #e4e0d8; }
+.intent-rule-list span { display: grid; gap: 2px; }
+.intent-rule-list small, .rule-empty { color: var(--muted); font-size: 11px; }
+.intent-rule-list button { display: grid; width: 29px; height: 29px; place-items: center; border: 0; border-radius: 7px; color: #8a817b; background: transparent; cursor: pointer; }
+.intent-rule-list button:hover { color: var(--clay-dark); background: #f7e8e3; }
+.rule-empty { margin-top: 13px; padding: 12px; border: 1px dashed #d7d2c9; border-radius: 8px; line-height: 1.45; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 30px; min-height: 65px; border-top: 1px solid #ebe7df; }
 .setting-row:first-of-type { border-top: 0; }
 .setting-row > div, .data-facts span { display: grid; gap: 4px; }
@@ -294,4 +312,5 @@ button:focus-visible, input:focus-visible { outline: 2px solid #748e6c; outline-
   .onboarding-card { padding: 32px 23px 28px; }
   .onboarding-card h1 { font-size: 32px; }
   .language-grid { grid-template-columns: 1fr; }
+  .intent-rule-form { grid-template-columns: 1fr; }
 }

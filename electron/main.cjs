@@ -170,6 +170,7 @@ function registerIpc() {
   });
   ipcMain.handle("daytrace:request-accessibility", () => { if (process.platform === "darwin") accessibilityTrusted(true); setTimeout(() => { startTracker(); sendState(); }, 800).unref(); return state(); });
   ipcMain.handle("daytrace:set-exclusions", (_event, apps) => { store.updateSettings({ excludedApps: Array.isArray(apps) ? apps.map(String).map((item) => item.trim()).filter(Boolean).slice(0, 100) : [] }); return state(); });
+  ipcMain.handle("daytrace:set-intent-rules", (_event, rules) => { store.updateSettings({ intentRules: Array.isArray(rules) ? rules : [] }); return state(); });
   ipcMain.handle("daytrace:set-language", (_event, language) => { store.updateSettings({ language: String(language || "").toLowerCase().startsWith("ru") ? "ru" : "en" }); if (tray) tray.setToolTip(mainText().tooltip); updateTrayMenu(); return state(); });
   ipcMain.handle("daytrace:complete-onboarding", (_event, language) => { store.updateSettings({ language: String(language || "").toLowerCase().startsWith("ru") ? "ru" : "en", onboardingComplete: true }); updateTrayMenu(); return state(); });
   ipcMain.handle("daytrace:delete-all", () => { store.deleteAll(); return state(); });

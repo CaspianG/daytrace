@@ -2,6 +2,26 @@
 
 All notable changes to Daytrace are documented here.
 
+## [0.4.0] - 2026-08-16
+
+### Added
+
+- Independent purpose classification for work, learning, personal activity, entertainment, and genuinely unknown time; application type is no longer treated as purpose.
+- Per-activity confidence, evidence, and purpose breakdowns for sessions and day-overview charts.
+- One-click purpose corrections in the timeline and reusable local substring rules for chats, page titles, projects, and keywords.
+- Purpose-aware local questions such as “How long did I study?” and purpose-specific splits for Telegram, browsers, and other applications.
+
+### Accuracy and privacy
+
+- Browsers, messengers, editors, office tools, design tools, and AI assistants stay unknown without title, sequence, or user-rule evidence.
+- Conflicting title signals are not forced into a category; short ambiguous transitions inherit surrounding context only when both sides agree, and remain low-confidence.
+- Corrections are sanitized, capped, stored in local settings, and applied to timelines, summaries, answers, and workflow suggestions without reading message bodies or page contents.
+
+### Verification
+
+- Added classifier, persistence, localization, conservative-fallback, sequence-context, and purpose-aware Q&A tests.
+- Verified the packaged Windows build at 0.039% total CPU over 30 seconds, 199 MiB combined background working set without a renderer process, and 1.14 seconds to a validated non-empty window on the test machine.
+
 ## [0.3.1] - 2026-08-16
 
 ### Fixed

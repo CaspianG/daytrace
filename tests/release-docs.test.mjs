@@ -25,7 +25,7 @@ test("both READMEs document Windows, macOS, and measured system load", () => {
   for (const document of [readme, readmeRu]) {
     assert.match(document, /Windows/);
     assert.match(document, /macOS/);
-    assert.match(document, /0[,.]04%/);
-    assert.match(document, /188 (?:MiB|МиБ)/);
+    assert.match(document, /0[,.]039%/);
+    assert.match(document, /199 (?:MiB|МиБ)/);
   }
 });

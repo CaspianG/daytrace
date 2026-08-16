@@ -48,3 +48,21 @@ test("collection switches and private-window setting are enforced before disk wr
   assert.equal(event.tabCount, 0);
   assert.equal(store.settings.excludePrivateWindows, false);
 });
+
+test("intent rules are sanitized, persisted, and applied to local sessions", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "daytrace-intent-rules-test-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const store = new storeModule.EventStore(root);
+  store.updateSettings({ intentRules: [
+    { id: "friends<script>", match: "  Friends   chat  ", intent: "personal" },
+    { id: "bad", match: "ignored", intent: "invalid" },
+  ] });
+  assert.deepEqual(store.settings.intentRules, [{ id: "friendsscript", match: "Friends chat", intent: "personal" }]);
+  const startedAt = Date.now() - 5_000;
+  store.append({ at: new Date(startedAt).toISOString(), kind: "foreground", app: "Telegram Desktop", title: "Friends chat", context: "messaging" });
+  store.append({ at: new Date(startedAt + 2_000).toISOString(), kind: "heartbeat", app: "Telegram Desktop", title: "Friends chat", context: "messaging" });
+
+  const reopened = new storeModule.EventStore(root);
+  assert.equal(reopened.settings.intentRules[0].intent, "personal");
+  assert.equal(reopened.state().sessions[0].activities[0].intent, "personal");
+});

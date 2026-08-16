@@ -10,7 +10,7 @@ import { formatDuration, normalizeLanguage, translations } from "../src/i18n.js"
 
 const base = new Date("2026-08-15T09:00:00+03:00").getTime();
 const events = [
-  { at: new Date(base).toISOString(), kind: "foreground", app: "Visual Studio Code", title: "Daytrace - App.jsx" },
+  { at: new Date(base).toISOString(), kind: "foreground", app: "Visual Studio Code", title: "Daytrace project - App.jsx" },
   { at: new Date(base + 20 * 60_000).toISOString(), kind: "input", app: "Visual Studio Code", count: 12 },
   { at: new Date(base + 30 * 60_000).toISOString(), kind: "foreground", app: "Google Chrome", title: "Electron documentation" },
   { at: new Date(base + 50 * 60_000).toISOString(), kind: "click", app: "Google Chrome", count: 3 },
@@ -39,9 +39,9 @@ test("sessions and local answers are fully localized", () => {
   const now = new Date("2026-08-15T11:00:00+03:00");
   const english = answers.answerQuestion("What was I working on this morning?", events, now, "en");
   const russian = answers.answerQuestion("Над чем я работал утром?", events, now, "ru");
-  assert.match(english.answer, /During the selected period/);
+  assert.match(english.answer, /^Work:/);
   assert.doesNotMatch(english.answer, /[А-Яа-яЁё]/);
-  assert.match(russian.answer, /В выбранный период/);
+  assert.match(russian.answer, /^Работа:/);
   assert.match(russian.answer, /[А-Яа-яЁё]/);
   assert.equal(english.points[0].duration.includes("min") || english.points[0].duration.includes("h"), true);
   assert.equal(russian.points[0].duration.includes("мин") || russian.points[0].duration.includes("ч"), true);
@@ -74,6 +74,24 @@ test("local answers use browser and Telegram context without message content", (
   assert.match(telegram.answer, /содержимое сообщений не записывается/);
 });
 
+test("local answers filter work, learning, and entertainment by inferred purpose", () => {
+  const purposeEvents = [
+    { at: new Date(base).toISOString(), kind: "foreground", app: "Telegram Desktop", title: "Project Atlas — client meeting", context: "messaging" },
+    { at: new Date(base + 10 * 60_000).toISOString(), kind: "foreground", app: "Google Chrome", title: "React documentation tutorial", context: "browser" },
+    { at: new Date(base + 20 * 60_000).toISOString(), kind: "foreground", app: "Google Chrome", title: "Netflix — series episode", context: "browser" },
+  ];
+  const now = new Date(base + 30 * 60_000);
+  const work = answers.answerQuestion("Сколько времени я работал?", purposeEvents, now, "ru");
+  const learning = answers.answerQuestion("How long did I study?", purposeEvents, now, "en");
+  const entertainment = answers.answerQuestion("Сколько я развлекался?", purposeEvents, now, "ru");
+  assert.match(work.answer, /^Работа:/);
+  assert.deepEqual(work.points.map((point) => point.label), ["Работа"]);
+  assert.match(learning.answer, /^Learning:/);
+  assert.deepEqual(learning.points.map((point) => point.label), ["Learning"]);
+  assert.match(entertainment.answer, /^Развлечения:/);
+  assert.deepEqual(entertainment.points.map((point) => point.label), ["Развлечения"]);
+});
+
 test("local question parser handles combined dates, explicit times and meaningful switches", () => {
   const now = new Date("2026-08-15T18:00:00+03:00");
   const yesterdayMorning = answers.interpretQuestion("What did I do yesterday morning?", now, "en");
@@ -98,11 +116,15 @@ test("English and Russian READMEs use only their matching localized visuals", ()
   assert.match(englishReadme, /daytrace-cover-en\.png/);
   assert.match(englishReadme, /timeline-en\.png/);
   assert.match(englishReadme, /settings-en\.png/);
+  assert.match(englishReadme, /purpose-en\.png/);
+  assert.match(englishReadme, /rules-en\.png/);
   assert.doesNotMatch(englishReadme, /(?:daytrace-cover|timeline)-ru\.png/);
 
   assert.match(russianReadme, /daytrace-cover-ru\.png/);
   assert.match(russianReadme, /timeline-ru\.png/);
   assert.match(russianReadme, /settings-ru\.png/);
+  assert.match(russianReadme, /purpose-ru\.png/);
+  assert.match(russianReadme, /rules-ru\.png/);
   assert.doesNotMatch(russianReadme, /(?:daytrace-cover|timeline)-en\.png/);
 
   for (const relativePath of [
@@ -112,6 +134,10 @@ test("English and Russian READMEs use only their matching localized visuals", ()
     "docs/assets/screenshots/timeline-ru.png",
     "docs/assets/screenshots/settings-en.png",
     "docs/assets/screenshots/settings-ru.png",
+    "docs/assets/screenshots/purpose-en.png",
+    "docs/assets/screenshots/purpose-ru.png",
+    "docs/assets/screenshots/rules-en.png",
+    "docs/assets/screenshots/rules-ru.png",
   ]) {
     assert.equal(fs.existsSync(path.join(root, relativePath)), true, `${relativePath} must exist`);
   }
