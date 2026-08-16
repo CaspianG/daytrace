@@ -58,6 +58,8 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with: { path: release, merge-multiple: true }
+      - name: Publish SHA-256 manifest for verified in-app updates
+        run: cd release && sha256sum Daytrace-* > SHA256SUMS.txt
       - uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true

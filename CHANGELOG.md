@@ -2,6 +2,17 @@
 
 All notable changes to Daytrace are documented here.
 
+## [0.4.2] - 2026-08-16
+
+### Fixed
+
+- Update checks now fall back to the public GitHub Releases feed when the unauthenticated API rate limit is exhausted, instead of leaving Settings in an error state.
+- The fallback remains fail-closed: it accepts only the official repository tag, exact platform filename, and matching entry in the release's `SHA256SUMS.txt` manifest.
+
+### Release integrity
+
+- Release automation now publishes `SHA256SUMS.txt` alongside every Windows and macOS artifact for token-free verified updates.
+
 ## [0.4.1] - 2026-08-16
 
 ### Added

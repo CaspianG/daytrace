@@ -16,10 +16,10 @@
   · <a href="SECURITY.md">Security</a>
 </p>
 
-<p align="center"><strong>Current release: v0.4.1</strong> — Windows and macOS artifacts are built from the same tag and published together.</p>
+<p align="center"><strong>Current release: v0.4.2</strong> — Windows and macOS artifacts are built from the same tag and published together.</p>
 
 <p align="center">
-  <img alt="Current version v0.4.1" src="https://img.shields.io/badge/current-v0.4.1-6f8f67?style=flat-square">
+  <img alt="Current version v0.4.2" src="https://img.shields.io/badge/current-v0.4.2-6f8f67?style=flat-square">
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-6f8f67?style=flat-square">
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-c5684b?style=flat-square">
   <img alt="macOS 12 or newer" src="https://img.shields.io/badge/macOS-12%2B-c5684b?style=flat-square">
@@ -117,7 +117,7 @@ Daytrace is intentionally less invasive than screenshot-based activity recorders
 
 Window titles can contain document names, page titles, or conversation names. They stay local, but you should exclude sensitive applications. Private-browser detection is title-based because browsers do not expose one universal private-mode signal; treat exclusions as the stronger control.
 
-The updater is the only built-in network path. It requests `api.github.com/repos/CaspianG/daytrace/releases/latest` with `Daytrace/<installed version>` in the user agent. No journal events, titles, questions, rules, or settings are transmitted. Daytrace accepts only the exact expected artifact from the official repository and verifies its GitHub-published SHA-256 digest before opening it.
+The updater is the only built-in network path. It normally requests `api.github.com/repos/CaspianG/daytrace/releases/latest` with `Daytrace/<installed version>` in the user agent. If that unauthenticated endpoint is rate-limited, it falls back to the public Releases feed and `SHA256SUMS.txt`. No journal events, titles, questions, rules, or settings are transmitted. Daytrace accepts only the exact expected artifact from the official repository and verifies its published SHA-256 digest before opening it.
 
 Default data location:
 

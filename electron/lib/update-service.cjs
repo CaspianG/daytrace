@@ -32,6 +32,36 @@ function isGitHubUrl(value, pathPrefix = "/") {
   }
 }
 
+function releaseVersionFromUrl(value) {
+  try {
+    const parsed = new URL(String(value || ""));
+    if (parsed.protocol !== "https:" || parsed.hostname !== "github.com") return null;
+    const match = parsed.pathname.match(/^\/CaspianG\/daytrace\/releases\/tag\/v?(\d+\.\d+\.\d+)\/?$/i);
+    return match && versionParts(match[1]) ? match[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeChecksumRelease(releaseUrl, checksums, platform, currentVersion) {
+  const version = releaseVersionFromUrl(releaseUrl);
+  const name = version && expectedAssetName(version, platform);
+  if (!version || !name) return null;
+  const digest = String(checksums || "").split(/\r?\n/).map((line) => line.match(/^([a-f0-9]{64})\s+\*?(.+)$/i)).find((match) => match?.[2] === name)?.[1]?.toLowerCase();
+  if (!digest) return null;
+  return {
+    version,
+    available: compareVersions(version, currentVersion) > 0,
+    releaseUrl: `https://github.com/CaspianG/daytrace/releases/tag/v${version}`,
+    asset: {
+      name,
+      downloadUrl: `https://github.com/CaspianG/daytrace/releases/download/v${version}/${name}`,
+      digest,
+      size: 0,
+    },
+  };
+}
+
 function normalizeRelease(payload, platform, currentVersion) {
   if (!payload || payload.draft || payload.prerelease) return null;
   const version = String(payload.tag_name || "").replace(/^v/i, "");
@@ -55,4 +85,4 @@ function normalizeRelease(payload, platform, currentVersion) {
   };
 }
 
-module.exports = { MAX_RELEASE_JSON_BYTES, MAX_UPDATE_BYTES, compareVersions, expectedAssetName, isGitHubUrl, normalizeRelease, versionParts };
+module.exports = { MAX_RELEASE_JSON_BYTES, MAX_UPDATE_BYTES, compareVersions, expectedAssetName, isGitHubUrl, normalizeChecksumRelease, normalizeRelease, releaseVersionFromUrl, versionParts };

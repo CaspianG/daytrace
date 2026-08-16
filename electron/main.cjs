@@ -7,7 +7,7 @@ const readline = require("node:readline");
 const { Readable, Transform } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 const { EventStore } = require("./lib/event-store.cjs");
-const { MAX_RELEASE_JSON_BYTES, MAX_UPDATE_BYTES, normalizeRelease } = require("./lib/update-service.cjs");
+const { MAX_RELEASE_JSON_BYTES, MAX_UPDATE_BYTES, normalizeChecksumRelease, normalizeRelease } = require("./lib/update-service.cjs");
 
 app.disableHardwareAcceleration();
 const startupLogPath = path.join(app.getPath("userData"), "startup.log");
@@ -40,6 +40,7 @@ let updateRuntime = {
 };
 
 const RELEASES_API = "https://api.github.com/repos/CaspianG/daytrace/releases/latest";
+const RELEASES_FEED = "https://github.com/CaspianG/daytrace/releases.atom";
 const UPDATE_INTERVAL_MS = 6 * 60 * 60_000;
 const OFFLINE_RETRY_MS = 30 * 60_000;
 
@@ -84,6 +85,22 @@ function setUpdateRuntime(patch) {
   sendState();
 }
 
+async function fetchFallbackRelease(controller) {
+  const feed = await net.fetch(RELEASES_FEED, { signal: controller.signal });
+  if (!feed.ok) throw new Error(`release-fallback-http-${feed.status}`);
+  const feedBody = await feed.text();
+  if (Buffer.byteLength(feedBody, "utf8") > MAX_RELEASE_JSON_BYTES) throw new Error("release-feed-too-large");
+  const releaseUrl = feedBody.match(/href="(https:\/\/github\.com\/CaspianG\/daytrace\/releases\/tag\/v?\d+\.\d+\.\d+)"/i)?.[1];
+  const version = String(releaseUrl || "").match(/\/tag\/v?(\d+\.\d+\.\d+)\/?$/i)?.[1];
+  if (!version) throw new Error("invalid-release-redirect");
+  const checksumsUrl = `https://github.com/CaspianG/daytrace/releases/download/v${version}/SHA256SUMS.txt`;
+  const checksumsResponse = await net.fetch(checksumsUrl, { signal: controller.signal });
+  if (!checksumsResponse.ok) throw new Error(`release-checksums-http-${checksumsResponse.status}`);
+  const checksums = await checksumsResponse.text();
+  if (Buffer.byteLength(checksums, "utf8") > MAX_RELEASE_JSON_BYTES) throw new Error("release-checksums-too-large");
+  return normalizeChecksumRelease(releaseUrl, checksums, process.platform, app.getVersion());
+}
+
 async function checkForUpdates() {
   if (!app.isPackaged) { setUpdateRuntime({ status: "disabled" }); return updateRuntime; }
   if (["checking", "downloading"].includes(updateRuntime.status)) return updateRuntime;
@@ -97,10 +114,16 @@ async function checkForUpdates() {
       headers: { Accept: "application/vnd.github+json", "User-Agent": `Daytrace/${app.getVersion()}` },
       signal: controller.signal,
     });
-    if (!response.ok) throw new Error(`release-check-http-${response.status}`);
-    const body = await response.text();
-    if (Buffer.byteLength(body, "utf8") > MAX_RELEASE_JSON_BYTES) throw new Error("release-metadata-too-large");
-    const release = normalizeRelease(JSON.parse(body), process.platform, app.getVersion());
+    let release;
+    if (response.status === 403 || response.status === 429) {
+      await response.body?.cancel();
+      release = await fetchFallbackRelease(controller);
+    } else {
+      if (!response.ok) throw new Error(`release-check-http-${response.status}`);
+      const body = await response.text();
+      if (Buffer.byteLength(body, "utf8") > MAX_RELEASE_JSON_BYTES) throw new Error("release-metadata-too-large");
+      release = normalizeRelease(JSON.parse(body), process.platform, app.getVersion());
+    }
     if (!release) throw new Error("invalid-release-metadata");
     availableRelease = release.available ? release : null;
     if (release.available && !release.asset) throw new Error("platform-update-asset-missing");

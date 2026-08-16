@@ -27,6 +27,6 @@ Private-mode detection is title-based and best-effort. Excluding the entire brow
 
 ## Update integrity and network boundary
 
-Installed builds check only `api.github.com/repos/CaspianG/daytrace/releases/latest`. The request contains a standard GitHub media type and a `Daytrace/<installed version>` user agent; activity journals, window titles, questions, rules, and settings are never transmitted.
+Installed builds normally check `api.github.com/repos/CaspianG/daytrace/releases/latest`. If GitHub rate-limits that anonymous endpoint, Daytrace reads the public Releases feed and that release's `SHA256SUMS.txt`. The request contains a standard GitHub media type and a `Daytrace/<installed version>` user agent; activity journals, window titles, questions, rules, and settings are never transmitted.
 
 Only stable releases and exact platform artifact names from `github.com/CaspianG/daytrace/releases/` are accepted. Before an installer is opened, its size and GitHub-published SHA-256 digest are verified. Daytrace refuses automatic installation when the digest is missing or does not match.

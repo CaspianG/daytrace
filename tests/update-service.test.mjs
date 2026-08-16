@@ -44,3 +44,13 @@ test("drafts, prereleases and non-newer releases cannot become updates", () => {
   assert.equal(current.available, false);
   assert.equal(older.available, false);
 });
+
+test("rate-limit fallback accepts only an official tag and exact checksum entry", () => {
+  const checksums = `${"c".repeat(64)}  Daytrace-Setup-0.4.2-x64.exe\n${"d".repeat(64)}  unrelated.exe\n`;
+  const release = updater.normalizeChecksumRelease("https://github.com/CaspianG/daytrace/releases/tag/v0.4.2", checksums, "win32", "0.4.1");
+  assert.equal(release.available, true);
+  assert.equal(release.asset.digest, "c".repeat(64));
+  assert.equal(release.asset.downloadUrl, "https://github.com/CaspianG/daytrace/releases/download/v0.4.2/Daytrace-Setup-0.4.2-x64.exe");
+  assert.equal(updater.normalizeChecksumRelease("https://github.com.evil.example/CaspianG/daytrace/releases/tag/v0.4.2", checksums, "win32", "0.4.1"), null);
+  assert.equal(updater.normalizeChecksumRelease("https://github.com/CaspianG/daytrace/releases/tag/v0.4.2", `${"c".repeat(64)}  other.exe`, "win32", "0.4.1"), null);
+});
