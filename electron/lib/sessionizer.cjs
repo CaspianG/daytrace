@@ -30,7 +30,7 @@ const FOCUS_LABELS = {
 };
 
 const { isSystemNoise } = require("./privacy.cjs");
-const { INTENT_LABELS, inferIntentDetails } = require("./intent-classifier.cjs");
+const { INTENT_LABELS, contextKey, inferIntentDetails } = require("./intent-classifier.cjs");
 
 function normalizeLanguage(value) {
   return String(value || "").toLowerCase().startsWith("ru") ? "ru" : "en";
@@ -79,6 +79,78 @@ function safeTitle(title, app, language = "ru") {
     .replace(/\s+\(\d{5,}\)$/, "")
     .replace(/^(telegramdesktop|google chrome|microsoft edge)$/i, "")
     .slice(0, 140);
+}
+
+function setIntent(activity, intent, confidence, reason, evidence, intentLabels) {
+  activity.intent = intent;
+  activity.intentLabel = intentLabels[intent];
+  activity.intentConfidence = confidence;
+  activity.intentReason = reason;
+  activity.intentEvidence = evidence;
+}
+
+function learnRepeatedContexts(sessions, intentLabels) {
+  const learned = new Map();
+  for (const activity of sessions.flatMap((session) => session.activities)) {
+    const key = contextKey(activity);
+    if (!key || activity.intent === "unknown") continue;
+    const item = learned.get(key) || { total: 0, intents: new Map() };
+    const duration = Math.max(1_000, activity.durationMs);
+    item.total += duration;
+    item.intents.set(activity.intent, (item.intents.get(activity.intent) || 0) + duration);
+    learned.set(key, item);
+  }
+  let changed = 0;
+  for (const activity of sessions.flatMap((session) => session.activities)) {
+    if (activity.intent !== "unknown") continue;
+    const key = contextKey(activity);
+    const item = key ? learned.get(key) : null;
+    if (!item || item.total < 30_000) continue;
+    const ranked = [...item.intents.entries()].sort((a, b) => b[1] - a[1]);
+    const [intent, duration] = ranked[0] || [];
+    if (!intent || duration / item.total < 0.75) continue;
+    setIntent(activity, intent, "medium", "repeated-context", activity.title, intentLabels);
+    changed += 1;
+  }
+  return changed;
+}
+
+function contextualizeSession(session, intentLabels) {
+  let changed = 0;
+  for (let index = 0; index < session.activities.length; index += 1) {
+    const activity = session.activities[index];
+    if (activity.intent !== "unknown") continue;
+    const previous = session.activities[index - 1];
+    const next = session.activities[index + 1];
+    const previousNear = previous && activity.start - previous.end < 3 * 60_000;
+    const nextNear = next && next.start - activity.end < 3 * 60_000;
+    const previousIntent = previousNear && previous.intent !== "unknown" ? previous.intent : null;
+    const nextIntent = nextNear && next.intent !== "unknown" ? next.intent : null;
+    if (previousIntent && nextIntent && previousIntent === nextIntent) {
+      setIntent(activity, previousIntent, "medium", "sequence-context", `${previous.app} → ${activity.app} → ${next.app}`, intentLabels);
+      changed += 1;
+    } else if (activity.durationMs <= 15 * 60_000 && (previousIntent || nextIntent) && !(previousIntent && nextIntent && previousIntent !== nextIntent)) {
+      const neighbor = previousIntent ? previous : next;
+      setIntent(activity, previousIntent || nextIntent, "low", "adjacent-context", `${neighbor.app} → ${activity.app}`, intentLabels);
+      changed += 1;
+    }
+  }
+
+  const known = session.activities.filter((activity) => activity.intent !== "unknown");
+  const totals = new Map();
+  for (const activity of known) totals.set(activity.intent, (totals.get(activity.intent) || 0) + activity.durationMs);
+  const ranked = [...totals.entries()].sort((a, b) => b[1] - a[1]);
+  const knownDuration = ranked.reduce((sum, [, duration]) => sum + duration, 0);
+  const [dominantIntent, dominantDuration] = ranked[0] || [];
+  const stableDominant = dominantIntent && knownDuration >= session.durationMs * 0.5 && dominantDuration / knownDuration >= 0.75;
+  if (stableDominant) {
+    for (const activity of session.activities) {
+      if (activity.intent !== "unknown" || activity.durationMs > 20 * 60_000) continue;
+      setIntent(activity, dominantIntent, "low", "session-context", session.label, intentLabels);
+      changed += 1;
+    }
+  }
+  return changed;
 }
 
 function sessionize(events, now = Date.now(), language = "ru", intentRules = []) {
@@ -160,11 +232,7 @@ function sessionize(events, now = Date.now(), language = "ru", intentRules = [])
     activity.focusConfidence = classification.confidence;
     activity.focusReason = classification.reason;
     const intentClassification = inferIntentDetails(activity, intentRules);
-    activity.intent = intentClassification.intent;
-    activity.intentLabel = intentLabels[intentClassification.intent];
-    activity.intentConfidence = intentClassification.confidence;
-    activity.intentReason = intentClassification.reason;
-    activity.intentEvidence = intentClassification.evidence;
+    setIntent(activity, intentClassification.intent, intentClassification.confidence, intentClassification.reason, intentClassification.evidence, intentLabels);
     const previous = sessions.at(-1);
     const gap = previous ? activity.start - previous.end : Infinity;
     if (previous && gap < 8 * 60_000 && activity.start - previous.start < 45 * 60_000) {
@@ -186,22 +254,15 @@ function sessionize(events, now = Date.now(), language = "ru", intentRules = [])
       });
     }
   }
+  // Resolve ambiguous general-purpose apps without reading their contents.
+  // Two passes let a confidently classified context teach repeated occurrences,
+  // while keeping conflicting and isolated contexts explicitly unknown.
+  for (const session of sessions) contextualizeSession(session, intentLabels);
+  learnRepeatedContexts(sessions, intentLabels);
+  for (const session of sessions) contextualizeSession(session, intentLabels);
+  learnRepeatedContexts(sessions, intentLabels);
+
   for (const session of sessions) {
-    for (let index = 0; index < session.activities.length; index += 1) {
-      const activity = session.activities[index];
-      if (activity.intent !== "unknown" || activity.durationMs > 10 * 60_000) continue;
-      const previous = session.activities[index - 1];
-      const next = session.activities[index + 1];
-      const previousNear = previous && activity.start - previous.end < 5 * 60_000;
-      const nextNear = next && next.start - activity.end < 5 * 60_000;
-      if (previousNear && nextNear && previous.intent !== "unknown" && previous.intent === next.intent) {
-        activity.intent = previous.intent;
-        activity.intentLabel = intentLabels[previous.intent];
-        activity.intentConfidence = "low";
-        activity.intentReason = "sequence-context";
-        activity.intentEvidence = `${previous.app} → ${activity.app} → ${next.app}`;
-      }
-    }
     const totals = new Map();
     const intentTotals = new Map();
     for (const activity of session.activities) totals.set(activity.focus, (totals.get(activity.focus) || 0) + activity.durationMs);

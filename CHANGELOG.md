@@ -2,6 +2,22 @@
 
 All notable changes to Daytrace are documented here.
 
+## [0.5.0] - 2026-08-16
+
+### Added
+
+- A layered on-device purpose classifier for popular video, streaming, social, shopping, learning, developer, office, creative, remote-work, and communication contexts in English and Russian.
+- Service-aware overrides that distinguish cases such as an educational YouTube lecture, YouTube Studio work, and ordinary entertainment viewing.
+- Context learning inside the local retention window: repeated active titles can reuse a strongly established purpose, while short opaque intervals can use matching surrounding or dominant-session evidence.
+- Explicit confidence reasons for recognized services, specialized applications, repeated contexts, adjacent activity, coherent sessions, conflicts, and genuinely insufficient evidence.
+- A broad automated classifier matrix covering browsers, Telegram chat titles, work tools, creative applications, learning tools, games, media, and conflicting contexts.
+
+### Accuracy and privacy
+
+- On the same 48-hour local journal used for development verification, unclassified foreground time fell from 98.7% with v0.4.2 rules to 28.4% with v0.5.0 rules. This is a diagnostic result for one machine, not a universal accuracy claim.
+- General-purpose Telegram, browser, and AI-assistant contexts are not assigned a blanket application stereotype. Opaque or conflicting contexts remain unknown unless local sequence, repetition, or a user rule supports an inference.
+- Classification still uses only the foreground app, visible active-window title, aggregate activity, and local history. Message bodies, page contents, URLs, typed text, and background-tab titles are never read or stored.
+
 ## [0.4.2] - 2026-08-16
 
 ### Fixed

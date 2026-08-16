@@ -19,25 +19,57 @@ const INTENT_LABELS = {
 
 const ALLOWED_INTENTS = new Set(["work", "learning", "personal", "entertainment", "unknown"]);
 
+// These rules use only the foreground application's name and its visible window
+// title. They never inspect page bodies, messages, URLs, typed text, or hidden
+// browser tabs. More specific patterns deliberately score higher than broad
+// application priors so, for example, a YouTube lecture is learning while an
+// ordinary YouTube video is entertainment.
 const TITLE_SIGNALS = {
   work: [
-    /\b(project|client|customer|task|ticket|issue|pull request|merge request|standup|sprint|meeting|brief|proposal|invoice|contract|deadline|roadmap|release|deploy|production)\b/i,
-    /\b(jira|linear|github|gitlab|figma|confluence|salesforce|hubspot)\b/i,
-    /(?:проект|клиент|заказчик|задач|тикет|созвон|встреч|бриф|предложен|сч[её]т|договор|дедлайн|релиз|деплой|продакш|требован|макет)/i,
+    { weight: 5, pattern: /\b(project|client|customer|task|ticket|issue|pull request|merge request|standup|sprint|meeting|brief|proposal|invoice|contract|deadline|roadmap|release|deploy(?:ment)?|production|requirements?|workspace|repository|commit|branch|code review|dashboard|analytics|campaign|crm|sales|payroll|accounting|business)\b/i },
+    { weight: 5, pattern: /(?:проект|клиент|заказчик|заказ\b|задач|тикет|созвон|встреч|бриф|предложен|сч[её]т|договор|дедлайн|релиз|деплой|продакш|требован|макет|репозитор|коммит|ветк|код-ревью|рабоч(?:ая|ий|ее)|аналитик|кампан|продаж|бухгалтер)/i },
+    { weight: 4, pattern: /\b(jira|linear|github|gitlab|bitbucket|figma|confluence|salesforce|hubspot|asana|trello|monday\.com|clickup|miro|airtable|office 365|google workspace|vercel|sentry|datadog)\b/i },
+    { weight: 4, pattern: /(?:техзадан|техническ(?:ое|ая) задани|план работ|рабочий чат|командный чат|обсуждение api|тестирован|отладк|разработк|программирован)/i },
+    { weight: 3, pattern: /\b([\w.-]+\.(?:js|jsx|ts|tsx|py|go|rs|java|kt|swift|cs|cpp|c|h|vue|svelte|sql|yaml|yml|toml|json|md)|localhost|127\.0\.0\.1|devtools|terminal)\b/i },
   ],
   learning: [
-    /\b(tutorial|course|lesson|lecture|documentation|docs|stack overflow|mdn|wikipedia|research|study|learn|guide|manual|how to|workshop|webinar)\b/i,
-    /(?:курс|урок|лекц|обуч|изуч|документац|исследован|гайд|инструкц|руководств|вебинар|воркшоп|как сделать|как настроить)/i,
+    { weight: 6, pattern: /\b(tutorial|course|lesson|lecture|documentation|docs|stack overflow|mdn|wikipedia|research paper|study|learn(?:ing)?|textbook|guide|manual|how to|workshop|webinar|masterclass|explained|beginner|certification|training)\b/i },
+    { weight: 6, pattern: /(?:курс|урок|лекц|обуч|изуч|документац|учебник|научн(?:ая|ое) стать|исследован|гайд|инструкц|руководств|вебинар|воркшоп|мастер-класс|как сделать|как настроить|разбор темы|подготовка к экзамен|повышение квалификац)/i },
+    { weight: 4, pattern: /\b(coursera|udemy|edx|khan academy|stepik|skillbox|netology|geekbrains|duolingo|quizlet|anki|leetcode|codewars)\b/i },
+    { weight: 3, pattern: /(?:статья|энциклопед|словар|справочник|объяснение|обзор технолог|новости науки)/i },
   ],
   personal: [
-    /\b(family|friends|personal|bank|shopping|travel|vacation|health|doctor|appointment|home|delivery)\b/i,
-    /(?:семь|друз|личн|банк|покупк|магазин|путешеств|отпуск|здоров|врач|дом|доставк)/i,
+    { weight: 5, pattern: /\b(family|friends?|personal|bank(?:ing)?|shopping|checkout|order|delivery|travel|vacation|health|doctor|appointment|rent|mortgage|insurance|pharmacy|fitness|recipe|weather|maps|booking|hotel|flight|train tickets?)\b/i },
+    { weight: 5, pattern: /(?:семь|мам[а-я]?\b|пап[а-я]?\b|родител|друз|личн|банк|покупк|магазин|корзин|заказ еды|доставк|путешеств|отпуск|здоров|врач|поликлиник|домашн|квартир|страхов|аптек|фитнес|рецепт|погод|карт[ыа]\b|бронирован|отел|авиабилет|билеты на поезд)/i },
+    { weight: 4, pattern: /\b(amazon|ebay|aliexpress|booking\.com|airbnb|uber|wise|paypal|revolut|google maps|yandex maps)\b/i },
+    { weight: 4, pattern: /(?:озон|вайлдберриз|яндекс маркет|авито|госуслуг|сбербанк|тинькофф|альфа-банк)/i },
   ],
   entertainment: [
-    /\b(netflix|twitch|tiktok|steam|game|gaming|movie|series|episode|meme|stream|playlist|music video)\b/i,
-    /(?:фильм|сериал|эпизод|игр(?:а|ы|е|у)|мем|развлеч|стрим|плейлист|клип)/i,
+    { weight: 6, pattern: /\b(movie|film|series|season|episode|trailer|comedy|meme|funny|stream|playlist|music video|official video|concert|karaoke|gameplay|lets play|walkthrough|highlights|reaction|podcast)\b/i },
+    { weight: 6, pattern: /(?:фильм|кино\b|сериал|сезон|эпизод|серия\b|трейлер|комеди|мем|прикол|смешн|стрим|плейлист|клип|концерт|караоке|геймплей|прохождение игр|летсплей|нарезк|реакци|подкаст)/i },
+    { weight: 5, pattern: /\b(netflix|twitch|tiktok|steam|epic games|battle\.net|riot games|playstation|xbox|spotify|soundcloud|apple music|youtube music|prime video|disney\+|hbo max|crunchyroll)\b/i },
+    { weight: 5, pattern: /(?:кинопоиск|иви\b|okko|рутуб|вк видео|вк клипы|яндекс музыка|музыка вк|амедиатек|kion|wink|start\.ru|premier)/i },
+    { weight: 4, pattern: /\b(gaming|video game|matchmaking|ranked match|multiplayer)\b|(?:видеоигр|игровой стрим|игровая сесси|рейтинговый матч)/i },
   ],
 };
+
+const WORK_APPS = /(?:visual studio|\bcode\b|zcode|cursor|windsurf|terminal|powershell|windowsterminal|\bcmd\b|gitkraken|sourcetree|webstorm|idea64|intellij|pycharm|xcode|android studio|docker desktop|postman|insomnia|figma|photoshop|illustrator|after effects|premiere|davinci resolve|canva|sketch|blender|autocad|solidworks|fusion 360|fl64|fl studio|ableton|reaper|cubase|logic pro|pro tools|audition|word|excel|powerpoint|libreoffice|notion|obsidian|msrdc|remote desktop|parallels|vmware|virtualbox)/i;
+const COMMUNICATION_WORK_APPS = /(?:slack|microsoft teams|\bteams\b|zoom|webex|outlook|thunderbird)/i;
+const LEARNING_APPS = /(?:anki|duolingo|kindle|calibre|quizlet)/i;
+const ENTERTAINMENT_APPS = /(?:steam|epicgames|epic games|battle\.net|riotclient|riot client|playstation|xbox|netflix|twitch|spotify|vlc|foobar2000|winamp)/i;
+const PERSONAL_APPS = /(?:sber|сбер|tinkoff|тинькофф|revolut|wise|paypal|health|fitness|weather)/i;
+const BROWSER_APPS = /(?:chrome|edge|firefox|brave|opera|vivaldi|safari|browser)/i;
+const MESSENGER_APPS = /(?:telegram|whatsapp|signal|discord|viber|messenger)/i;
+
+const SERVICE_RULES = [
+  { intent: "work", confidence: "high", pattern: /\b(youtube studio|creator studio|google analytics|search console|ads manager|meta business suite)\b|(?:творческая студия youtube|кабинет рекламодателя)/i },
+  { intent: "entertainment", confidence: "medium", pattern: /\b(youtube|youtu\.be|netflix|twitch|tiktok|prime video|disney\+|hbo max|crunchyroll)\b|(?:кинопоиск|иви\b|okko|рутуб|вк видео|яндекс музыка|амедиатек|kion|wink)/i },
+  { intent: "learning", confidence: "high", pattern: /\b(coursera|udemy|edx|khan academy|stepik|skillbox|netology|geekbrains|duolingo|quizlet|leetcode|codewars|stack overflow|mdn web docs)\b/i },
+  { intent: "work", confidence: "high", pattern: /\b(github|gitlab|bitbucket|jira|linear|confluence|figma|miro|asana|trello|clickup|hubspot|salesforce|vercel|sentry|datadog)\b/i },
+  { intent: "personal", confidence: "high", pattern: /\b(amazon|ebay|aliexpress|booking\.com|airbnb|google maps|yandex maps)\b|(?:озон|вайлдберриз|яндекс маркет|авито|госуслуг)/i },
+  { intent: "entertainment", confidence: "medium", pattern: /\b(instagram|facebook|reddit|pinterest|x \/ twitter|twitter)\b|(?:вконтакте|одноклассники|дзен)/i },
+  { intent: "work", confidence: "medium", pattern: /\b(linkedin)\b/i },
+];
 
 function normalizeLanguage(value) {
   return String(value || "").toLowerCase().startsWith("ru") ? "ru" : "en";
@@ -59,33 +91,80 @@ function normalizeIntentRules(value) {
   return result;
 }
 
-function matchingSignals(title) {
-  const matches = [];
-  for (const [intent, patterns] of Object.entries(TITLE_SIGNALS)) {
-    if (patterns.some((pattern) => pattern.test(title))) matches.push(intent);
+function scoreTitle(title) {
+  const scores = new Map();
+  for (const [intent, signals] of Object.entries(TITLE_SIGNALS)) {
+    let score = 0;
+    const evidence = [];
+    for (const signal of signals) {
+      const match = title.match(signal.pattern);
+      if (!match) continue;
+      score += signal.weight;
+      evidence.push(match[0].slice(0, 80));
+    }
+    if (score) scores.set(intent, { score, evidence });
   }
-  return matches;
+  return [...scores.entries()].sort((a, b) => b[1].score - a[1].score);
+}
+
+function semanticClassification(title) {
+  const ranked = scoreTitle(title);
+  if (!ranked.length) return null;
+  const [winner, runnerUp] = ranked;
+  const margin = winner[1].score - (runnerUp?.[1].score || 0);
+  if (runnerUp && margin < 3) {
+    return { intent: "unknown", confidence: "low", reason: "conflicting-title-signals", evidence: ranked.map(([intent]) => intent).join(",") };
+  }
+  return {
+    intent: winner[0],
+    confidence: winner[1].score >= 6 || margin >= 5 ? "high" : "medium",
+    reason: "window-title",
+    evidence: [...new Set(winner[1].evidence)].join(", ").slice(0, 120),
+  };
+}
+
+function serviceClassification(title, semantic) {
+  const service = SERVICE_RULES.find((rule) => rule.pattern.test(title));
+  if (!service) return semantic;
+  // A specific semantic signal beats a broad service prior: a lecture on
+  // YouTube is learning, while YouTube without such evidence is entertainment.
+  if (semantic?.intent === "unknown") return semantic;
+  if (semantic && semantic.intent !== "unknown" && semantic.confidence === "high") return semantic;
+  if (semantic && semantic.intent !== "unknown" && semantic.intent !== service.intent) return semantic;
+  return { intent: service.intent, confidence: service.confidence, reason: "service", evidence: title.match(service.pattern)?.[0]?.slice(0, 120) || "" };
 }
 
 function inferIntentDetails(activity, rules = []) {
   const app = `${activity.app || ""} ${activity.process || ""}`.toLowerCase();
-  const title = String(activity.title || "").toLowerCase();
+  const title = String(activity.title || "").toLowerCase().replace(/\s+/g, " ").trim();
   const combined = `${app} ${title}`.replace(/\s+/g, " ");
   const normalizedRules = normalizeIntentRules(rules);
   const custom = [...normalizedRules].reverse().find((rule) => combined.includes(rule.match.toLowerCase()));
   if (custom) return { intent: custom.intent, confidence: "high", reason: "custom-rule", evidence: custom.match };
 
-  const signals = matchingSignals(title);
-  if (signals.length === 1) return { intent: signals[0], confidence: "high", reason: "window-title", evidence: title.slice(0, 120) };
-  if (signals.length > 1) return { intent: "unknown", confidence: "low", reason: "conflicting-title-signals", evidence: signals.join(",") };
+  const semantic = semanticClassification(title);
+  const classified = BROWSER_APPS.test(app) ? serviceClassification(title, semantic) : semantic;
+  if (classified) return classified;
 
-  if (/(steam|epicgames|battle\.net|riotclient|netflix|twitch)/.test(app)) return { intent: "entertainment", confidence: "medium", reason: "application", evidence: activity.app };
+  if (ENTERTAINMENT_APPS.test(app)) return { intent: "entertainment", confidence: "medium", reason: "application-category", evidence: activity.app || activity.process || "" };
+  if (LEARNING_APPS.test(app)) return { intent: "learning", confidence: "medium", reason: "application-category", evidence: activity.app || activity.process || "" };
+  if (PERSONAL_APPS.test(app)) return { intent: "personal", confidence: "medium", reason: "application-category", evidence: activity.app || activity.process || "" };
+  if (WORK_APPS.test(app) || COMMUNICATION_WORK_APPS.test(app)) return { intent: "work", confidence: "medium", reason: "application-category", evidence: activity.app || activity.process || "" };
 
-  // Browsers, messengers, editors, office/design/audio tools, AI assistants,
-  // and file managers can all be used for work, learning, personal tasks, or
-  // entertainment. Without title evidence or a local rule, guessing would be
-  // misleading, so they intentionally remain unknown.
+  // Generic browsers, general-purpose AI assistants, and consumer messengers
+  // are resolved later from repeated-title and sequence context. App identity
+  // alone is not enough to decide whether Telegram or ChatGPT was work or fun.
+  if (BROWSER_APPS.test(app) || MESSENGER_APPS.test(app) || /(?:chatgpt|claude|perplexity|copilot)/i.test(app)) {
+    return { intent: "unknown", confidence: "low", reason: "needs-context", evidence: "" };
+  }
   return { intent: "unknown", confidence: "low", reason: "insufficient-evidence", evidence: "" };
+}
+
+function contextKey(activity) {
+  const app = String(activity.app || activity.process || "").toLowerCase().replace(/\s+/g, " ").trim();
+  const title = String(activity.title || "").toLowerCase().replace(/\s+/g, " ").trim();
+  if (!app || !title || /^(active window|активное окно|home|new tab|новая вкладка)$/i.test(title)) return "";
+  return `${app}|${title}`.slice(0, 360);
 }
 
 function labelForIntent(intent, language = "en") {
@@ -93,4 +172,12 @@ function labelForIntent(intent, language = "en") {
   return INTENT_LABELS[lang][intent] || INTENT_LABELS[lang].unknown;
 }
 
-module.exports = { ALLOWED_INTENTS, INTENT_LABELS, inferIntentDetails, labelForIntent, normalizeIntentRules };
+module.exports = {
+  ALLOWED_INTENTS,
+  INTENT_LABELS,
+  contextKey,
+  inferIntentDetails,
+  labelForIntent,
+  normalizeIntentRules,
+  scoreTitle,
+};

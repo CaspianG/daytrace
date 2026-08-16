@@ -40,5 +40,8 @@ app.whenReady().then(async () => {
     fs.writeFileSync(path.join(output, `updates-${language}.png`), updates.toPNG());
   }
   window.destroy();
-  app.quit();
+  // capturePage may leave Chromium utility processes alive on Windows after
+  // app.quit(); this script is a one-shot build tool, so exit explicitly once
+  // every localized file has been flushed to disk.
+  app.exit(0);
 });
