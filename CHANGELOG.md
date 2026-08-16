@@ -25,6 +25,7 @@ All notable changes to Daytrace are documented here.
 - Windows uses a non-single-file native collector, avoiding startup extraction and AV blocking.
 - Event and derived-state caches avoid rereading the complete 48-hour journal on every update.
 - Renderer broadcasts are coalesced to 12 seconds; a hidden renderer is released after a 30-second quick-reopen window.
+- Frontend build tools are no longer shipped inside the desktop package.
 
 ## [0.2.0] - 2026-08-15
 
