@@ -1,9 +1,13 @@
-const { app, BrowserWindow, ipcMain, Menu, nativeImage, shell, systemPreferences, Tray } = require("electron");
+const { app, BrowserWindow, ipcMain, Menu, nativeImage, net, shell, systemPreferences, Tray } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
+const { createHash } = require("node:crypto");
 const { spawn } = require("node:child_process");
 const readline = require("node:readline");
+const { Readable, Transform } = require("node:stream");
+const { pipeline } = require("node:stream/promises");
 const { EventStore } = require("./lib/event-store.cjs");
+const { MAX_RELEASE_JSON_BYTES, MAX_UPDATE_BYTES, normalizeRelease } = require("./lib/update-service.cjs");
 
 app.disableHardwareAcceleration();
 const startupLogPath = path.join(app.getPath("userData"), "startup.log");
@@ -22,7 +26,22 @@ let trackerStatus = "stopped";
 let store = null;
 let broadcastTimer = null;
 let releaseTimer = null;
+let updateTimer = null;
+let updateAbortController = null;
 let isQuitting = false;
+let availableRelease = null;
+let updateRuntime = {
+  status: app.isPackaged ? "idle" : "disabled",
+  currentVersion: app.getVersion(),
+  latestVersion: null,
+  checkedAt: null,
+  progress: 0,
+  error: null,
+};
+
+const RELEASES_API = "https://api.github.com/repos/CaspianG/daytrace/releases/latest";
+const UPDATE_INTERVAL_MS = 6 * 60 * 60_000;
+const OFFLINE_RETRY_MS = 30 * 60_000;
 
 const MAIN_TEXT = {
   en: { open: "Open Daytrace", pause: "Pause tracking", resume: "Resume tracking", quit: "Quit", tooltip: "Daytrace — local day history", startupTitle: "Daytrace could not start", startupMessage: "The local window could not be opened. Details were written to startup.log." },
@@ -50,6 +69,7 @@ function state() {
       accessibilityTrusted: accessibilityTrusted(false),
       autoStartSupported: app.isPackaged && ["win32", "darwin"].includes(process.platform),
       autoStartEnabled: currentAutoStart(),
+      update: { ...updateRuntime },
     },
   };
 }
@@ -58,6 +78,127 @@ function sendState() {
   mainWindow.webContents.send("daytrace:state-changed", state());
 }
 function broadcastState() { clearTimeout(broadcastTimer); broadcastTimer = setTimeout(sendState, 12_000); }
+
+function setUpdateRuntime(patch) {
+  updateRuntime = { ...updateRuntime, ...patch };
+  sendState();
+}
+
+async function checkForUpdates() {
+  if (!app.isPackaged) { setUpdateRuntime({ status: "disabled" }); return updateRuntime; }
+  if (["checking", "downloading"].includes(updateRuntime.status)) return updateRuntime;
+  availableRelease = null;
+  setUpdateRuntime({ status: "checking", latestVersion: null, error: null, progress: 0 });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12_000);
+  timeout.unref();
+  try {
+    const response = await net.fetch(RELEASES_API, {
+      headers: { Accept: "application/vnd.github+json", "User-Agent": `Daytrace/${app.getVersion()}` },
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`release-check-http-${response.status}`);
+    const body = await response.text();
+    if (Buffer.byteLength(body, "utf8") > MAX_RELEASE_JSON_BYTES) throw new Error("release-metadata-too-large");
+    const release = normalizeRelease(JSON.parse(body), process.platform, app.getVersion());
+    if (!release) throw new Error("invalid-release-metadata");
+    availableRelease = release.available ? release : null;
+    if (release.available && !release.asset) throw new Error("platform-update-asset-missing");
+    setUpdateRuntime({
+      status: release.available ? "available" : "up-to-date",
+      latestVersion: release.version,
+      checkedAt: Date.now(),
+      releaseUrl: release.releaseUrl,
+      error: null,
+    });
+  } catch (error) {
+    const offline = error?.name === "AbortError" || /fetch|network|internet|offline|ENOTFOUND|ECONN/i.test(String(error?.message || error));
+    setUpdateRuntime({ status: offline ? "offline" : "error", checkedAt: Date.now(), error: String(error?.message || error).slice(0, 160) });
+    if (!offline) startupLog("update-check-failed", error);
+  } finally {
+    clearTimeout(timeout);
+  }
+  return updateRuntime;
+}
+
+function scheduleUpdateCheck(delay = 15_000) {
+  clearTimeout(updateTimer);
+  updateTimer = setTimeout(async () => {
+    await checkForUpdates();
+    scheduleUpdateCheck(updateRuntime.status === "offline" ? OFFLINE_RETRY_MS : UPDATE_INTERVAL_MS);
+  }, delay);
+  updateTimer.unref();
+}
+
+async function sha256(file) {
+  const hash = createHash("sha256");
+  await pipeline(fs.createReadStream(file), hash);
+  return hash.digest("hex");
+}
+
+async function downloadAndInstallUpdate() {
+  if (!app.isPackaged) return updateRuntime;
+  if (!availableRelease) await checkForUpdates();
+  const release = availableRelease;
+  if (!release?.available || !release.asset) return updateRuntime;
+  if (!release.asset.digest) {
+    setUpdateRuntime({ status: "error", error: "missing-release-digest" });
+    await shell.openExternal(release.releaseUrl);
+    return updateRuntime;
+  }
+  if (release.asset.size > MAX_UPDATE_BYTES) {
+    setUpdateRuntime({ status: "error", error: "update-asset-too-large" });
+    return updateRuntime;
+  }
+  const updateDir = path.join(app.getPath("temp"), "daytrace-updates");
+  fs.mkdirSync(updateDir, { recursive: true });
+  const destination = path.join(updateDir, release.asset.name);
+  if (fs.existsSync(destination)) fs.rmSync(destination, { force: true });
+  updateAbortController = new AbortController();
+  setUpdateRuntime({ status: "downloading", progress: 0, error: null });
+  try {
+    const response = await net.fetch(release.asset.downloadUrl, { signal: updateAbortController.signal });
+    if (!response.ok || !response.body) throw new Error(`update-download-http-${response.status}`);
+    const announcedSize = Number(response.headers.get("content-length") || release.asset.size || 0);
+    if (announcedSize > MAX_UPDATE_BYTES) throw new Error("update-download-too-large");
+    let received = 0;
+    let lastProgressAt = 0;
+    const progress = new Transform({
+      transform(chunk, _encoding, callback) {
+        received += chunk.length;
+        if (received > MAX_UPDATE_BYTES) return callback(new Error("update-download-too-large"));
+        const now = Date.now();
+        if (now - lastProgressAt > 400) {
+          lastProgressAt = now;
+          setUpdateRuntime({ progress: announcedSize ? Math.min(99, Math.round((received / announcedSize) * 100)) : 0 });
+        }
+        callback(null, chunk);
+      },
+    });
+    await pipeline(Readable.fromWeb(response.body), progress, fs.createWriteStream(destination, { flags: "wx" }));
+    if (release.asset.size && received !== release.asset.size) throw new Error("update-size-mismatch");
+    if (await sha256(destination) !== release.asset.digest) throw new Error("update-digest-mismatch");
+    setUpdateRuntime({ status: "ready", progress: 100, error: null });
+    if (process.platform === "win32") {
+      const installer = spawn(destination, ["/S"], { detached: true, windowsHide: true, stdio: "ignore" });
+      installer.unref();
+      isQuitting = true;
+      setTimeout(() => app.quit(), 250).unref();
+    } else if (process.platform === "darwin") {
+      const openError = await shell.openPath(destination);
+      if (openError) throw new Error(openError);
+      setUpdateRuntime({ status: "installer-opened" });
+    } else {
+      await shell.openExternal(release.releaseUrl);
+    }
+  } catch (error) {
+    setUpdateRuntime({ status: error?.name === "AbortError" ? "available" : "error", error: String(error?.message || error).slice(0, 160) });
+    startupLog("update-install-failed", error);
+  } finally {
+    updateAbortController = null;
+  }
+  return updateRuntime;
+}
 
 function trackerPath() {
   if (process.platform === "win32") return app.isPackaged ? path.join(process.resourcesPath, "tracker", "windows", "Daytrace.Tracker.exe") : path.join(__dirname, "..", "native", "windows-tracker", "bin", "Release", "net8.0-windows", "win-x64", "publish", "Daytrace.Tracker.exe");
@@ -177,6 +318,8 @@ function registerIpc() {
   ipcMain.handle("daytrace:delete-session", (_event, start, end) => { store.deleteRange(start, end); return state(); });
   ipcMain.handle("daytrace:export-skill", (_event, skill) => store.exportSkill(skill));
   ipcMain.handle("daytrace:reveal-data", () => shell.openPath(store.root));
+  ipcMain.handle("daytrace:check-updates", async () => { await checkForUpdates(); return state(); });
+  ipcMain.handle("daytrace:install-update", async () => { await downloadAndInstallUpdate(); return state(); });
 }
 
 startupLog(`process-start version=${app.getVersion()}`);
@@ -190,6 +333,7 @@ else app.whenReady().then(async () => {
     const launchedInBackground = process.argv.includes("--background") || app.getLoginItemSettings().wasOpenedAtLogin || app.getLoginItemSettings().wasOpenedAsHidden;
     if (!launchedInBackground) await openWindow(); else setTimeout(startTracker, 400).unref();
     setInterval(() => store.prune(), 15 * 60_000).unref();
+    scheduleUpdateCheck();
   } catch (error) {
     startupLog("startup-failed", error); const { dialog } = require("electron"); const t = mainText(); dialog.showErrorBox(t.startupTitle, t.startupMessage); app.quit();
   }
@@ -197,4 +341,4 @@ else app.whenReady().then(async () => {
 app.on("window-all-closed", () => { });
 app.on("activate", () => void openWindow());
 app.on("second-instance", () => void openWindow());
-app.on("before-quit", () => { isQuitting = true; clearTimeout(releaseTimer); stopTracker("stopped"); });
+app.on("before-quit", () => { isQuitting = true; clearTimeout(releaseTimer); clearTimeout(updateTimer); updateAbortController?.abort(); stopTracker("stopped"); });

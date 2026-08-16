@@ -2,6 +2,21 @@
 
 All notable changes to Daytrace are documented here.
 
+## [0.4.1] - 2026-08-16
+
+### Added
+
+- Automatic update checks against the official GitHub Releases feed 15 seconds after launch and every six hours while online, with a low-frequency retry after an offline check.
+- A bilingual update panel in Settings with installed/latest versions, last-check time, download progress, and a manual **Check for updates** action.
+- A bottom-left **Update** action that appears only when a newer stable release has the exact expected Windows or macOS artifact.
+- Verified update downloads: Daytrace enforces the expected artifact name and repository URL, size bounds, and the SHA-256 digest published by GitHub before opening an installer.
+
+### Platform behavior
+
+- Windows downloads the NSIS installer, verifies it, starts the silent per-user update, and exits so files can be replaced.
+- macOS downloads and verifies the universal DMG, then opens it for the user; unsigned builds intentionally do not attempt an unsafe silent self-replacement.
+- No activity journal, window title, question, rule, or settings data is included in update requests.
+
 ## [0.4.0] - 2026-08-16
 
 ### Added

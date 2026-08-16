@@ -16,10 +16,10 @@
   · <a href="SECURITY.md">Security</a>
 </p>
 
-<p align="center"><strong>Current release: v0.4.0</strong> — Windows and macOS artifacts are built from the same tag and published together.</p>
+<p align="center"><strong>Current release: v0.4.1</strong> — Windows and macOS artifacts are built from the same tag and published together.</p>
 
 <p align="center">
-  <img alt="Current version v0.4.0" src="https://img.shields.io/badge/current-v0.4.0-6f8f67?style=flat-square">
+  <img alt="Current version v0.4.1" src="https://img.shields.io/badge/current-v0.4.1-6f8f67?style=flat-square">
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-6f8f67?style=flat-square">
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-c5684b?style=flat-square">
   <img alt="macOS 12 or newer" src="https://img.shields.io/badge/macOS-12%2B-c5684b?style=flat-square">
@@ -34,7 +34,7 @@ The useful question is simple: **“What was I working on this morning?”** The
 
 OpenAI's announcement of Computer History validated this new category of desktop software. Its initial rollout was described as macOS-only and limited to Pro, Business, and Enterprise plans. Daytrace is an independent cross-platform alternative for people who want the utility without a subscription or a hosted activity history.
 
-Daytrace requires no account and no API key. Its shipped desktop runtime contains no network integration: events are captured, filtered, grouped, queried, and deleted on your computer.
+Daytrace requires no account and no API key. Events are captured, filtered, grouped, queried, and deleted on your computer. The only built-in network feature is the updater: it checks the official GitHub Releases endpoint using the installed version and never includes activity data.
 
 > Computer History availability and plan limits may change after the initial announcement. Daytrace is not affiliated with or endorsed by OpenAI.
 
@@ -46,13 +46,15 @@ Daytrace requires no account and no API key. Its shipped desktop runtime contain
 
 No administrator account, separate .NET installation, browser extension, cloud account, or API key is required.
 
-The first public build is not code-signed yet, so Windows SmartScreen may show **Unknown publisher**. Check the SHA-256 value published in the release notes before running it.
+The current public build is not code-signed yet, so Windows SmartScreen may show **Unknown publisher**. Check the SHA-256 value published in the release notes before running it.
 
 Prefer a portable build? Download `Daytrace-Portable-…-x64.zip`, extract it, and run `Daytrace.exe`.
 
 On macOS 12 or newer, download the universal `Daytrace-…-macOS-universal.dmg`, drag Daytrace to Applications, then grant Accessibility permission when the app asks. The current macOS build is not notarized, so Gatekeeper may require **Open** from Finder's context menu.
 
 Minimizing or closing the window releases the heavy renderer while the lightweight native tracker continues from the system tray. Double-click the tray icon or launch Daytrace again to reopen the same instance.
+
+Installed builds check for a stable update shortly after launch and every six hours while online. You can also use **Settings → Updates → Check for updates**. When a newer release exists, an **Update** button appears at the bottom left. Windows verifies and starts the installer automatically; macOS verifies and opens the universal DMG for the standard user-confirmed installation flow.
 
 ## What you get
 
@@ -69,13 +71,16 @@ Minimizing or closing the window releases the heavy renderer while the lightweig
 - **Complete English and Russian localization** for the interface, timeline labels, local answers, tray menu, installer, and exported skills.
 - **First-run language choice** with an instant language switch available later in Settings.
 - **Launch at login** on Windows and macOS, starting quietly in the tray/menu bar.
+- **Built-in verified updates** with automatic online checks, a manual Settings action, download progress, and a bottom-left action only when a newer stable release exists.
 - **Fine-grained collection controls** for window titles, anonymous active-second samples, browser-tab counts, and private-window filtering.
 - **Two-layer classification** that keeps the application type separate from the inferred purpose. Telegram can be work or personal; a browser can be work, learning, entertainment, or unknown.
 - **One-click local corrections** on timeline entries plus reusable substring rules for chats, page titles, projects, and keywords. Rules never leave the device.
 
 ![Daytrace day overview and latest activity in English](docs/assets/screenshots/timeline-en.png)
 
-![Daytrace collection, privacy, language, and startup settings in English](docs/assets/screenshots/settings-en.png)
+![Daytrace language and update settings in English](docs/assets/screenshots/settings-en.png)
+
+![Daytrace update available in Settings and at the bottom left, English example](docs/assets/screenshots/updates-en.png)
 
 The same interface is also available in [Russian](README_RU.md), including localized summaries and system-tray controls.
 
@@ -112,6 +117,8 @@ Daytrace is intentionally less invasive than screenshot-based activity recorders
 
 Window titles can contain document names, page titles, or conversation names. They stay local, but you should exclude sensitive applications. Private-browser detection is title-based because browsers do not expose one universal private-mode signal; treat exclusions as the stronger control.
 
+The updater is the only built-in network path. It requests `api.github.com/repos/CaspianG/daytrace/releases/latest` with `Daytrace/<installed version>` in the user agent. No journal events, titles, questions, rules, or settings are transmitted. Daytrace accepts only the exact expected artifact from the official repository and verifies its GitHub-published SHA-256 digest before opening it.
+
 Default data location:
 
 ```text
@@ -133,9 +140,11 @@ flowchart LR
     C --> D["Local sessionizer and purpose classifier"]
     D --> E["Purpose charts, reverse timeline and local answers"]
     D --> F["Reviewable SKILL.md drafts"]
+    U["Official GitHub Releases"] -->|"version metadata only"| V["Verified updater"]
+    V -->|"SHA-256 verified installer"| G["Windows setup or macOS DMG"]
 ```
 
-The native tracker emits foreground-window changes, samples only the foreground title every five seconds, writes idle-aware heartbeats, checks a numeric browser-tab count once per minute on Windows, and records only anonymous active seconds. The Windows collector uses no global keyboard or mouse hook. Electron's local main process applies privacy rules, stores hourly JSONL segments, and exposes state to the sandboxed renderer over a narrow IPC bridge. It never reads message bodies, typed text, URLs, pointer coordinates, or background-tab titles. There is no cloud backend.
+The native tracker emits foreground-window changes, samples only the foreground title every five seconds, writes idle-aware heartbeats, checks a numeric browser-tab count once per minute on Windows, and records only anonymous active seconds. The Windows collector uses no global keyboard or mouse hook. Electron's local main process applies privacy rules, stores hourly JSONL segments, and exposes state to the sandboxed renderer over a narrow IPC bridge. It never reads message bodies, typed text, URLs, pointer coordinates, or background-tab titles. There is no cloud backend; only release metadata and verified installer downloads use the network.
 
 Durations are observed foreground intervals, not the time an application merely remained open. Repeated title events are collapsed, sub-second fragments and system windows are ignored, and overview totals are calculated per activity rather than inherited from the first application in a work block. Daytrace does not claim to know the semantic task when the available signals do not support it.
 
@@ -143,7 +152,7 @@ Local answers do not use an LLM. A deterministic on-device parser recognizes the
 
 ## System load
 
-Daytrace uses native foreground events and coarse samples instead of screenshots or continuous screen polling. On the Windows verification machine, the packaged v0.4.0 background process measured **0.039% total CPU** over a 30-second sample and **199 MiB combined working memory** across Electron and the native collector with no renderer process. A clean packaged launch reached a validated non-empty window in **1.14 s**. Measurements vary by hardware, antivirus, event volume, and operating system; macOS packaging is verified in CI, but equivalent physical-Mac load measurements are still being collected.
+Daytrace uses native foreground events and coarse samples instead of screenshots or continuous screen polling. On the Windows verification machine, the packaged v0.4.0 background process measured **0.039% total CPU** over a 30-second sample and **199 MiB combined working memory** across Electron and the native collector with no renderer process. A clean packaged launch reached a validated non-empty window in **1.14 s**. The updater adds one small metadata request after startup and then at most once every six hours while online; it does not continuously poll. Measurements vary by hardware, antivirus, event volume, and operating system; macOS packaging is verified in CI, but equivalent physical-Mac load measurements are still being collected.
 
 ## Current limitations
 

@@ -118,6 +118,7 @@ test("English and Russian READMEs use only their matching localized visuals", ()
   assert.match(englishReadme, /settings-en\.png/);
   assert.match(englishReadme, /purpose-en\.png/);
   assert.match(englishReadme, /rules-en\.png/);
+  assert.match(englishReadme, /updates-en\.png/);
   assert.doesNotMatch(englishReadme, /(?:daytrace-cover|timeline)-ru\.png/);
 
   assert.match(russianReadme, /daytrace-cover-ru\.png/);
@@ -125,6 +126,7 @@ test("English and Russian READMEs use only their matching localized visuals", ()
   assert.match(russianReadme, /settings-ru\.png/);
   assert.match(russianReadme, /purpose-ru\.png/);
   assert.match(russianReadme, /rules-ru\.png/);
+  assert.match(russianReadme, /updates-ru\.png/);
   assert.doesNotMatch(russianReadme, /(?:daytrace-cover|timeline)-en\.png/);
 
   for (const relativePath of [
@@ -138,6 +140,8 @@ test("English and Russian READMEs use only their matching localized visuals", ()
     "docs/assets/screenshots/purpose-ru.png",
     "docs/assets/screenshots/rules-en.png",
     "docs/assets/screenshots/rules-ru.png",
+    "docs/assets/screenshots/updates-en.png",
+    "docs/assets/screenshots/updates-ru.png",
   ]) {
     assert.equal(fs.existsSync(path.join(root, relativePath)), true, `${relativePath} must exist`);
   }

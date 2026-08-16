@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld("daytrace", {
   deleteSession: (start, end) => ipcRenderer.invoke("daytrace:delete-session", start, end),
   exportSkill: (skill) => ipcRenderer.invoke("daytrace:export-skill", skill),
   revealData: () => ipcRenderer.invoke("daytrace:reveal-data"),
+  checkUpdates: () => ipcRenderer.invoke("daytrace:check-updates"),
+  installUpdate: () => ipcRenderer.invoke("daytrace:install-update"),
   onStateChanged: (listener) => {
     const wrapped = (_event, state) => listener(state);
     ipcRenderer.on("daytrace:state-changed", wrapped);

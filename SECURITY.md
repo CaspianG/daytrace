@@ -24,3 +24,9 @@ Please do not include real window titles, event journals, passwords, or personal
 Daytrace must never persist screenshots, audio, clipboard contents, mouse coordinates, key identities, typed text, form values, or passwords. Active application names and window titles are sensitive metadata and must remain local.
 
 Private-mode detection is title-based and best-effort. Excluding the entire browser or application is the stronger control for sensitive workflows.
+
+## Update integrity and network boundary
+
+Installed builds check only `api.github.com/repos/CaspianG/daytrace/releases/latest`. The request contains a standard GitHub media type and a `Daytrace/<installed version>` user agent; activity journals, window titles, questions, rules, and settings are never transmitted.
+
+Only stable releases and exact platform artifact names from `github.com/CaspianG/daytrace/releases/` are accepted. Before an installer is opened, its size and GitHub-published SHA-256 digest are verified. Daytrace refuses automatic installation when the digest is missing or does not match.

@@ -37,6 +37,8 @@ button { color: inherit; }
 .status-dot.on { background: #6fa063; }
 .status-dot.off { background: #c2765b; }
 .expiry { margin-left: 28px; color: #8d8a83; }
+.sidebar-update-button { display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 46px; margin: 0 0 10px; padding: 0 12px; border: 1px solid #6f8e67; border-radius: 10px; color: #fff; background: #708d68; box-shadow: 0 7px 20px rgba(76, 106, 68, .16); cursor: pointer; font-size: 12px; font-weight: 750; }
+.sidebar-update-button:hover { background: #607d59; }
 .tracking-button { display: flex; align-items: center; justify-content: center; gap: 11px; min-height: 55px; border-radius: 10px; background: transparent; font-family: "Source Serif 4", Georgia, serif; font-size: 17px; font-weight: 600; cursor: pointer; }
 .tracking-button.pause { border: 1px solid var(--clay); color: var(--clay-dark); }
 .tracking-button.resume { border: 1px solid var(--sage); color: #50704d; }
@@ -208,6 +210,22 @@ button:focus-visible, input:focus-visible { outline: 2px solid #748e6c; outline-
 .runtime-card.error, .runtime-card.unavailable, .runtime-card.permission-required { border-color: #e2c0b5; color: #98583f; background: #fff8f5; }
 .permission-card > div { display: grid; flex: 1; gap: 4px; }
 .permission-card button { min-height: 36px; padding: 0 12px; border: 1px solid #9fb297; border-radius: 8px; color: #526e4d; background: white; cursor: pointer; font-weight: 650; }
+.update-settings { display: grid; gap: 16px; }
+.update-copy { display: grid; gap: 10px; }
+.update-copy > div:first-child { display: grid; gap: 5px; }
+.update-copy span, .update-copy small, .update-settings > p { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.update-copy strong { font-size: 14px; }
+.update-progress { height: 6px; border-radius: 999px; background: #e6e4dd; overflow: hidden; }
+.update-progress span { display: block; height: 100%; border-radius: inherit; background: #75936d; transition: width 180ms ease; }
+.update-error { color: #a3543e !important; }
+.update-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.update-actions button { justify-content: center; }
+.primary-update-button { display: flex; align-items: center; gap: 7px; min-height: 38px; padding: 0 14px; border: 1px solid #67845f; border-radius: 8px; color: white; background: #708d68; cursor: pointer; font-size: 12px; font-weight: 700; }
+.primary-update-button:hover { background: #607d59; }
+.update-actions button:disabled { cursor: default; opacity: .5; }
+.update-settings > p { max-width: 650px; margin: 0; }
+.spin { animation: spin 900ms linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .data-facts { display: grid; gap: 13px; margin-bottom: 18px; }
 .data-facts > div { display: flex; align-items: flex-start; gap: 12px; }
 .data-facts svg { margin-top: 2px; color: #71866d; }
@@ -273,7 +291,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid #748e6c; outline-
   .sidebar { position: sticky; top: 0; height: 100vh; align-items: center; padding-inline: 10px; }
   .brand-mark { margin-left: 0; }
   .main-nav button { justify-content: center; padding: 0; }
-  .main-nav button span, .sidebar-status, .tracking-button { display: none; }
+  .main-nav button span, .sidebar-status, .tracking-button, .sidebar-update-button span { display: none; }
+  .sidebar-update-button { width: 46px; padding: 0; }
   .app-main { height: auto; min-height: 100vh; padding: 45px 24px; overflow: visible; }
   .question-bar { width: 100%; min-width: 0; }
   .history-page { display: block; }
@@ -285,7 +304,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid #748e6c; outline-
 @media (max-width: 650px) {
   .app-shell { grid-template-columns: 1fr; }
   .sidebar { position: fixed; right: 0; bottom: 0; left: 0; top: auto; z-index: 20; flex-direction: row; width: 100%; height: 66px; padding: 6px 10px; border-top: 1px solid var(--line); border-right: 0; }
-  .brand-mark, .main-nav button:nth-child(4), .main-nav button.separated { display: none; }
+  .brand-mark, .main-nav button:nth-child(4), .main-nav button.separated, .sidebar-update-button { display: none; }
   .main-nav { display: grid; grid-template-columns: repeat(3, 1fr); width: 100%; }
   .main-nav button { min-height: 52px; }
   .app-main { padding: 28px 17px 90px; }
