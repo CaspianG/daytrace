@@ -16,8 +16,10 @@
   · <a href="SECURITY.md">Security</a>
 </p>
 
+<p align="center"><strong>Current release: v0.3.1</strong> — Windows and macOS artifacts are built from the same tag and published together.</p>
+
 <p align="center">
-  <img alt="GitHub release" src="https://img.shields.io/github/v/release/CaspianG/daytrace?display_name=tag&style=flat-square&color=6f8f67">
+  <img alt="Current version v0.3.1" src="https://img.shields.io/badge/current-v0.3.1-6f8f67?style=flat-square">
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-6f8f67?style=flat-square">
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-c5684b?style=flat-square">
   <img alt="macOS 12 or newer" src="https://img.shields.io/badge/macOS-12%2B-c5684b?style=flat-square">
@@ -67,7 +69,8 @@ Minimizing or closing the window releases the heavy renderer while the lightweig
 - **Complete English and Russian localization** for the interface, timeline labels, local answers, tray menu, installer, and exported skills.
 - **First-run language choice** with an instant language switch available later in Settings.
 - **Launch at login** on Windows and macOS, starting quietly in the tray/menu bar.
-- **Fine-grained collection controls** for window titles, anonymous input counts, browser-tab counts, and private-window filtering.
+- **Fine-grained collection controls** for window titles, anonymous active-second samples, browser-tab counts, and private-window filtering.
+- **Conservative activity classification** based first on the foreground application. Window titles refine a category only when there is clear evidence; unknown and mixed work remain labelled as such.
 
 ![Daytrace day overview and latest activity in English](docs/assets/screenshots/timeline-en.png)
 
@@ -85,8 +88,8 @@ Daytrace is intentionally less invasive than screenshot-based activity recorders
 | Active window title | Audio or microphone input |
 | Numeric count of visible browser tabs | URLs or titles of background tabs |
 | Window-switch timestamp | Clipboard contents |
-| Aggregate click count | Mouse coordinates |
-| Aggregate keypress count | Key identities or typed text |
+| Anonymous active-second samples on Windows | Mouse coordinates |
+| Aggregate keypress/click counts on macOS | Key identities or typed text |
 | Session duration | Form values or passwords |
 
 Window titles can contain document names, page titles, or conversation names. They stay local, but you should exclude sensitive applications. Private-browser detection is title-based because browsers do not expose one universal private-mode signal; treat exclusions as the stronger control.
@@ -106,7 +109,7 @@ Uninstalling the application preserves this folder so history is not destroyed u
 
 ```mermaid
 flowchart LR
-    A["Windows hooks or macOS Accessibility events"] --> B["Privacy filter"]
+    A["Windows foreground events or macOS Accessibility"] --> B["Privacy filter"]
     B -->|"allowed"| C["Hourly local JSONL files"]
     B -->|"private or excluded"| X["Discarded before disk write"]
     C --> D["Local sessionizer"]
@@ -114,9 +117,15 @@ flowchart LR
     D --> F["Reviewable SKILL.md drafts"]
 ```
 
-The native tracker emits foreground-window and active-title changes, idle-aware heartbeats, a once-per-minute numeric browser-tab count on Windows, and aggregate input counts. Electron's local main process applies privacy rules, stores hourly JSONL segments, and exposes state to the sandboxed renderer over a narrow IPC bridge. It never reads message bodies, typed text, URLs, or background-tab titles. There is no cloud backend.
+The native tracker emits foreground-window changes, samples only the foreground title every five seconds, writes idle-aware heartbeats, checks a numeric browser-tab count once per minute on Windows, and records only anonymous active seconds. The Windows collector uses no global keyboard or mouse hook. Electron's local main process applies privacy rules, stores hourly JSONL segments, and exposes state to the sandboxed renderer over a narrow IPC bridge. It never reads message bodies, typed text, URLs, pointer coordinates, or background-tab titles. There is no cloud backend.
+
+Durations are observed foreground intervals, not the time an application merely remained open. Repeated title events are collapsed, sub-second fragments and system windows are ignored, and overview totals are calculated per activity rather than inherited from the first application in a work block. Daytrace does not claim to know the semantic task when the available signals do not support it.
 
 Local answers do not use an LLM. A deterministic on-device parser recognizes the requested day/time range, application, and intent (summary, duration, latest activity, tabs, or context switches), then calculates the response from the local sessions. The interpreted query is shown above each answer so mistakes are visible.
+
+## System load
+
+Daytrace uses native foreground events and coarse samples instead of screenshots or continuous screen polling. On the Windows verification machine, v0.3.1 measured **at or below 0.04% total background CPU** in 30-second samples and **188 MiB combined working memory** after the renderer was released. Window startup measured **0.82 s** from process start to visible and **0.22 s** for a quick reopen from the tray. Measurements vary by hardware, antivirus, event volume, and operating system; macOS packaging is verified in CI, but equivalent physical-Mac load measurements are still being collected.
 
 ## Current limitations
 

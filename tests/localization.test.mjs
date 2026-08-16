@@ -34,6 +34,7 @@ test("sessions and local answers are fully localized", () => {
   const ruSessions = sessionizer.sessionize(events, base + 60 * 60_000, "ru");
   assert.equal(enSessions[0].label, "Development");
   assert.equal(ruSessions[0].label, "Разработка");
+  assert.deepEqual(enSessions[0].activities.map((item) => item.focus), ["development"]);
 
   const now = new Date("2026-08-15T11:00:00+03:00");
   const english = answers.answerQuestion("What was I working on this morning?", events, now, "en");

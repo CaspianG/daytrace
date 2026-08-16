@@ -9,32 +9,19 @@ using System.Windows.Automation;
 internal static class Program
 {
     private const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
-    private const uint EVENT_OBJECT_NAMECHANGE = 0x800C;
     private const uint WINEVENT_OUTOFCONTEXT = 0x0000;
     private const uint WINEVENT_SKIPOWNPROCESS = 0x0002;
-    private const int WH_KEYBOARD_LL = 13;
-    private const int WH_MOUSE_LL = 14;
-    private const int WM_KEYDOWN = 0x0100;
-    private const int WM_SYSKEYDOWN = 0x0104;
-    private const int WM_LBUTTONDOWN = 0x0201;
-    private const int WM_RBUTTONDOWN = 0x0204;
-    private const int WM_MBUTTONDOWN = 0x0207;
 
     private static WinEventDelegate? _foregroundDelegate;
-    private static WinEventDelegate? _nameChangeDelegate;
-    private static HookDelegate? _keyboardDelegate;
-    private static HookDelegate? _mouseDelegate;
     private static IntPtr _foregroundHook;
-    private static IntPtr _nameChangeHook;
-    private static IntPtr _keyboardHook;
-    private static IntPtr _mouseHook;
     private static readonly object Sync = new();
     private static int _inputCount;
-    private static int _clickCount;
+    private static uint _lastInputTime;
     private static WindowSnapshot _active = new("Application", "", "", 0, "other");
     private static System.Threading.Timer? _flushTimer;
     private static System.Threading.Timer? _sampleTimer;
-    private static System.Threading.Timer? _nameChangeTimer;
+    private static System.Threading.Timer? _titleTimer;
+    private static System.Threading.Timer? _inputTimer;
     private static readonly bool CollectTitles = Environment.GetEnvironmentVariable("DAYTRACE_COLLECT_TITLES") != "0";
     private static readonly bool CollectInput = Environment.GetEnvironmentVariable("DAYTRACE_COLLECT_INPUT") != "0";
     private static readonly bool CollectTabCount = Environment.GetEnvironmentVariable("DAYTRACE_COLLECT_TAB_COUNT") != "0";
@@ -46,17 +33,15 @@ internal static class Program
         Emit("foreground", 1, _active);
 
         _foregroundDelegate = OnForeground;
-        _nameChangeDelegate = OnNameChange;
-        _keyboardDelegate = OnKeyboard;
-        _mouseDelegate = OnMouse;
         _foregroundHook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, IntPtr.Zero, _foregroundDelegate, 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
-        if (CollectTitles) _nameChangeHook = SetWinEventHook(EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_NAMECHANGE, IntPtr.Zero, _nameChangeDelegate, 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
-        if (CollectInput)
-        {
-            _keyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, _keyboardDelegate, GetModuleHandle(null), 0);
-            _mouseHook = SetWindowsHookEx(WH_MOUSE_LL, _mouseDelegate, GetModuleHandle(null), 0);
-        }
-        // Coarse batches keep hook wakeups and journal writes negligible.
+        // A one-second last-input sample captures active seconds without global
+        // keyboard/mouse hooks, key data, pointer coordinates, or per-event wakeups.
+        _lastInputTime = GetLastInputTime();
+        if (CollectInput) _inputTimer = new System.Threading.Timer(_ => SampleInputActivity(), null, 1000, 1000);
+        // Sampling only the foreground title avoids the very noisy global
+        // accessibility name-change stream while retaining useful context.
+        if (CollectTitles) _titleTimer = new System.Threading.Timer(_ => SampleForegroundTitle(), null, 5000, 5000);
+        // Coarse batches keep journal writes negligible.
         _flushTimer = new System.Threading.Timer(_ => FlushCounts(), null, 15000, 15000);
         // One accessibility sample per minute keeps long reading/review sessions
         // accurate and observes browser tab counts without continuous polling.
@@ -75,11 +60,9 @@ internal static class Program
             FlushCounts();
             _flushTimer?.Dispose();
             _sampleTimer?.Dispose();
-            _nameChangeTimer?.Dispose();
+            _titleTimer?.Dispose();
+            _inputTimer?.Dispose();
             if (_foregroundHook != IntPtr.Zero) UnhookWinEvent(_foregroundHook);
-            if (_nameChangeHook != IntPtr.Zero) UnhookWinEvent(_nameChangeHook);
-            if (_keyboardHook != IntPtr.Zero) UnhookWindowsHookEx(_keyboardHook);
-            if (_mouseHook != IntPtr.Zero) UnhookWindowsHookEx(_mouseHook);
         }
     }
 
@@ -91,18 +74,9 @@ internal static class Program
         Emit("foreground", 1, snapshot);
     }
 
-    private static void OnNameChange(IntPtr hook, uint evt, IntPtr hwnd, int idObject, int idChild, uint thread, uint time)
+    private static void SampleForegroundTitle()
     {
-        if (hwnd == IntPtr.Zero || hwnd != GetForegroundWindow()) return;
-        lock (Sync)
-        {
-            _nameChangeTimer?.Dispose();
-            _nameChangeTimer = new System.Threading.Timer(_ => SampleTitleChange(hwnd), null, 750, Timeout.Infinite);
-        }
-    }
-
-    private static void SampleTitleChange(IntPtr hwnd)
-    {
+        var hwnd = GetForegroundWindow();
         if (hwnd == IntPtr.Zero || hwnd != GetForegroundWindow()) return;
         var snapshot = ReadWindow(hwnd, false);
         WindowSnapshot previous;
@@ -117,22 +91,15 @@ internal static class Program
         Emit("foreground", 1, snapshot);
     }
 
-    private static IntPtr OnKeyboard(int code, IntPtr wParam, IntPtr lParam)
+    private static void SampleInputActivity()
     {
-        if (code >= 0 && (wParam == (IntPtr)WM_KEYDOWN || wParam == (IntPtr)WM_SYSKEYDOWN))
+        var current = GetLastInputTime();
+        lock (Sync)
         {
-            lock (Sync) _inputCount++;
+            if (current == 0 || current == _lastInputTime) return;
+            _lastInputTime = current;
+            _inputCount++;
         }
-        return CallNextHookEx(_keyboardHook, code, wParam, lParam);
-    }
-
-    private static IntPtr OnMouse(int code, IntPtr wParam, IntPtr lParam)
-    {
-        if (code >= 0 && (wParam == (IntPtr)WM_LBUTTONDOWN || wParam == (IntPtr)WM_RBUTTONDOWN || wParam == (IntPtr)WM_MBUTTONDOWN))
-        {
-            lock (Sync) _clickCount++;
-        }
-        return CallNextHookEx(_mouseHook, code, wParam, lParam);
     }
 
     private static void FlushCounts()
@@ -145,16 +112,12 @@ internal static class Program
     private static void FlushCounts(WindowSnapshot snapshot)
     {
         int inputs;
-        int clicks;
         lock (Sync)
         {
             inputs = _inputCount;
-            clicks = _clickCount;
             _inputCount = 0;
-            _clickCount = 0;
         }
         if (inputs > 0) Emit("input", inputs, snapshot);
-        if (clicks > 0) Emit("click", clicks, snapshot);
     }
 
     private static void SampleActiveWindow()
@@ -250,8 +213,14 @@ internal static class Program
 
     private static uint GetIdleMilliseconds()
     {
+        var lastInput = GetLastInputTime();
+        return lastInput > 0 ? unchecked((uint)Environment.TickCount - lastInput) : 0;
+    }
+
+    private static uint GetLastInputTime()
+    {
         var info = new LastInputInfo { Size = (uint)Marshal.SizeOf<LastInputInfo>() };
-        return GetLastInputInfo(ref info) ? unchecked((uint)Environment.TickCount - info.Time) : 0;
+        return GetLastInputInfo(ref info) ? info.Time : 0;
     }
 
     private static string ContextKind(string process) => process.ToLowerInvariant() switch
@@ -294,19 +263,14 @@ internal static class Program
 
     private sealed record WindowSnapshot(string App, string Process, string Title, int TabCount, string Context);
     private delegate void WinEventDelegate(IntPtr hook, uint evt, IntPtr hwnd, int idObject, int idChild, uint thread, uint time);
-    private delegate IntPtr HookDelegate(int code, IntPtr wParam, IntPtr lParam);
 
     [StructLayout(LayoutKind.Sequential)] private struct Message { public IntPtr hwnd; public uint message; public UIntPtr wParam; public IntPtr lParam; public uint time; public int ptX; public int ptY; }
     [StructLayout(LayoutKind.Sequential)] private struct LastInputInfo { public uint Size; public uint Time; }
     [DllImport("user32.dll")] private static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr module, WinEventDelegate callback, uint processId, uint threadId, uint flags);
     [DllImport("user32.dll")] private static extern bool UnhookWinEvent(IntPtr hook);
-    [DllImport("user32.dll")] private static extern IntPtr SetWindowsHookEx(int idHook, HookDelegate callback, IntPtr module, uint threadId);
-    [DllImport("user32.dll")] private static extern bool UnhookWindowsHookEx(IntPtr hook);
-    [DllImport("user32.dll")] private static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr hwnd, StringBuilder text, int maxCount);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr GetModuleHandle(string? moduleName);
     [DllImport("user32.dll")] private static extern sbyte GetMessage(out Message message, IntPtr hwnd, uint min, uint max);
     [DllImport("user32.dll")] private static extern bool TranslateMessage(ref Message message);
     [DllImport("user32.dll")] private static extern IntPtr DispatchMessage(ref Message message);

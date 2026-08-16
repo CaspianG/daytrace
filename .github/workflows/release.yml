@@ -13,8 +13,17 @@ jobs:
         with: { node-version: 22, cache: npm }
       - uses: actions/setup-dotnet@v4
         with: { dotnet-version: 8.0.x }
+      - name: Verify tag matches package version
+        run: node -e "const expected='v'+require('./package.json').version;if(process.env.GITHUB_REF_NAME!==expected)throw new Error('Expected tag '+expected+', received '+process.env.GITHUB_REF_NAME)"
       - run: npm ci
-      - run: npm run dist:win
+      - name: Build Windows artifacts with transient-download retry
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            npm run dist:win && exit 0
+            test "$attempt" = 3 && exit 1
+            sleep 15
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: daytrace-windows
@@ -27,8 +36,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
+      - name: Verify tag matches package version
+        run: node -e "const expected='v'+require('./package.json').version;if(process.env.GITHUB_REF_NAME!==expected)throw new Error('Expected tag '+expected+', received '+process.env.GITHUB_REF_NAME)"
       - run: npm ci
-      - run: npm run dist:mac
+      - name: Build macOS artifacts with transient-download retry
+        run: |
+          for attempt in 1 2 3; do
+            npm run dist:mac && exit 0
+            test "$attempt" = 3 && exit 1
+            sleep 15
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: daytrace-macos

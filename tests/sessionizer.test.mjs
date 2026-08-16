@@ -55,3 +55,32 @@ test("legacy Telegram counters are removed and duplicate contexts merge", () => 
   assert.equal(sessions[0].activities.length, 1);
   assert.equal(sessions[0].activities[0].title, "Project chat @ Team");
 });
+
+test("rapid title noise does not receive artificial five-second durations", () => {
+  const base = new Date("2026-08-15T09:00:00+03:00").getTime();
+  const events = [
+    { at: new Date(base).toISOString(), kind: "foreground", app: "Telegram Desktop", title: "Chat A", context: "messaging" },
+    { at: new Date(base + 100).toISOString(), kind: "foreground", app: "Telegram Desktop", title: "Chat B", context: "messaging" },
+    { at: new Date(base + 200).toISOString(), kind: "foreground", app: "Telegram Desktop", title: "Chat C", context: "messaging" },
+    { at: new Date(base + 1_000).toISOString(), kind: "foreground", app: "Google Chrome", title: "Home", context: "browser" },
+    { at: new Date(base + 61_000).toISOString(), kind: "heartbeat", app: "Google Chrome", title: "Home", context: "browser" },
+  ];
+  const sessions = sessionizer.sessionize(events, base + 62_000, "en");
+  const telegramMs = sessions.flatMap((item) => item.activities).filter((item) => item.app === "Telegram Desktop").reduce((sum, item) => sum + item.durationMs, 0);
+  assert.equal(telegramMs, 0);
+  assert.ok(sessions.flatMap((item) => item.activities).find((item) => item.app === "Google Chrome").durationMs >= 60_000);
+});
+
+test("mixed work blocks keep per-activity categories and ignore legacy shell noise", () => {
+  const base = new Date("2026-08-15T09:00:00+03:00").getTime();
+  const events = [
+    { at: new Date(base).toISOString(), kind: "foreground", app: "PickerHost", process: "PickerHost", title: "Open" },
+    { at: new Date(base + 2_000).toISOString(), kind: "foreground", app: "Telegram Desktop", process: "Telegram", title: "Project", context: "messaging" },
+    { at: new Date(base + 62_000).toISOString(), kind: "foreground", app: "Google Chrome", process: "chrome", title: "Home", context: "browser" },
+    { at: new Date(base + 122_000).toISOString(), kind: "foreground", app: "ChatGPT", process: "ChatGPT", title: "Chat" },
+  ];
+  const [session] = sessionizer.sessionize(events, base + 182_000, "en");
+  assert.equal(session.label, "Mixed activity");
+  assert.deepEqual([...new Set(session.activities.map((item) => item.focus))], ["communication", "browser", "ai"]);
+  assert.equal(session.activities.some((item) => item.app === "PickerHost"), false);
+});

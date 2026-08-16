@@ -121,7 +121,10 @@ function answerQuestion(question, events, now = new Date(), language = "ru") {
   for (const activity of relevant.flatMap((session) => session.activities)) appTotals.set(activity.app, (appTotals.get(activity.app) || 0) + activityDuration(activity));
   const topApps = [...appTotals.entries()].sort((a, b) => b[1] - a[1]);
   const totals = new Map();
-  for (const session of relevant) totals.set(session.label, (totals.get(session.label) || 0) + session.activities.reduce((sum, item) => sum + activityDuration(item), 0));
+  for (const activity of relevant.flatMap((session) => session.activities)) {
+    const label = activity.focusLabel || (lang === "ru" ? "Другая активность" : "Other activity");
+    totals.set(label, (totals.get(label) || 0) + activityDuration(activity));
+  }
   const points = [...totals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([label, ms]) => ({ label, duration: durationText(ms, lang) }));
   const titles = [...new Set(activities.map((item) => item.title).filter((title) => title && !/^(active window|активное окно)$/i.test(title)))].slice(0, 3);
   const duration = activities.reduce((sum, item) => sum + activityDuration(item), 0);

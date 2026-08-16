@@ -23,8 +23,8 @@ const APP_ICONS = [
 ];
 
 const FOCUS_LABELS = {
-  en: { planning: "Planning and preparation", development: "Development", communication: "Communication and follow-up", design: "Design", research: "Research", files: "File work", other: "Work activity", break: "Break" },
-  ru: { planning: "Планирование и подготовка", development: "Разработка", communication: "Коммуникация и уточнения", design: "Дизайн", research: "Исследование", files: "Работа с файлами", other: "Рабочая активность", break: "Перерыв" },
+  en: { planning: "Planning and preparation", development: "Development", communication: "Messaging and email", design: "Design", research: "Research", browser: "Browser activity", ai: "AI assistant work", audio: "Audio production", remote: "Remote work", files: "File work", other: "Other activity", mixed: "Mixed activity", break: "Break" },
+  ru: { planning: "Планирование и подготовка", development: "Разработка", communication: "Мессенджеры и почта", design: "Дизайн", research: "Исследование", browser: "Работа в браузере", ai: "Работа с ИИ-ассистентами", audio: "Работа со звуком", remote: "Удалённая работа", files: "Работа с файлами", other: "Другая активность", mixed: "Смешанная работа", break: "Перерыв" },
 };
 
 function startOfToday(hour, minute) {
@@ -46,7 +46,7 @@ function demoState(language = demoLanguage(), onboardingComplete = true) {
   const times = [[9, 5, 9, 30], [9, 30, 9, 45], [9, 45, 10, 0], [10, 0, 10, 15], [10, 15, 10, 45], [10, 45, 11, 15], [11, 15, 11, 30], [11, 30, 11, 50], [11, 50, 12, 5]];
   const activities = times.map(([sh, sm, eh, em], index) => ({
     start: startOfToday(sh, sm), end: startOfToday(eh, em), durationMs: startOfToday(eh, em) - startOfToday(sh, sm),
-    app: apps[index], title: t.demo.titles[index], focus: focuses[index], context: apps[index].includes("Chrome") ? "browser" : apps[index].includes("Telegram") ? "messaging" : "other",
+    app: apps[index], title: t.demo.titles[index], focus: focuses[index], focusLabel: FOCUS_LABELS[lang][focuses[index]], context: apps[index].includes("Chrome") ? "browser" : apps[index].includes("Telegram") ? "messaging" : "other",
     tabCount: apps[index].includes("Chrome") ? (index === 1 ? 7 : 11) : 0, clicks: 4, inputs: 18,
   }));
   const makeSession = (id, from, to, focus) => ({ id, start: activities[from].start, end: activities[to].end, durationMs: activities[to].end - activities[from].start, focus, label: FOCUS_LABELS[lang][focus], activities: activities.slice(from, to + 1) });
@@ -54,7 +54,7 @@ function demoState(language = demoLanguage(), onboardingComplete = true) {
     settings: { trackingEnabled: true, retentionHours: 48, excludePrivateWindows: true, collectWindowTitles: true, collectInputCounts: true, collectBrowserTabCount: true, autoStartEnabled: false, excludedApps: ["1Password", "Bitwarden", "KeePass"], language: lang, onboardingComplete },
     runtime: { platform: "browser", trackerStatus: "running", accessibilityTrusted: true, autoStartSupported: false, autoStartEnabled: false },
     sessions: [
-      makeSession("demo-1", 0, 2, "planning"), makeSession("demo-2", 3, 6, "development"), makeSession("demo-3", 7, 8, "communication"),
+      makeSession("demo-1", 0, 2, "mixed"), makeSession("demo-2", 3, 6, "mixed"), makeSession("demo-3", 7, 8, "communication"),
       { id: "demo-break", start: startOfToday(12, 5), end: startOfToday(12, 20), durationMs: 15 * 60_000, focus: "break", label: FOCUS_LABELS[lang].break, activities: [] },
     ],
     eventCount: 128, retentionCutoff: Date.now() - 48 * 60 * 60_000, dataPath: t.demo.dataPath,
@@ -88,7 +88,7 @@ function daySessions(sessions, selectedDay) {
 function buildOverview(sessions, selectedDay) {
   const dayStart = startOfLocalDay(selectedDay);
   const dayEnd = dayStart + 24 * 60 * 60_000;
-  const activities = sessions.flatMap((session) => session.activities.map((activity) => ({ ...activity, focus: session.focus, label: session.label })));
+  const activities = sessions.flatMap((session) => session.activities.map((activity) => ({ ...activity, focus: activity.focus || session.focus, label: activity.focusLabel || session.label })));
   const focus = new Map();
   const apps = new Map();
   const hours = Array.from({ length: 24 }, (_, hour) => ({ hour, durationMs: 0 }));

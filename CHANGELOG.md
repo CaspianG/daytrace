@@ -2,6 +2,27 @@
 
 All notable changes to Daytrace are documented here.
 
+## [0.3.1] - 2026-08-16
+
+### Fixed
+
+- Removed the artificial five-second minimum from every title-change fragment, preventing noisy Telegram and browser titles from inflating observed time.
+- Work blocks no longer inherit the first application's category. Overview totals are calculated per activity, and mixed blocks are labelled explicitly.
+- Legacy system-window events are filtered during sessionization, so already-recorded PickerHost and ShellExperienceHost rows no longer affect the timeline.
+- Replaced speculative category descriptions with neutral, evidence-based explanations that never invent tasks, requirements, emails, or API discussions.
+
+### Added
+
+- Conservative categories for browser activity, AI assistants, audio production, remote work, and genuinely unknown activity.
+- Classification confidence and per-block category breakdown in the local data model.
+- Automated checks that README, README_RU, package metadata, and changelog all name the same current version.
+
+### Performance
+
+- Replaced global keyboard and mouse hooks with a once-per-second anonymous active-time sample.
+- Replaced the noisy system-wide title-change hook with a five-second check of only the foreground window.
+- Kept exact foreground-switch events and the once-per-minute Windows browser-tab count, while eliminating per-keystroke and mouse-move wakeups.
+
 ## [0.3.0] - 2026-08-16
 
 ### Added

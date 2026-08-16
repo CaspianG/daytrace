@@ -1,6 +1,6 @@
 {
   "name": "daytrace-local",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "Private, fully local activity timeline and workday recall for Windows and macOS.",
   "author": "Daytrace contributors",
@@ -36,7 +36,7 @@
     "build:brand": "node scripts/build-brand-assets.mjs",
     "screenshots": "npm run build && electron scripts/capture-screenshots.cjs",
     "preview": "vite preview",
-    "test": "node --test tests/privacy.test.mjs tests/sessionizer.test.mjs tests/event-store.test.mjs tests/localization.test.mjs",
+    "test": "node --test tests/privacy.test.mjs tests/sessionizer.test.mjs tests/event-store.test.mjs tests/localization.test.mjs tests/release-docs.test.mjs",
     "test:sites": "node --test tests/sites-worker.test.mjs"
   },
   "dependencies": {},
@@ -109,7 +109,7 @@
           ]
         }
       ],
-      "signAndEditExecutable": false
+      "signExecutable": false
     },
     "mac": {
       "icon": "build/icon.png",

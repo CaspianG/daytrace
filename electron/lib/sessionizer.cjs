@@ -3,36 +3,68 @@ const FOCUS_LABELS = {
     development: "Разработка",
     planning: "Планирование и подготовка",
     research: "Исследование",
-    communication: "Коммуникация и уточнения",
+    communication: "Мессенджеры и почта",
     design: "Дизайн",
+    browser: "Работа в браузере",
+    ai: "Работа с ИИ-ассистентами",
+    audio: "Работа со звуком",
+    remote: "Удалённая работа",
     files: "Работа с файлами",
-    other: "Рабочая активность",
+    other: "Другая активность",
+    mixed: "Смешанная работа",
   },
   en: {
     development: "Development",
     planning: "Planning and preparation",
     research: "Research",
-    communication: "Communication and follow-up",
+    communication: "Messaging and email",
     design: "Design",
+    browser: "Browser activity",
+    ai: "AI assistant work",
+    audio: "Audio production",
+    remote: "Remote work",
     files: "File work",
-    other: "Work activity",
+    other: "Other activity",
+    mixed: "Mixed activity",
   },
 };
+
+const { isSystemNoise } = require("./privacy.cjs");
 
 function normalizeLanguage(value) {
   return String(value || "").toLowerCase().startsWith("ru") ? "ru" : "en";
 }
 
-function inferFocus(activity) {
-  const text = `${activity.app} ${activity.title}`.toLowerCase();
-  if (/(telegram|slack|teams|discord|outlook|mail|gmail|zoom)/.test(text)) return "communication";
-  if (/(figma|photoshop|illustrator|after effects|premiere|canva)/.test(text)) return "design";
-  if (/(code|visual studio|terminal|powershell|cmd|github|gitlab|gitkraken|webstorm|idea|pycharm|xcode|android studio)/.test(text)) return "development";
-  if (/(notion|trello|asana|linear|calendar|документ|docs|sheets|word|excel)/.test(text)) return "planning";
-  if (/(documentation|документац|stackoverflow|stack overflow|mdn|wikipedia|github issue|search|поиск|chatgpt|claude|perplexity)/.test(text)) return "research";
-  if (/(chrome|edge|firefox|brave|opera)/.test(text)) return "research";
-  if (/(explorer|проводник|finder)/.test(text)) return "files";
-  return "other";
+function inferFocusDetails(activity) {
+  const app = `${activity.app || ""} ${activity.process || ""}`.toLowerCase();
+  const title = String(activity.title || "").toLowerCase();
+  const result = (focus, confidence, reason) => ({ focus, confidence, reason });
+  if (/(telegram|slack|teams|discord|outlook|thunderbird|gmail|zoom|signal|whatsapp)/.test(app)) return result("communication", "high", "application");
+  if (/(figma|photoshop|illustrator|after effects|premiere|canva|sketch)/.test(app)) return result("design", "high", "application");
+  if (/(fl64|fl studio|ableton|reaper|cubase|logic pro|pro tools|audition)/.test(app)) return result("audio", "high", "application");
+  if (/(chatgpt|claude|perplexity|copilot)/.test(app)) return result("ai", "high", "application");
+  if (/(msrdc|remote desktop|parallels|vmware|virtualbox)/.test(app)) return result("remote", "high", "application");
+  if (/(visual studio|\bcode\b|terminal|powershell|windowsterminal|\bcmd\b|gitkraken|webstorm|idea64|pycharm|xcode|android studio|docker desktop)/.test(app)) return result("development", "high", "application");
+  if (/(notion|trello|asana|linear|calendar|word|excel|sheets)/.test(app)) return result("planning", "high", "application");
+  if (/(explorer|проводник|finder)/.test(app)) return result("files", "high", "application");
+
+  const browser = /(chrome|edge|firefox|brave|opera|vivaldi|safari)/.test(app) || activity.context === "browser";
+  if (browser) {
+    if (/(documentation|документац|stackoverflow|stack overflow|mdn|wikipedia|research|исследован|поиск|search results)/.test(title)) return result("research", "medium", "window-title");
+    if (/(github|gitlab|localhost|127\.0\.0\.1|developer|devtools|npm|electron|react|typescript)/.test(title)) return result("development", "medium", "window-title");
+    if (/(google docs|документ|sheets|таблиц|calendar|календар)/.test(title)) return result("planning", "medium", "window-title");
+    return result("browser", "high", "application");
+  }
+  return result("other", "low", "unknown");
+}
+
+function inferFocus(activity) { return inferFocusDetails(activity).focus; }
+
+function canonicalApp(event, language) {
+  const app = String(event.app || event.process || (language === "ru" ? "Приложение" : "Application"));
+  if (/^explorer$/i.test(app)) return language === "ru" ? "Проводник" : "File Explorer";
+  if (/^telegram(?:desktop)?$/i.test(app)) return "Telegram Desktop";
+  return app;
 }
 
 function safeTitle(title, app, language = "ru") {
@@ -58,7 +90,7 @@ function sessionize(events, now = Date.now(), language = "ru") {
   function closeActive(at) {
     if (!active) return;
     const hardEnd = Math.min(at, active.lastSignal + 75_000);
-    const end = Math.max(active.start + 5_000, hardEnd);
+    const end = Math.max(active.start, hardEnd);
     activities.push({
       ...active,
       end,
@@ -71,11 +103,13 @@ function sessionize(events, now = Date.now(), language = "ru") {
   for (const event of sorted) {
     const at = new Date(event.at).getTime();
     if (!Number.isFinite(at)) continue;
+    if (isSystemNoise(event) || /^daytrace(?:\.tracker)?$/i.test(String(event.process || ""))) continue;
     if (event.kind === "foreground") {
-      const nextApp = event.app || event.process || (lang === "ru" ? "Приложение" : "Application");
+      const nextApp = canonicalApp(event, lang);
       const nextTitle = safeTitle(event.title || "", nextApp, lang);
-      if (active && active.app === nextApp && at - active.start < 2_000 && (!nextTitle || nextTitle === active.title)) {
+      if (active && active.app === nextApp && nextTitle === active.title) {
         active.lastSignal = at;
+        if (Number(event.tabCount || 0) > active.tabCount) active.tabCount = Number(event.tabCount);
         continue;
       }
       closeActive(at);
@@ -93,7 +127,7 @@ function sessionize(events, now = Date.now(), language = "ru") {
       continue;
     }
     if (!active) continue;
-    if (event.app && event.app !== active.app) continue;
+    if (event.app && canonicalApp(event, lang) !== active.app) continue;
     active.lastSignal = at;
     if (event.context) active.context = event.context;
     if (Number(event.tabCount || 0) > 0) active.tabCount = Number(event.tabCount);
@@ -103,7 +137,7 @@ function sessionize(events, now = Date.now(), language = "ru") {
   closeActive(now);
 
   const merged = [];
-  for (const activity of activities.filter((item) => item.durationMs >= 5_000)) {
+  for (const activity of activities.filter((item) => item.durationMs >= 1_000)) {
     const previous = merged.at(-1);
     if (previous && previous.app === activity.app && previous.title === activity.title && activity.start - previous.end < 120_000) {
       previous.end = activity.end;
@@ -117,15 +151,19 @@ function sessionize(events, now = Date.now(), language = "ru") {
 
   const sessions = [];
   for (const activity of merged) {
-    const focus = inferFocus(activity);
+    const classification = inferFocusDetails(activity);
+    const focus = classification.focus;
+    activity.focus = focus;
+    activity.focusLabel = labels[focus];
+    activity.focusConfidence = classification.confidence;
+    activity.focusReason = classification.reason;
     const previous = sessions.at(-1);
     const gap = previous ? activity.start - previous.end : Infinity;
-    if (previous && gap < 8 * 60_000 && (previous.focus === focus || gap < 90_000)) {
+    if (previous && gap < 8 * 60_000 && activity.start - previous.start < 45 * 60_000) {
       previous.activities.push(activity);
       previous.end = activity.end;
       previous.durationMs += activity.durationMs;
-      if (previous.focus === "other" && focus !== "other") previous.focus = focus;
-      previous.label = labels[previous.focus];
+      if (classification.confidence === "low") previous.lowConfidenceActivities += 1;
     } else {
       sessions.push({
         id: `${activity.start}-${sessions.length}`,
@@ -134,11 +172,24 @@ function sessionize(events, now = Date.now(), language = "ru") {
         durationMs: activity.durationMs,
         focus,
         label: labels[focus],
+        confidence: classification.confidence,
+        lowConfidenceActivities: classification.confidence === "low" ? 1 : 0,
         activities: [activity],
       });
     }
   }
+  for (const session of sessions) {
+    const totals = new Map();
+    for (const activity of session.activities) totals.set(activity.focus, (totals.get(activity.focus) || 0) + activity.durationMs);
+    const ranked = [...totals.entries()].sort((a, b) => b[1] - a[1]);
+    const [topFocus, topDuration] = ranked[0] || ["other", 0];
+    const topShare = session.durationMs > 0 ? topDuration / session.durationMs : 0;
+    session.focus = ranked.length > 1 && topShare < 0.65 ? "mixed" : topFocus;
+    session.label = labels[session.focus];
+    session.focusBreakdown = ranked.map(([itemFocus, durationMs]) => ({ focus: itemFocus, label: labels[itemFocus], durationMs }));
+    session.confidence = session.lowConfidenceActivities / Math.max(1, session.activities.length) > 0.4 ? "low" : "high";
+  }
   return sessions;
 }
 
-module.exports = { FOCUS_LABELS, inferFocus, normalizeLanguage, sessionize };
+module.exports = { FOCUS_LABELS, inferFocus, inferFocusDetails, normalizeLanguage, sessionize };
