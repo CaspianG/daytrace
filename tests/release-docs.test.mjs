@@ -39,7 +39,8 @@ test("both READMEs document Windows, macOS, and measured system load", () => {
 test("macOS tagged releases remain publishable without unavailable Apple credentials", () => {
   assert.match(releaseWorkflow, /npm run dist:mac/);
   assert.doesNotMatch(releaseWorkflow, /secrets\.MAC_CSC_LINK/);
-  assert.match(releaseWorkflow, /MACOS_INSTALL\.txt/);
+  assert.match(releaseWorkflow, /cp MACOS_INSTALL\.txt release\/MACOS_INSTALL\.txt/);
+  assert.match(releaseWorkflow, /release\/MACOS_INSTALL\.txt/);
   assert.match(releaseWorkflow, /body_path: \.github\/RELEASE_BODY\.md/);
   assert.match(pkg.scripts["dist:mac"], /mac\.identity=null/);
   assert.match(pkg.scripts["dist:mac"], /mac\.notarize=false/);
