@@ -14,6 +14,7 @@ const releaseBody = fs.readFileSync(path.join(root, ".github", "RELEASE_BODY.md"
 const macGuide = fs.readFileSync(path.join(root, "docs", "MACOS_INSTALL.md"), "utf8");
 const macGuideRu = fs.readFileSync(path.join(root, "docs", "MACOS_INSTALL_RU.md"), "utf8");
 const bundledMacGuide = fs.readFileSync(path.join(root, "MACOS_INSTALL.txt"), "utf8");
+const bundleMacGuideScript = fs.readFileSync(path.join(root, "scripts", "bundle-macos-install-guide.sh"), "utf8");
 
 test("release metadata and both READMEs name the same current version", () => {
   const version = pkg.version;
@@ -42,7 +43,10 @@ test("macOS tagged releases remain publishable without unavailable Apple credent
   assert.match(releaseWorkflow, /body_path: \.github\/RELEASE_BODY\.md/);
   assert.match(pkg.scripts["dist:mac"], /mac\.identity=null/);
   assert.match(pkg.scripts["dist:mac"], /mac\.notarize=false/);
+  assert.match(pkg.scripts["dist:mac"], /bundle-macos-install-guide\.sh/);
   assert.equal(pkg.build.dmg.contents.some((item) => item.path === "MACOS_INSTALL.txt"), true);
+  assert.match(bundleMacGuideScript, /READ BEFORE INSTALLING\.txt/);
+  assert.match(bundleMacGuideScript, /unzip -tq/);
 });
 
 test("strict signed and notarized macOS build remains available for future credentials", () => {
