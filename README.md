@@ -11,12 +11,15 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/CaspianG/daytrace/releases/latest"><strong>Download for Windows or macOS</strong></a>
+  <a href="https://github.com/CaspianG/daytrace/releases/latest"><strong>Download for Windows</strong></a>
+  · <a href="docs/MACOS_INSTALL.md"><strong>Install on macOS</strong></a>
   · <a href="README_RU.md">Русская версия</a>
   · <a href="SECURITY.md">Security</a>
 </p>
 
 <p align="center"><strong>Current release: v0.5.1</strong> — Windows and macOS artifacts are built from the same tag and published together.</p>
+
+> **macOS first-launch notice:** the current Mac build is free and fully local, but it is not signed or notarized because the project does not have Apple Developer ID credentials. Gatekeeper will therefore warn on first launch. Read the [safe macOS installation guide](docs/MACOS_INSTALL.md) before downloading; it uses Finder's supported **Open** / **Open Anyway** flow and does not disable Gatekeeper.
 
 <p align="center">
   <img alt="Current version v0.5.1" src="https://img.shields.io/badge/current-v0.5.1-6f8f67?style=flat-square">
@@ -50,9 +53,9 @@ The current public build is not code-signed yet, so Windows SmartScreen may show
 
 Prefer a portable build? Download `Daytrace-Portable-…-x64.zip`, extract it, and run `Daytrace.exe`.
 
-On macOS 12 or newer, download the universal `Daytrace-…-macOS-universal.dmg` and drag Daytrace to Applications. On first launch, Daytrace explains why Accessibility access is needed, opens the exact Privacy & Security pane, and automatically starts tracking when you return after enabling Daytrace. You can continue without the permission, but the timeline will remain empty until it is granted.
+On macOS 12 or newer, first read the [macOS installation guide](docs/MACOS_INSTALL.md), then download the universal `Daytrace-…-macOS-universal.dmg`. The release page and mounted DMG both contain the same warning and instructions. Drag Daytrace to Applications, then use **Control-click/right-click → Open** for the first launch. If it is still blocked, use **System Settings → Privacy & Security → Open Anyway**. This Gatekeeper message is expected because the project does not currently have the paid Apple Developer ID certificate required for signing and notarization; it is not a malware detection result. Do not disable Gatekeeper globally.
 
-The current v0.5.1 macOS build is not notarized, so Gatekeeper may require **Open** from Finder's context menu. The release pipeline is now prepared to refuse future unsigned or unnotarized macOS artifacts; removing this warning from a public build requires the repository owner to configure an Apple Developer ID certificate and notarization key as described in [the macOS signing guide](docs/MACOS_SIGNING.md).
+After the app opens, Daytrace separately explains why Accessibility access is needed, opens the exact Privacy & Security pane, and automatically starts tracking when you return after enabling Daytrace. You can continue without that permission, but the timeline remains empty until it is granted. Verify the DMG against the release's `SHA256SUMS.txt` before opening it.
 
 Minimizing or closing the window releases the heavy renderer while the lightweight native tracker continues from the system tray. Double-click the tray icon or launch Daytrace again to reopen the same instance.
 

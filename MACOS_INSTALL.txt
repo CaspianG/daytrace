@@ -1,0 +1,51 @@
+DAYTRACE FOR macOS — READ BEFORE INSTALLING
+DAYTRACE ДЛЯ macOS — ПРОЧИТАЙТЕ ПЕРЕД УСТАНОВКОЙ
+
+ENGLISH
+
+Daytrace is currently distributed without an Apple Developer ID signature and
+without Apple notarization. macOS may therefore say that Apple could not verify
+the app is free of malware. This is a Gatekeeper trust warning caused by the
+missing paid Apple certificate; it is not a malware detection result.
+
+1. Compare the downloaded DMG's SHA-256 with SHA256SUMS.txt on the same GitHub
+   Release page.
+2. Open the DMG and drag Daytrace to Applications.
+3. In Finder > Applications, Control-click (or right-click) Daytrace and choose
+   Open, then choose Open again.
+4. If it is still blocked, open System Settings > Privacy & Security, scroll to
+   Security, find the message about Daytrace, and click Open Anyway. Confirm
+   with your password or Touch ID if macOS asks.
+5. Launch Daytrace and grant Accessibility access when its own setup explains
+   the permission. This second permission is required for local activity
+   tracking and is separate from Gatekeeper.
+
+Do not disable Gatekeeper globally. Download Daytrace only from the official
+GitHub repository: https://github.com/CaspianG/daytrace/releases/latest
+
+Full guide: https://github.com/CaspianG/daytrace/blob/main/docs/MACOS_INSTALL.md
+
+РУССКИЙ
+
+Сейчас Daytrace распространяется без подписи Apple Developer ID и без
+нотарификации Apple. Поэтому macOS может написать, что Apple не удалось
+проверить приложение на отсутствие вредоносного ПО. Это предупреждение доверия
+Gatekeeper из-за отсутствия платного сертификата Apple, а не результат
+обнаружения вируса.
+
+1. Сверьте SHA-256 скачанного DMG с файлом SHA256SUMS.txt в том же GitHub Release.
+2. Откройте DMG и перетащите Daytrace в «Программы».
+3. В Finder > «Программы» нажмите Daytrace с удержанием Control (или правой
+   кнопкой), выберите «Открыть», затем ещё раз «Открыть».
+4. Если запуск всё ещё заблокирован, откройте «Системные настройки» >
+   «Конфиденциальность и безопасность», прокрутите до раздела «Безопасность»,
+   найдите сообщение о Daytrace и нажмите «Всё равно открыть». Подтвердите
+   действие паролем или Touch ID, если macOS попросит.
+5. Запустите Daytrace и выдайте «Универсальный доступ», когда приложение объяснит
+   разрешение. Оно нужно для локального сбора активности и не связано с
+   предупреждением Gatekeeper.
+
+Не отключайте Gatekeeper целиком. Скачивайте Daytrace только из официального
+репозитория: https://github.com/CaspianG/daytrace/releases/latest
+
+Полная инструкция: https://github.com/CaspianG/daytrace/blob/main/docs/MACOS_INSTALL_RU.md

@@ -32,7 +32,7 @@
     "build:tracker:mac": "bash scripts/build-macos-tracker.sh",
     "dist": "npm run dist:win",
     "dist:win": "npm run test && npm run build:tracker:win && npm run build:brand && npm run build && electron-builder --win nsis zip --publish never",
-    "dist:mac": "npm run test && npm run build:tracker:mac && npm run build:brand && npm run build && electron-builder --mac dmg zip --universal --publish never",
+    "dist:mac": "npm run test && npm run build:tracker:mac && npm run build:brand && npm run build && electron-builder --mac dmg zip --universal --publish never -c.mac.identity=null -c.mac.notarize=false",
     "dist:mac:release": "node scripts/require-apple-signing.mjs && npm run test && npm run build:tracker:mac && npm run build:brand && npm run build && electron-builder --mac dmg zip --universal --publish never -c.mac.forceCodeSigning=true && bash scripts/verify-macos-release.sh",
     "build:brand": "node scripts/build-brand-assets.mjs",
     "screenshots": "npm run build && electron scripts/capture-screenshots.cjs",
@@ -150,6 +150,31 @@
           "arch": [
             "universal"
           ]
+        }
+      ]
+    },
+    "dmg": {
+      "window": {
+        "width": 660,
+        "height": 440
+      },
+      "contents": [
+        {
+          "x": 155,
+          "y": 185
+        },
+        {
+          "x": 505,
+          "y": 185,
+          "type": "link",
+          "path": "/Applications"
+        },
+        {
+          "x": 330,
+          "y": 350,
+          "type": "file",
+          "path": "MACOS_INSTALL.txt",
+          "name": "READ BEFORE INSTALLING.txt"
         }
       ]
     },

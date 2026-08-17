@@ -24,7 +24,8 @@ All notable changes to Daytrace are documented here.
 
 ### Release integrity
 
-- The tagged macOS release job now requires a real Developer ID Application certificate and Apple notarization credentials, signs the embedded native tracker, enables Hardened Runtime, and refuses to publish unless `codesign`, Gatekeeper assessment, and stapler validation all pass.
+- Tagged releases now keep macOS available while Apple Developer ID credentials are unavailable: they deliberately build without signing/notarization and publish a prominent Gatekeeper explanation in both README languages, the GitHub Release body, a companion text asset, and the mounted DMG.
+- The documented first-launch flow uses Finder's supported **Open** / **Open Anyway** controls, asks users to verify `SHA256SUMS.txt`, and explicitly avoids global Gatekeeper disabling. The strict signed/notarized build and verification path remains available for the future.
 
 ### Updates
 
