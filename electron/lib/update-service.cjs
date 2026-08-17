@@ -25,7 +25,7 @@ function expectedAssetName(version, platform) {
 }
 
 function windowsInstallerArgs(executablePath) {
-  const installDirectory = path.dirname(String(executablePath || "").trim());
+  const installDirectory = path.win32.dirname(String(executablePath || "").trim());
   const args = ["--updated", "/S", "--force-run"];
   if (installDirectory && installDirectory !== ".") args.push(`/D=${installDirectory}`);
   return args;
