@@ -19,6 +19,15 @@ const DEFAULT_SETTINGS = {
   onboardingComplete: false,
 };
 
+const MIN_RETENTION_HOURS = 48;
+const MAX_RETENTION_HOURS = 365 * 24;
+
+function normalizeRetentionHours(value) {
+  const hours = Math.round(Number(value));
+  if (!Number.isFinite(hours)) return DEFAULT_SETTINGS.retentionHours;
+  return Math.min(MAX_RETENTION_HOURS, Math.max(MIN_RETENTION_HOURS, hours));
+}
+
 function normalizeLanguage(value) {
   return String(value || "").toLowerCase().startsWith("ru") ? "ru" : "en";
 }
@@ -45,6 +54,7 @@ class EventStore {
     const defaults = { ...DEFAULT_SETTINGS, language: normalizeLanguage(options.defaultLanguage || DEFAULT_SETTINGS.language) };
     this.settings = { ...defaults, ...readJson(this.settingsFile, {}) };
     this.settings.language = normalizeLanguage(this.settings.language);
+    this.settings.retentionHours = normalizeRetentionHours(this.settings.retentionHours);
     this.settings.onboardingComplete = Boolean(this.settings.onboardingComplete);
     this.settings.intentRules = normalizeIntentRules(this.settings.intentRules);
     for (const key of ["trackingEnabled", "excludePrivateWindows", "collectWindowTitles", "collectInputCounts", "collectBrowserTabCount", "autoStartEnabled"]) {
@@ -65,14 +75,20 @@ class EventStore {
   }
 
   updateSettings(patch) {
+    const previousRetention = this.settings.retentionHours;
     this.settings = { ...this.settings, ...patch };
     this.settings.language = normalizeLanguage(this.settings.language);
+    this.settings.retentionHours = normalizeRetentionHours(this.settings.retentionHours);
     this.settings.intentRules = normalizeIntentRules(this.settings.intentRules);
     for (const key of ["trackingEnabled", "excludePrivateWindows", "collectWindowTitles", "collectInputCounts", "collectBrowserTabCount", "autoStartEnabled"]) {
       this.settings[key] = Boolean(this.settings[key]);
     }
     this.saveSettings();
     this.invalidate();
+    if (this.settings.retentionHours !== previousRetention) {
+      this.eventsCache = null;
+      this.prune();
+    }
     this.onChange();
     return this.settings;
   }
@@ -117,8 +133,66 @@ class EventStore {
         } catch { /* A truncated final line is ignored. */ }
       }
     }
-    this.eventsCache = events;
-    return this.eventsCache;
+    if (this.settings.retentionHours <= 48) this.eventsCache = events;
+    return events;
+  }
+
+  loadEventsRange(start, end) {
+    const min = Number(start);
+    const max = Number(end);
+    if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) return [];
+    if (this.eventsCache) {
+      return this.eventsCache.filter((event) => {
+        const at = new Date(event.at).getTime();
+        return at >= min && at < max;
+      });
+    }
+    const dayKeys = new Set();
+    const cursor = new Date(min);
+    cursor.setHours(0, 0, 0, 0);
+    while (cursor.getTime() < max) {
+      dayKeys.add(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`);
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    const events = [];
+    for (const name of fs.readdirSync(this.eventsDir).filter((item) => item.endsWith(".jsonl") && dayKeys.has(item.slice(0, 10))).sort()) {
+      const file = path.join(this.eventsDir, name);
+      for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/).filter(Boolean)) {
+        try {
+          const event = JSON.parse(line);
+          const at = new Date(event.at).getTime();
+          if (at >= min && at < max) events.push(event);
+        } catch { /* A truncated final line is ignored. */ }
+      }
+    }
+    return events;
+  }
+
+  availableDays() {
+    const cutoff = Date.now() - this.settings.retentionHours * 60 * 60_000;
+    const cutoffDay = new Date(cutoff);
+    cutoffDay.setHours(0, 0, 0, 0);
+    return [...new Set(fs.readdirSync(this.eventsDir)
+      .filter((name) => /^\d{4}-\d{2}-\d{2}-\d{2}\.jsonl$/.test(name))
+      .map((name) => name.slice(0, 10))
+      .filter((day) => new Date(`${day}T00:00:00`).getTime() >= cutoffDay.getTime()))]
+      .sort()
+      .reverse();
+  }
+
+  dayState(value) {
+    const start = new Date(Number(value));
+    if (!Number.isFinite(start.getTime())) throw new Error("Invalid day");
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    const now = Date.now();
+    const events = this.loadEventsRange(start.getTime(), end.getTime());
+    return {
+      day: start.getTime(),
+      sessions: sessionize(events, Math.min(now, end.getTime()), this.settings.language, this.settings.intentRules),
+      eventCount: events.length,
+    };
   }
 
   prune() {
@@ -165,15 +239,18 @@ class EventStore {
 
   state() {
     if (this.stateCache) return this.stateCache;
-    const events = this.loadEvents();
+    const now = Date.now();
+    const analysisStart = Math.max(now - 48 * 60 * 60_000, now - this.settings.retentionHours * 60 * 60_000);
+    const events = this.loadEventsRange(analysisStart, now + 1);
     this.stateCache = {
       settings: this.settings,
-      sessions: sessionize(events, Date.now(), this.settings.language, this.settings.intentRules),
+      sessions: sessionize(events, now, this.settings.language, this.settings.intentRules),
       eventCount: events.length,
       lastEventAt: events.length ? events.at(-1).at : null,
       skills: suggestSkills(events, new Date(), this.settings.language, this.settings.intentRules),
       dataPath: this.root,
-      retentionCutoff: Date.now() - this.settings.retentionHours * 60 * 60_000,
+      retentionCutoff: now - this.settings.retentionHours * 60 * 60_000,
+      availableDays: this.availableDays(),
     };
     return this.stateCache;
   }
@@ -196,4 +273,4 @@ class EventStore {
   }
 }
 
-module.exports = { DEFAULT_SETTINGS, EventStore, normalizeLanguage };
+module.exports = { DEFAULT_SETTINGS, EventStore, normalizeLanguage, normalizeRetentionHours };

@@ -2,9 +2,11 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("daytrace", {
   getState: () => ipcRenderer.invoke("daytrace:get-state"),
+  getDay: (day) => ipcRenderer.invoke("daytrace:get-day", day),
   ask: (question) => ipcRenderer.invoke("daytrace:ask", question),
   setTracking: (enabled) => ipcRenderer.invoke("daytrace:set-tracking", enabled),
   setSetting: (key, enabled) => ipcRenderer.invoke("daytrace:set-setting", key, enabled),
+  setRetention: (hours) => ipcRenderer.invoke("daytrace:set-retention", hours),
   setAutoStart: (enabled) => ipcRenderer.invoke("daytrace:set-autostart", enabled),
   requestAccessibility: () => ipcRenderer.invoke("daytrace:request-accessibility"),
   setExclusions: (apps) => ipcRenderer.invoke("daytrace:set-exclusions", apps),

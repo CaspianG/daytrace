@@ -4,6 +4,18 @@ All notable changes to Daytrace are documented here.
 
 ## Unreleased
 
+### Day navigation and insights
+
+- The header now shows the actual selected date, uses DST-safe previous/next navigation, and opens a localized calendar that marks days containing retained activity.
+- Day changes and the calendar use short native-feeling transitions in the existing Calm Chronicle visual language.
+- The hourly activity rhythm is now interactive and reveals active time, leading purpose, and top applications for the selected hour.
+
+### Retention and performance
+
+- Retention is configurable to 48 hours, 7 days, 30 days, 90 days, or one year; shortening it prunes out-of-window events immediately and visibly warns that deleted data cannot be restored.
+- Historical days are loaded lazily from hourly local JSONL files. Background state and workflow suggestions remain bounded to the recent 48-hour analysis window even when the archive is longer.
+- Local question parsing can address explicitly requested ranges up to the one-year retention limit.
+
 ### macOS
 
 - First launch now presents a dedicated, localized Accessibility setup instead of silently leaving the tracker at zero.

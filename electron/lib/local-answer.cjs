@@ -36,9 +36,9 @@ function questionWindow(question, now = new Date(), language = "ru") {
     label = lang === "ru" ? "вчера" : "yesterday";
   }
 
-  const lastHours = text.match(/(?:последн\w*|last)\s+(\d{1,2})\s*(?:час|hours?|h)/);
+  const lastHours = text.match(/(?:последн\w*|last)\s+(\d{1,4})\s*(?:час|hours?|h)/);
   if (lastHours) {
-    const hours = Math.min(48, Math.max(1, Number(lastHours[1])));
+    const hours = Math.min(365 * 24, Math.max(1, Number(lastHours[1])));
     return { start: now.getTime() - hours * 3_600_000, end: now.getTime(), label: lang === "ru" ? `последние ${hours} ч` : `last ${hours} h` };
   }
 

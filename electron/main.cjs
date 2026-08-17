@@ -344,6 +344,7 @@ function setTracking(enabled) {
 }
 function registerIpc() {
   ipcMain.handle("daytrace:get-state", () => state());
+  ipcMain.handle("daytrace:get-day", (_event, day) => store.dayState(day));
   ipcMain.handle("daytrace:ask", (_event, question) => store.ask(question));
   ipcMain.handle("daytrace:set-tracking", (_event, enabled) => setTracking(enabled));
   ipcMain.handle("daytrace:set-setting", (_event, key, value) => {
@@ -351,6 +352,7 @@ function registerIpc() {
     if (!allowed.has(key)) throw new Error("Unsupported setting");
     store.updateSettings({ [key]: Boolean(value) }); restartTracker(); return state();
   });
+  ipcMain.handle("daytrace:set-retention", (_event, hours) => { store.updateSettings({ retentionHours: hours }); return state(); });
   ipcMain.handle("daytrace:set-autostart", (_event, enabled) => {
     if (!app.isPackaged || !["win32", "darwin"].includes(process.platform)) return state();
     app.setLoginItemSettings(loginItemSettings(Boolean(enabled)));

@@ -66,3 +66,34 @@ test("intent rules are sanitized, persisted, and applied to local sessions", (t)
   assert.equal(reopened.settings.intentRules[0].intent, "personal");
   assert.equal(reopened.state().sessions[0].activities[0].intent, "personal");
 });
+
+test("retention can extend to one year while old days are loaded lazily", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "daytrace-retention-test-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const store = new storeModule.EventStore(root);
+  store.updateSettings({ retentionHours: 30 * 24 });
+  const oldAt = Date.now() - 20 * 24 * 60 * 60_000;
+  store.append({ at: new Date(oldAt).toISOString(), kind: "foreground", app: "Archive Editor", title: "Older project" });
+  store.append({ at: new Date().toISOString(), kind: "foreground", app: "Current Editor", title: "Current project" });
+
+  const backgroundState = store.state();
+  assert.equal(backgroundState.sessions.some((session) => session.activities.some((activity) => activity.app === "Archive Editor")), false);
+  assert.equal(store.dayState(oldAt).sessions.some((session) => session.activities.some((activity) => activity.app === "Archive Editor")), true);
+  assert.equal(backgroundState.availableDays.length, 2);
+  assert.equal(store.loadEvents().length, 2);
+  assert.equal(store.eventsCache, null);
+
+  store.updateSettings({ retentionHours: 48 });
+  assert.equal(store.settings.retentionHours, 48);
+  assert.equal(store.dayState(oldAt).sessions.length, 0);
+});
+
+test("retention values are clamped to the supported 48-hour to one-year range", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "daytrace-retention-clamp-test-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const store = new storeModule.EventStore(root);
+  store.updateSettings({ retentionHours: 1 });
+  assert.equal(store.settings.retentionHours, 48);
+  store.updateSettings({ retentionHours: 999_999 });
+  assert.equal(store.settings.retentionHours, 365 * 24);
+});

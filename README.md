@@ -60,15 +60,15 @@ Installed builds check for a stable update shortly after launch and every six ho
 
 ## What you get
 
-- **A complete day overview** with active time, applications, context switches, browser-tab maximum, focus distribution, top applications, and an hourly rhythm chart.
-- **A newest-first timeline** grouped into focus sessions instead of a raw event dump, with previous-day navigation inside the retention window.
+- **A complete day overview** with active time, applications, context switches, browser-tab maximum, focus distribution, top applications, and an interactive hourly rhythm chart with per-hour application and purpose details.
+- **A newest-first timeline** grouped into focus sessions instead of a raw event dump, with smooth day navigation, the real selected date in the header, and an in-style calendar that marks days containing saved activity.
 - **Explicit away-time boundaries**: five minutes without system input closes active tracking, returning to the same window starts a new interval, and gaps between sessions appear as localized Break entries.
 - **Local questions about your day**, including morning, afternoon, evening, today, yesterday, and purpose-specific questions such as “How long did I study?”
 - **A selected-day summary** showing work, learning, personal, entertainment, and honestly unknown time separately.
-- **Richer application context** from Windows event and accessibility APIs: active Chrome tab-title changes, numeric tab count, Telegram active-window/chat-title changes, and idle-aware reading time.
+- **Richer application context** from native Windows and macOS accessibility signals: active Chrome tab-title changes, numeric tab count, Telegram active-window/chat-title changes, and idle-aware reading time.
 - **Private-window filtering** for common Incognito, InPrivate, and Private Browsing titles before disk writes.
 - **Application exclusions** with password managers excluded by default.
-- **48-hour retention** with precise automatic pruning of older event lines.
+- **Configurable local retention**: 48 hours by default, or 7, 30, 90, or 365 days, with precise automatic pruning. Older days load only when selected, so a long archive does not become continuous background analysis.
 - **Pause, session deletion, and delete-all controls** inside the app.
 - **Local workflow detection** that can export a reviewable `SKILL.md` draft from repeated application sequences.
 - **Complete English and Russian localization** for the interface, timeline labels, local answers, tray menu, installer, and exported skills.
@@ -84,7 +84,13 @@ Installed builds check for a stable update shortly after launch and every six ho
 
 ![Daytrace day overview and latest activity in English](docs/assets/screenshots/timeline-en.png)
 
+![Daytrace calendar with the selected date in English](docs/assets/screenshots/calendar-en.png)
+
+![Interactive hourly activity details in English](docs/assets/screenshots/rhythm-en.png)
+
 ![Daytrace language and update settings in English](docs/assets/screenshots/settings-en.png)
+
+![Local history retention settings in English](docs/assets/screenshots/retention-en.png)
 
 ![Daytrace update available in Settings and at the bottom left, English example](docs/assets/screenshots/updates-en.png)
 
@@ -99,7 +105,7 @@ Daytrace never treats “messenger” as a synonym for work or “browser” as 
 | Activity type | Messaging, browser, development, audio | What kind of application was active? |
 | Inferred purpose | Work, learning, personal, entertainment, unknown | Why was that context most likely being used? |
 
-Purpose is inferred in layers: a recognized foreground service, the meaning of the visible active title, specialized application category, repeated title context inside the 48-hour journal, nearby activity, the dominant purpose of a coherent work block, and user-authored local rules. Specific semantic evidence overrides broad service priors: a YouTube lecture is learning, YouTube Studio is work, and ordinary YouTube viewing is entertainment. Conflicting or genuinely opaque evidence remains **Unknown purpose**, with a low-confidence reason visible in the timeline. Use the purpose picker beside any item to correct it; Daytrace stores a local rule for that chat, title, project, or keyword and recalculates the timeline, charts, answers, and workflow suggestions.
+Purpose is inferred in layers: a recognized foreground service, the meaning of the visible active title, specialized application category, repeated title context inside the configured local journal, nearby activity, the dominant purpose of a coherent work block, and user-authored local rules. Specific semantic evidence overrides broad service priors: a YouTube lecture is learning, YouTube Studio is work, and ordinary YouTube viewing is entertainment. Conflicting or genuinely opaque evidence remains **Unknown purpose**, with a low-confidence reason visible in the timeline. Use the purpose picker beside any item to correct it; Daytrace stores a local rule for that chat, title, project, or keyword and recalculates the timeline, charts, answers, and workflow suggestions.
 
 This is deliberately not message-content analysis. Daytrace can classify an active Telegram chat named “Project Atlas — client meeting” from its visible title and can reuse the same locally observed context later, but it cannot know what an opaque chat name means without surrounding evidence or your correction. The same boundary applies to browser pages, documents, editors, and every other application.
 

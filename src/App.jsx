@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowClockwise, ArrowRight, ArrowsLeftRight, Brain, Browsers, CalendarBlank, CaretLeft, CaretRight, ChartBar, Check, Clock, Compass, Database, DownloadSimple, EyeSlash, FolderOpen, Gear, Globe, LockKey, MagnifyingGlass, Pause, Play, Plus, ShieldCheck, Sparkle, Timer, Trash, X } from "@phosphor-icons/react";
 import { SiFigma, SiGooglechrome, SiGmail, SiTelegram } from "react-icons/si";
 import { FaEdge } from "react-icons/fa6";
@@ -31,6 +31,8 @@ const INTENT_LABELS = {
   en: { work: "Work", learning: "Learning", personal: "Personal", entertainment: "Entertainment", unknown: "Unknown purpose", mixed: "Mixed purpose" },
   ru: { work: "Работа", learning: "Обучение", personal: "Личное", entertainment: "Развлечения", unknown: "Цель не определена", mixed: "Смешанная цель" },
 };
+
+const RETENTION_OPTIONS = [48, 7 * 24, 30 * 24, 90 * 24, 365 * 24];
 
 function startOfToday(hour, minute) {
   const date = new Date();
@@ -65,7 +67,7 @@ function demoState(language = demoLanguage(), onboardingComplete = true) {
       makeSession("demo-1", 0, 2, "mixed", "work"), makeSession("demo-2", 3, 6, "mixed", "work"), makeSession("demo-3", 7, 8, "communication", "mixed"),
       { id: "demo-break", start: startOfToday(12, 5), end: startOfToday(12, 20), durationMs: 15 * 60_000, focus: "break", label: FOCUS_LABELS[lang].break, intent: "unknown", intentLabel: INTENT_LABELS[lang].unknown, activities: [] },
     ],
-    eventCount: 128, retentionCutoff: Date.now() - 48 * 60 * 60_000, dataPath: t.demo.dataPath,
+    eventCount: 128, retentionCutoff: Date.now() - 48 * 60 * 60_000, availableDays: [dateKey(Date.now())], dataPath: t.demo.dataPath,
     skills: [
       { id: "morning-dev", title: t.demo.skills[0][0], description: t.demo.skills[0][1], apps: ["Visual Studio Code", "Google Chrome", "Telegram Desktop"], count: 3, duration: t.demo.skills[0][2] },
       { id: "requirements-sync", title: t.demo.skills[1][0], description: t.demo.skills[1][1], apps: ["Telegram Desktop", "Figma", "Gmail"], count: 2, duration: t.demo.skills[1][2] },
@@ -77,6 +79,21 @@ function startOfLocalDay(value) {
   const day = new Date(value);
   day.setHours(0, 0, 0, 0);
   return day.getTime();
+}
+
+function addLocalDays(value, amount) {
+  const day = new Date(startOfLocalDay(value));
+  day.setDate(day.getDate() + amount);
+  return day.getTime();
+}
+
+function dateKey(value) {
+  const day = new Date(value);
+  return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+}
+
+function formatRetention(hours, t) {
+  return t.settings.retentionDurations[String(hours)] || text(t.settings.retentionCustom, { days: Math.round(hours / 24) });
 }
 
 function daySessions(sessions, selectedDay, language = "en") {
@@ -117,7 +134,7 @@ function buildOverview(sessions, selectedDay) {
   const focus = new Map();
   const intents = new Map();
   const apps = new Map();
-  const hours = Array.from({ length: 24 }, (_, hour) => ({ hour, durationMs: 0 }));
+  const hours = Array.from({ length: 24 }, (_, hour) => ({ hour, durationMs: 0, apps: new Map(), intents: new Map() }));
   let activeMs = 0;
   let maxTabs = 0;
   for (const activity of activities) {
@@ -134,7 +151,15 @@ function buildOverview(sessions, selectedDay) {
       const nextHour = new Date(cursor);
       nextHour.setMinutes(60, 0, 0);
       const sliceEnd = Math.min(end, nextHour.getTime());
-      hours[new Date(cursor).getHours()].durationMs += sliceEnd - cursor;
+      const bucket = hours[new Date(cursor).getHours()];
+      const sliceDuration = sliceEnd - cursor;
+      bucket.durationMs += sliceDuration;
+      bucket.apps.set(activity.app, (bucket.apps.get(activity.app) || 0) + sliceDuration);
+      bucket.intents.set(activity.intent, {
+        intent: activity.intent,
+        label: activity.intentLabel,
+        durationMs: (bucket.intents.get(activity.intent)?.durationMs || 0) + sliceDuration,
+      });
       cursor = sliceEnd;
     }
   }
@@ -156,7 +181,12 @@ function buildOverview(sessions, selectedDay) {
     focusTotals,
     intentTotals,
     appTotals,
-    hours: hours.slice(firstHour, lastHour + 1),
+    hours: hours.slice(firstHour, lastHour + 1).map((item) => ({
+      hour: item.hour,
+      durationMs: item.durationMs,
+      appTotals: [...item.apps.entries()].map(([app, durationMs]) => ({ app, durationMs })).sort((a, b) => b.durationMs - a.durationMs),
+      intentTotals: [...item.intents.values()].sort((a, b) => b.durationMs - a.durationMs),
+    })),
     topFocus: focusTotals[0],
     topIntent: intentTotals[0],
     topApp: appTotals[0],
@@ -181,8 +211,18 @@ function useDaytrace() {
   }, []);
   const language = normalizeLanguage(state.settings.language);
   const actions = {
+    async loadDay(day) {
+      if (window.daytrace) return window.daytrace.getDay(day);
+      const start = startOfLocalDay(day);
+      const end = addLocalDays(start, 1);
+      return { day: start, sessions: state.sessions.filter((session) => session.end > start && session.start < end) };
+    },
     async setTracking(enabled) { if (window.daytrace) setState(await window.daytrace.setTracking(enabled)); else setState((current) => ({ ...current, settings: { ...current.settings, trackingEnabled: enabled } })); },
     async setSetting(key, enabled) { if (window.daytrace) setState(await window.daytrace.setSetting(key, enabled)); else setState((current) => ({ ...current, settings: { ...current.settings, [key]: enabled } })); },
+    async setRetention(hours) {
+      if (window.daytrace) setState(await window.daytrace.setRetention(hours));
+      else setState((current) => ({ ...current, settings: { ...current.settings, retentionHours: hours }, retentionCutoff: Date.now() - hours * 60 * 60_000 }));
+    },
     async setAutoStart(enabled) { if (window.daytrace) setState(await window.daytrace.setAutoStart(enabled)); else setState((current) => ({ ...current, settings: { ...current.settings, autoStartEnabled: enabled }, runtime: { ...current.runtime, autoStartEnabled: enabled } })); },
     async requestAccessibility() { if (window.daytrace) setState(await window.daytrace.requestAccessibility()); },
     async setExclusions(apps) { if (window.daytrace) setState(await window.daytrace.setExclusions(apps)); else setState((current) => ({ ...current, settings: { ...current.settings, excludedApps: apps } })); },
@@ -276,12 +316,12 @@ function SidebarUpdateStatus({ update, actions, setPage, t }) {
 }
 
 function Sidebar({ page, setPage, state, actions, language, t }) {
-  const expires = new Date(Date.now() + state.settings.retentionHours * 60 * 60_000);
+  const retainedSince = new Intl.DateTimeFormat(t.locale, { dateStyle: "short", timeStyle: "short" }).format(new Date(state.retentionCutoff));
   const update = state.runtime?.update || {};
   return <aside className="sidebar">
     <div className="brand-mark"><Compass size={29} weight="fill" /></div>
     <nav className="main-nav" aria-label={language === "ru" ? "Разделы" : "Sections"}>{NAVIGATION.map(({ id, icon: Icon, separated }) => <button key={id} className={`${page === id ? "active" : ""} ${separated ? "separated" : ""}`} onClick={() => setPage(id)}><Icon size={25} weight={page === id ? "fill" : "regular"} /><span>{t.nav[id]}</span></button>)}</nav>
-    <div className="sidebar-status"><div className="status-row"><span className={`status-dot ${state.settings.trackingEnabled ? "on" : "off"}`} /><span>{state.settings.trackingEnabled ? t.common.local : t.status.paused}</span></div><div className="status-row muted"><Database size={18} /><span>{text(t.status.retention, { hours: state.settings.retentionHours })}</span></div><div className="expiry">{text(t.status.deletion, { time: formatTime(expires, language) })}</div></div>
+    <div className="sidebar-status"><div className="status-row"><span className={`status-dot ${state.settings.trackingEnabled ? "on" : "off"}`} /><span>{state.settings.trackingEnabled ? t.common.local : t.status.paused}</span></div><div className="status-row muted"><Database size={18} /><span>{text(t.status.retention, { period: formatRetention(state.settings.retentionHours, t) })}</span></div><div className="expiry">{text(t.status.deletion, { time: retainedSince })}</div></div>
     <SidebarUpdateStatus update={update} actions={actions} setPage={setPage} t={t} />
     <button className={`tracking-button ${state.settings.trackingEnabled ? "pause" : "resume"}`} onClick={() => actions.setTracking(!state.settings.trackingEnabled)}>{state.settings.trackingEnabled ? <Pause size={22} weight="fill" /> : <Play size={22} weight="fill" />}{state.settings.trackingEnabled ? t.status.pause : t.status.resume}</button>
   </aside>;
@@ -309,15 +349,82 @@ function RankedBars({ title, subtitle, items, max, renderLabel, renderValue }) {
   return <section className="chart-card"><header><div><h3>{title}</h3><p>{subtitle}</p></div></header><div className="ranked-bars">{items.slice(0, 5).map((item) => <div className="ranked-row" key={renderLabel(item)}><div className="ranked-label"><span>{renderLabel(item)}</span><strong>{renderValue(item)}</strong></div><div className="ranked-track"><span style={{ width: `${Math.max(4, (item.durationMs / Math.max(1, max)) * 100)}%` }} /></div></div>)}</div></section>;
 }
 
-function ActivityRhythm({ stats, t }) {
+function DateCalendar({ selectedDay, minDay, maxDay, availableDays, language, onSelect, onClose, t }) {
+  const [visibleMonth, setVisibleMonth] = useState(() => {
+    const month = new Date(selectedDay);
+    month.setDate(1);
+    month.setHours(0, 0, 0, 0);
+    return month.getTime();
+  });
+  const available = useMemo(() => new Set(availableDays || []), [availableDays]);
+  const month = new Date(visibleMonth);
+  const gridStart = new Date(visibleMonth);
+  const mondayOffset = (gridStart.getDay() + 6) % 7;
+  gridStart.setDate(gridStart.getDate() - mondayOffset);
+  const days = Array.from({ length: 42 }, (_, index) => addLocalDays(gridStart.getTime(), index));
+  const weekdays = Array.from({ length: 7 }, (_, index) => {
+    const day = new Date(2026, 5, 1 + index);
+    return new Intl.DateTimeFormat(t.locale, { weekday: "narrow" }).format(day);
+  });
+  const monthLabel = new Intl.DateTimeFormat(t.locale, { month: "long", year: "numeric" }).format(month).replace(/^./, (letter) => letter.toUpperCase());
+  const previousMonth = new Date(visibleMonth);
+  previousMonth.setMonth(previousMonth.getMonth() - 1);
+  const nextMonth = new Date(visibleMonth);
+  nextMonth.setMonth(nextMonth.getMonth() + 1);
+  const canPreviousMonth = addLocalDays(new Date(visibleMonth).setDate(0), 0) >= minDay;
+  const canNextMonth = nextMonth.getTime() <= maxDay;
+  return <div className="calendar-popover" role="dialog" aria-label={t.calendar.title}>
+    <header><button onClick={() => setVisibleMonth(previousMonth.getTime())} disabled={!canPreviousMonth} title={t.calendar.previousMonth}><CaretLeft size={17} /></button><strong>{monthLabel}</strong><button onClick={() => setVisibleMonth(nextMonth.getTime())} disabled={!canNextMonth} title={t.calendar.nextMonth}><CaretRight size={17} /></button></header>
+    <div className="calendar-weekdays">{weekdays.map((weekday, index) => <span key={`${weekday}-${index}`}>{weekday}</span>)}</div>
+    <div className="calendar-grid">{days.map((day) => {
+      const value = new Date(day);
+      const outside = value.getMonth() !== month.getMonth();
+      const disabled = day < minDay || day > maxDay;
+      const selected = day === selectedDay;
+      const today = day === startOfLocalDay(Date.now());
+      return <button key={day} className={`${outside ? "outside" : ""} ${selected ? "selected" : ""} ${today ? "today" : ""} ${available.has(dateKey(day)) ? "has-data" : ""}`} disabled={disabled} aria-pressed={selected} aria-label={new Intl.DateTimeFormat(t.locale, { dateStyle: "full" }).format(value)} onClick={() => { onSelect(day); onClose(); }}><span>{value.getDate()}</span></button>;
+    })}</div>
+    <footer><span>{t.calendar.dataHint}</span><button onClick={() => { onSelect(startOfLocalDay(Date.now())); onClose(); }}>{t.overview.backToday}</button></footer>
+  </div>;
+}
+
+function DateNavigation({ selectedDay, minDay, maxDay, availableDays, language, onSelect, t }) {
+  const [open, setOpen] = useState(false);
+  const root = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = (event) => { if (event.key === "Escape" || (event.type === "pointerdown" && !root.current?.contains(event.target))) setOpen(false); };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", close);
+    return () => { document.removeEventListener("pointerdown", close); document.removeEventListener("keydown", close); };
+  }, [open]);
+  const previousDay = addLocalDays(selectedDay, -1);
+  const nextDay = addLocalDays(selectedDay, 1);
+  const canPrevious = addLocalDays(previousDay, 1) > minDay;
+  const canNext = nextDay <= maxDay;
+  const compactDate = selectedDay === maxDay ? t.common.today : new Intl.DateTimeFormat(t.locale, { day: "numeric", month: "short" }).format(new Date(selectedDay));
+  return <nav className="day-nav" aria-label={t.nav.history} ref={root}>
+    <button onClick={() => onSelect(previousDay)} disabled={!canPrevious} title={t.overview.previousDay}><CaretLeft size={18} /></button>
+    <button className="date-picker-button" onClick={() => setOpen((value) => !value)} aria-expanded={open}><CalendarBlank size={17} /><span>{compactDate}</span></button>
+    <button onClick={() => onSelect(nextDay)} disabled={!canNext} title={t.overview.nextDay}><CaretRight size={18} /></button>
+    {open && <DateCalendar selectedDay={selectedDay} minDay={minDay} maxDay={maxDay} availableDays={availableDays} language={language} onSelect={onSelect} onClose={() => setOpen(false)} t={t} />}
+  </nav>;
+}
+
+function ActivityRhythm({ stats, language, t }) {
+  const [selectedHour, setSelectedHour] = useState(null);
   const max = Math.max(1, ...stats.hours.map((item) => item.durationMs));
-  return <section className="chart-card rhythm-card"><header><div><h3>{t.overview.rhythmTitle}</h3><p>{t.overview.rhythmSubtitle}</p></div></header><div className="rhythm-chart">{stats.hours.map((item) => <div className="rhythm-hour" key={item.hour} title={`${String(item.hour).padStart(2, "0")}:00`}><div><span style={{ height: `${Math.max(item.durationMs ? 8 : 2, (item.durationMs / max) * 100)}%` }} /></div><small>{String(item.hour).padStart(2, "0")}</small></div>)}</div></section>;
+  const details = stats.hours.find((item) => item.hour === selectedHour);
+  return <section className="chart-card rhythm-card"><header><div><h3>{t.overview.rhythmTitle}</h3><p>{t.overview.rhythmSubtitle}</p></div><span>{t.overview.rhythmAction}</span></header><div className="rhythm-chart">{stats.hours.map((item) => {
+    const label = `${String(item.hour).padStart(2, "0")}:00`;
+    return <button type="button" className={`rhythm-hour ${selectedHour === item.hour ? "selected" : ""}`} key={item.hour} title={text(t.overview.rhythmHourTitle, { time: label, duration: item.durationMs ? formatDuration(item.durationMs, language) : t.overview.noActivity })} aria-pressed={selectedHour === item.hour} onClick={() => setSelectedHour((current) => current === item.hour ? null : item.hour)}><div><span style={{ height: `${Math.max(item.durationMs ? 8 : 2, (item.durationMs / max) * 100)}%` }} /></div><small>{String(item.hour).padStart(2, "0")}</small></button>;
+  })}</div>{details && <div className="rhythm-detail"><div className="rhythm-detail-heading"><Clock size={18} /><span><strong>{String(details.hour).padStart(2, "0")}:00–{String((details.hour + 1) % 24).padStart(2, "0")}:00</strong><small>{details.durationMs ? text(t.overview.activeInHour, { duration: formatDuration(details.durationMs, language) }) : t.overview.noActivity}</small></span></div>{details.durationMs > 0 && <><div className="rhythm-apps">{details.appTotals.slice(0, 3).map((item) => <span key={item.app}><AppIcon app={item.app} size={18} /><strong>{item.app}</strong><small>{formatDuration(item.durationMs, language)}</small></span>)}</div>{details.intentTotals[0] && <p>{text(t.overview.hourPurpose, { purpose: details.intentTotals[0].label })}</p>}</>}</div>}</section>;
 }
 
 function DayOverview({ stats, language, t }) {
   const intentMax = Math.max(1, ...stats.intentTotals.map((item) => item.durationMs));
   const appMax = Math.max(1, ...stats.appTotals.map((item) => item.durationMs));
-  return <div className="day-overview"><OverviewMetrics stats={stats} language={language} t={t} /><div className="overview-charts"><RankedBars title={t.overview.intentTitle} subtitle={t.overview.intentSubtitle} items={stats.intentTotals} max={intentMax} renderLabel={(item) => item.label} renderValue={(item) => formatDuration(item.durationMs, language)} /><RankedBars title={t.overview.appsTitle} subtitle={t.overview.appsSubtitle} items={stats.appTotals} max={appMax} renderLabel={(item) => item.app} renderValue={(item) => formatDuration(item.durationMs, language)} /></div><ActivityRhythm stats={stats} t={t} /></div>;
+  return <div className="day-overview"><OverviewMetrics stats={stats} language={language} t={t} /><div className="overview-charts"><RankedBars title={t.overview.intentTitle} subtitle={t.overview.intentSubtitle} items={stats.intentTotals} max={intentMax} renderLabel={(item) => item.label} renderValue={(item) => formatDuration(item.durationMs, language)} /><RankedBars title={t.overview.appsTitle} subtitle={t.overview.appsSubtitle} items={stats.appTotals} max={appMax} renderLabel={(item) => item.app} renderValue={(item) => formatDuration(item.durationMs, language)} /></div><ActivityRhythm stats={stats} language={language} t={t} /></div>;
 }
 
 function IntentPicker({ activity, onClassify, t }) {
@@ -338,7 +445,14 @@ function Summary({ result, sessions, stats, language, t }) {
 
 function HistoryPage({ state, actions, setPage, selectedDay, language, t }) {
   const [result, setResult] = useState(null);
-  const sessions = useMemo(() => daySessions(state.sessions, selectedDay, language), [state.sessions, selectedDay, language]);
+  const [loadedDay, setLoadedDay] = useState(null);
+  useEffect(() => {
+    let active = true;
+    setLoadedDay(null);
+    actions.loadDay(selectedDay).then((day) => { if (active) setLoadedDay(day); }).catch(() => { if (active) setLoadedDay({ day: selectedDay, sessions: [] }); });
+    return () => { active = false; };
+  }, [selectedDay, state.eventCount, state.settings.intentRules]);
+  const sessions = useMemo(() => daySessions(loadedDay?.sessions || state.sessions, selectedDay, language), [loadedDay, state.sessions, selectedDay, language]);
   const stats = useMemo(() => buildOverview(sessions, selectedDay), [sessions, selectedDay]);
   useEffect(() => { setResult(null); }, [language, selectedDay]);
   const classify = (activity, intent) => {
@@ -347,13 +461,17 @@ function HistoryPage({ state, actions, setPage, selectedDay, language, t }) {
     const rules = (state.settings.intentRules || []).filter((rule) => rule.match.toLocaleLowerCase(t.locale) !== match.toLocaleLowerCase(t.locale));
     actions.setIntentRules([...rules, { id: `${Date.now()}`, match, intent }]);
   };
-  return <div className="history-page"><QuestionBar t={t} onAsk={async (question) => setResult(await actions.ask(question))} /><div className="history-layout"><main className="timeline-column"><DayOverview stats={stats} language={language} t={t} /><div className="section-title timeline-title"><h2>{t.history.title}</h2><span>{t.history.newestFirst}</span></div>{sessions.length ? <div className="timeline reverse-timeline">{sessions.map((session) => <Session key={session.id} session={session} onDelete={actions.deleteSession} onClassify={classify} language={language} t={t} />)}</div> : <div className="empty-state"><Clock size={34} /><h3>{t.history.emptyTitle}</h3><p>{t.history.emptyText}</p><button onClick={() => setPage("settings")}>{t.history.checkSettings} <ArrowRight size={17} /></button></div>}</main><Summary result={result} sessions={sessions} stats={stats} language={language} t={t} /></div></div>;
+  const removeSession = async (session) => {
+    await actions.deleteSession(session);
+    setLoadedDay(await actions.loadDay(selectedDay));
+  };
+  return <div className="history-page"><QuestionBar t={t} onAsk={async (question) => setResult(await actions.ask(question))} /><div className="history-layout"><main className="timeline-column"><DayOverview stats={stats} language={language} t={t} /><div className="section-title timeline-title"><h2>{t.history.title}</h2><span>{t.history.newestFirst}</span></div>{sessions.length ? <div className="timeline reverse-timeline">{sessions.map((session) => <Session key={session.id} session={session} onDelete={removeSession} onClassify={classify} language={language} t={t} />)}</div> : <div className="empty-state"><Clock size={34} /><h3>{t.history.emptyTitle}</h3><p>{t.history.emptyText}</p><button onClick={() => setPage("settings")}>{t.history.checkSettings} <ArrowRight size={17} /></button></div>}</main><Summary result={result} sessions={sessions} stats={stats} language={language} t={t} /></div></div>;
 }
 
-function AskPage({ actions, setPage, language, t }) {
+function AskPage({ actions, setPage, language, retentionHours, t }) {
   const [result, setResult] = useState(null);
   useEffect(() => { setResult(null); }, [language]);
-  return <div className="subpage ask-page"><div className="subpage-heading"><Brain size={29} /><div><h2>{t.ask.title}</h2><p>{t.ask.subtitle}</p></div><button className="skills-link" onClick={() => setPage("skills")}><Sparkle size={17} /> {t.ask.skills}</button></div><QuestionBar t={t} initial={t.question.fallback} onAsk={async (question) => setResult(await actions.ask(question))} /><div className="answer-surface">{result ? <><span className="eyebrow">{t.ask.localAnswer}</span>{result.interpretation && <div className="interpretation"><Brain size={16} /><span><strong>{t.ask.understood}</strong> {result.interpretation}</span></div>}<h3>{result.answer}</h3><div className="answer-sources">{result.sources.map((source) => <div key={source.id}><Clock size={18} /><span>{formatTime(source.start, language)}–{formatTime(source.end, language)}</span><strong>{source.label}</strong><small>{source.apps.join(", ")}</small></div>)}</div><p className="local-engine-note">{t.ask.engineNote}</p></> : <><span className="eyebrow">{t.ask.examples}</span><h3>{t.ask.examplesText}</h3><div className="prompt-chips">{t.ask.prompts.map((prompt) => <span key={prompt}>{prompt}</span>)}</div><p className="local-engine-note">{t.ask.engineNote}</p></>}</div></div>;
+  return <div className="subpage ask-page"><div className="subpage-heading"><Brain size={29} /><div><h2>{t.ask.title}</h2><p>{text(t.ask.subtitle, { period: formatRetention(retentionHours, t) })}</p></div><button className="skills-link" onClick={() => setPage("skills")}><Sparkle size={17} /> {t.ask.skills}</button></div><QuestionBar t={t} initial={t.question.fallback} onAsk={async (question) => setResult(await actions.ask(question))} /><div className="answer-surface">{result ? <><span className="eyebrow">{t.ask.localAnswer}</span>{result.interpretation && <div className="interpretation"><Brain size={16} /><span><strong>{t.ask.understood}</strong> {result.interpretation}</span></div>}<h3>{result.answer}</h3><div className="answer-sources">{result.sources.map((source) => <div key={source.id}><Clock size={18} /><span>{formatTime(source.start, language)}–{formatTime(source.end, language)}</span><strong>{source.label}</strong><small>{source.apps.join(", ")}</small></div>)}</div><p className="local-engine-note">{t.ask.engineNote}</p></> : <><span className="eyebrow">{t.ask.examples}</span><h3>{t.ask.examplesText}</h3><div className="prompt-chips">{t.ask.prompts.map((prompt) => <span key={prompt}>{prompt}</span>)}</div><p className="local-engine-note">{t.ask.engineNote}</p></>}</div></div>;
 }
 
 function SkillsPage({ state, actions, t }) {
@@ -399,6 +517,10 @@ function UpdateSettings({ runtime, actions, pending, run, t }) {
   return <div className="update-settings"><div className="update-copy"><div><strong>{text(t.settings.currentVersion, { version: update.currentVersion || "—" })}</strong><span>{available ? text(t.settings.availableVersion, { version: update.latestVersion }) : status}</span>{checked && <small>{text(t.settings.lastChecked, { time: checked })}</small>}</div>{downloading && <div className="update-progress"><span style={{ width: `${Math.max(3, Number(update.progress || 0))}%` }} /></div>}{update.error && <small className="update-error">{t.settings.updateError}</small>}</div><div className="update-actions"><button className="secondary-button" disabled={Boolean(pending) || checking || downloading || installing || update.status === "disabled"} onClick={() => run("check-update", actions.checkUpdates)}><ArrowClockwise size={18} className={checking ? "spin" : ""} /> {checking ? t.settings.checking : t.settings.checkUpdates}</button>{available && <button className="primary-update-button" disabled={Boolean(pending)} onClick={() => run("install-update", actions.installUpdate)}><DownloadSimple size={18} /> {runtime.platform === "darwin" ? text(t.settings.downloadMac, { version: update.latestVersion }) : text(t.settings.installUpdate, { version: update.latestVersion })}</button>}</div><p>{t.settings.updatePrivacy}</p></div>;
 }
 
+function RetentionSettings({ hours, actions, pending, run, t }) {
+  return <div className="retention-settings"><div className="retention-copy"><Database size={21} /><span><strong>{t.settings.retentionTitle}</strong><small>{t.settings.retentionText}</small></span></div><div className="retention-options" role="radiogroup" aria-label={t.settings.retentionTitle}>{RETENTION_OPTIONS.map((option) => <button type="button" key={option} className={hours === option ? "active" : ""} role="radio" aria-checked={hours === option} disabled={Boolean(pending)} onClick={() => run("retention", () => actions.setRetention(option))}>{formatRetention(option, t)}</button>)}</div><p>{t.settings.retentionWarning}</p></div>;
+}
+
 function SettingsPage({ state, actions, isDesktop, language, t }) {
   const [confirming, setConfirming] = useState(false);
   const [pending, setPending] = useState("");
@@ -406,7 +528,7 @@ function SettingsPage({ state, actions, isDesktop, language, t }) {
   const runtime = state.runtime || {};
   const statusLabel = t.settings.statuses[runtime.trackerStatus] || t.settings.statuses.stopped;
   const setting = (key, title, description) => <div className="setting-row" key={key}><div><strong>{title}</strong><span>{description}</span></div><SettingSwitch checked={Boolean(state.settings[key])} disabled={Boolean(pending) || !state.settings.trackingEnabled} label={title} onChange={(enabled) => run(key, () => actions.setSetting(key, enabled))} /></div>;
-  return <div className="subpage narrow-page"><div className="subpage-heading"><Gear size={29} /><div><h2>{t.settings.title}</h2><p>{t.settings.subtitle}</p></div></div><div className={`runtime-card ${runtime.trackerStatus || "stopped"}`}><span className="status-dot on" /><div><strong>{statusLabel}</strong><small>{t.settings.runtimeText}</small></div>{runtime.platform && <em>{runtime.platform === "darwin" ? "macOS" : runtime.platform === "win32" ? "Windows" : runtime.platform}</em>}</div>{runtime.platform === "darwin" && !runtime.accessibilityTrusted && <div className="permission-card"><ShieldCheck size={22} /><div><strong>{t.settings.accessibility}</strong><span>{t.settings.accessibilityText}</span></div><button onClick={() => run("accessibility", actions.requestAccessibility)} disabled={Boolean(pending)}>{t.settings.grantAccess}</button></div>}<div className="settings-section"><h3>{t.settings.language}</h3><LanguageSelector language={language} onChange={actions.setLanguage} t={t} /></div><div className="settings-section"><h3>{t.settings.updates}</h3><UpdateSettings runtime={runtime} actions={actions} pending={pending} run={run} t={t} /></div><div className="settings-section"><h3>{t.settings.activity}</h3><div className="setting-row"><div><strong>{t.settings.record}</strong><span>{t.settings.recordText}</span></div><SettingSwitch checked={state.settings.trackingEnabled} disabled={Boolean(pending)} label={t.settings.record} onChange={(enabled) => run("tracking", () => actions.setTracking(enabled))} /></div>{setting("collectWindowTitles", t.settings.titles, t.settings.titlesText)}{setting("collectInputCounts", t.settings.inputs, t.settings.inputsText)}{setting("collectBrowserTabCount", t.settings.tabs, t.settings.tabsText)}<div className="setting-row"><div><strong>{t.settings.private}</strong><span>{state.settings.excludePrivateWindows ? t.settings.privateText : t.settings.privateWarning}</span></div><SettingSwitch checked={state.settings.excludePrivateWindows} disabled={Boolean(pending) || !state.settings.trackingEnabled} label={t.settings.private} onChange={(enabled) => run("private", () => actions.setSetting("excludePrivateWindows", enabled))} /></div></div><div className="settings-section"><h3>{t.settings.analysis}</h3><IntentRuleEditor rules={state.settings.intentRules || []} onChange={actions.setIntentRules} t={t} /></div><div className="settings-section"><h3>{t.settings.system}</h3><div className="setting-row"><div><strong>{t.settings.autostart}</strong><span>{runtime.autoStartSupported ? t.settings.autostartText : t.settings.autostartUnavailable}</span></div><SettingSwitch checked={Boolean(runtime.autoStartEnabled)} disabled={Boolean(pending) || !runtime.autoStartSupported} label={t.settings.autostart} onChange={(enabled) => run("autostart", () => actions.setAutoStart(enabled))} /></div></div><div className="settings-section"><h3>{t.settings.data}</h3><div className="data-facts"><div><Database size={21} /><span><strong>{text(t.settings.events, { count: state.eventCount })}</strong><small>{text(t.settings.autoDelete, { hours: state.settings.retentionHours })}</small></span></div><div><FolderOpen size={21} /><span><strong>{t.settings.deviceOnly}</strong><small>{state.dataPath}</small></span></div></div>{isDesktop && <button className="secondary-button" onClick={actions.revealData}><FolderOpen size={18} /> {t.settings.openData}</button>}</div><div className="danger-zone"><h3>{t.settings.clear}</h3><p>{t.settings.clearText}</p>{confirming ? <div className="confirm-row"><button onClick={() => { actions.deleteAll(); setConfirming(false); }}><Trash size={18} /> {t.settings.deleteAll}</button><button className="cancel" onClick={() => setConfirming(false)}>{t.common.cancel}</button></div> : <button onClick={() => setConfirming(true)}><Trash size={18} /> {t.settings.clearJournal}</button>}</div></div>;
+  return <div className="subpage narrow-page"><div className="subpage-heading"><Gear size={29} /><div><h2>{t.settings.title}</h2><p>{t.settings.subtitle}</p></div></div><div className={`runtime-card ${runtime.trackerStatus || "stopped"}`}><span className="status-dot on" /><div><strong>{statusLabel}</strong><small>{t.settings.runtimeText}</small></div>{runtime.platform && <em>{runtime.platform === "darwin" ? "macOS" : runtime.platform === "win32" ? "Windows" : runtime.platform}</em>}</div>{runtime.platform === "darwin" && !runtime.accessibilityTrusted && <div className="permission-card"><ShieldCheck size={22} /><div><strong>{t.settings.accessibility}</strong><span>{t.settings.accessibilityText}</span></div><button onClick={() => run("accessibility", actions.requestAccessibility)} disabled={Boolean(pending)}>{t.settings.grantAccess}</button></div>}<div className="settings-section"><h3>{t.settings.language}</h3><LanguageSelector language={language} onChange={actions.setLanguage} t={t} /></div><div className="settings-section"><h3>{t.settings.updates}</h3><UpdateSettings runtime={runtime} actions={actions} pending={pending} run={run} t={t} /></div><div className="settings-section"><h3>{t.settings.activity}</h3><div className="setting-row"><div><strong>{t.settings.record}</strong><span>{t.settings.recordText}</span></div><SettingSwitch checked={state.settings.trackingEnabled} disabled={Boolean(pending)} label={t.settings.record} onChange={(enabled) => run("tracking", () => actions.setTracking(enabled))} /></div>{setting("collectWindowTitles", t.settings.titles, t.settings.titlesText)}{setting("collectInputCounts", t.settings.inputs, t.settings.inputsText)}{setting("collectBrowserTabCount", t.settings.tabs, t.settings.tabsText)}<div className="setting-row"><div><strong>{t.settings.private}</strong><span>{state.settings.excludePrivateWindows ? t.settings.privateText : t.settings.privateWarning}</span></div><SettingSwitch checked={state.settings.excludePrivateWindows} disabled={Boolean(pending) || !state.settings.trackingEnabled} label={t.settings.private} onChange={(enabled) => run("private", () => actions.setSetting("excludePrivateWindows", enabled))} /></div></div><div className="settings-section"><h3>{t.settings.analysis}</h3><IntentRuleEditor rules={state.settings.intentRules || []} onChange={actions.setIntentRules} t={t} /></div><div className="settings-section"><h3>{t.settings.system}</h3><div className="setting-row"><div><strong>{t.settings.autostart}</strong><span>{runtime.autoStartSupported ? t.settings.autostartText : t.settings.autostartUnavailable}</span></div><SettingSwitch checked={Boolean(runtime.autoStartEnabled)} disabled={Boolean(pending) || !runtime.autoStartSupported} label={t.settings.autostart} onChange={(enabled) => run("autostart", () => actions.setAutoStart(enabled))} /></div></div><div className="settings-section"><h3>{t.settings.data}</h3><RetentionSettings hours={state.settings.retentionHours} actions={actions} pending={pending} run={run} t={t} /><div className="data-facts"><div><Database size={21} /><span><strong>{text(t.settings.events, { count: state.eventCount })}</strong><small>{text(t.settings.autoDelete, { period: formatRetention(state.settings.retentionHours, t) })}</small></span></div><div><FolderOpen size={21} /><span><strong>{t.settings.deviceOnly}</strong><small>{state.dataPath}</small></span></div></div>{isDesktop && <button className="secondary-button" onClick={actions.revealData}><FolderOpen size={18} /> {t.settings.openData}</button>}</div><div className="danger-zone"><h3>{t.settings.clear}</h3><p>{t.settings.clearText}</p>{confirming ? <div className="confirm-row"><button onClick={() => { actions.deleteAll(); setConfirming(false); }}><Trash size={18} /> {t.settings.deleteAll}</button><button className="cancel" onClick={() => setConfirming(false)}>{t.common.cancel}</button></div> : <button onClick={() => setConfirming(true)}><Trash size={18} /> {t.settings.clearJournal}</button>}</div></div>;
 }
 
 export function App() {
@@ -419,11 +541,10 @@ export function App() {
   const displayDay = page === "history" ? selectedDay : today;
   const date = useMemo(() => formatDay(displayDay, language), [displayDay, language]);
   const isToday = displayDay === today;
-  const previousDay = selectedDay - 24 * 60 * 60_000;
-  const canGoPrevious = previousDay + 24 * 60 * 60_000 >= state.retentionCutoff;
-  const canGoNext = selectedDay < today;
+  const firstRetainedDay = startOfLocalDay(state.retentionCutoff);
   useEffect(() => { document.documentElement.lang = language; document.title = "Daytrace"; }, [language]);
+  useEffect(() => { if (selectedDay < firstRetainedDay) setSelectedDay(firstRetainedDay); }, [firstRetainedDay, selectedDay]);
   if (!state.settings.onboardingComplete) return <Onboarding language={language} onComplete={actions.completeOnboarding} />;
   if (isDesktop && state.runtime?.platform === "darwin" && !state.runtime.accessibilityTrusted && !permissionDismissed) return <MacPermissionOnboarding actions={actions} onContinue={() => setPermissionDismissed(true)} t={t} />;
-  return <div className="app-shell"><Sidebar page={page} setPage={setPage} state={state} actions={actions} language={language} t={t} /><div className="app-main"><header className="date-header"><div><h1>{isToday ? `${t.common.today}, ${date.date}` : date.date}</h1><span>{date.weekday}</span></div>{page === "history" && <nav className="day-nav" aria-label={t.nav.history}><button onClick={() => setSelectedDay(previousDay)} disabled={!canGoPrevious} title={t.overview.previousDay}><CaretLeft size={18} /></button><button className="today-button" onClick={() => setSelectedDay(today)} disabled={selectedDay === today}><CalendarBlank size={17} /> {t.overview.backToday}</button><button onClick={() => setSelectedDay(selectedDay + 24 * 60 * 60_000)} disabled={!canGoNext} title={t.overview.nextDay}><CaretRight size={18} /></button></nav>}</header>{page === "history" && <HistoryPage state={state} actions={actions} setPage={setPage} selectedDay={selectedDay} language={language} t={t} />}{page === "ask" && <AskPage actions={actions} setPage={setPage} language={language} t={t} />}{page === "skills" && <SkillsPage state={state} actions={actions} t={t} />}{page === "settings" && <SettingsPage state={state} actions={actions} isDesktop={isDesktop} language={language} t={t} />}{page === "exclusions" && <ExclusionsPage state={state} actions={actions} t={t} />}</div></div>;
+  return <div className="app-shell"><Sidebar page={page} setPage={setPage} state={state} actions={actions} language={language} t={t} /><div className="app-main"><header className="date-header"><div className="date-copy" key={`${displayDay}-${language}`}><h1>{isToday ? `${t.common.today}, ${date.date}` : date.date}</h1><span>{date.weekday}</span></div>{page === "history" && <DateNavigation selectedDay={selectedDay} minDay={firstRetainedDay} maxDay={today} availableDays={state.availableDays || []} language={language} onSelect={setSelectedDay} t={t} />}</header>{page === "history" && <HistoryPage key={selectedDay} state={state} actions={actions} setPage={setPage} selectedDay={selectedDay} language={language} t={t} />}{page === "ask" && <AskPage actions={actions} setPage={setPage} language={language} retentionHours={state.settings.retentionHours} t={t} />}{page === "skills" && <SkillsPage state={state} actions={actions} t={t} />}{page === "settings" && <SettingsPage state={state} actions={actions} isDesktop={isDesktop} language={language} t={t} />}{page === "exclusions" && <ExclusionsPage state={state} actions={actions} t={t} />}</div></div>;
 }

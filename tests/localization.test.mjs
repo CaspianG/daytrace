@@ -101,6 +101,8 @@ test("local question parser handles combined dates, explicit times and meaningfu
   assert.equal(explicit.intent, "app");
   assert.equal(new Date(explicit.window.start).getHours(), 10);
   assert.equal(new Date(explicit.window.end).getHours(), 12);
+  const longRange = answers.interpretQuestion("What did I do in the last 720 hours?", now, "en");
+  assert.equal(longRange.window.end - longRange.window.start, 720 * 60 * 60_000);
   assert.equal(answers.meaningfulTransitions([
     { start: 1, app: "Telegram", context: "messaging" },
     { start: 2, app: "Telegram", context: "messaging" },
@@ -119,6 +121,9 @@ test("English and Russian READMEs use only their matching localized visuals", ()
   assert.match(englishReadme, /purpose-en\.png/);
   assert.match(englishReadme, /rules-en\.png/);
   assert.match(englishReadme, /updates-en\.png/);
+  assert.match(englishReadme, /calendar-en\.png/);
+  assert.match(englishReadme, /rhythm-en\.png/);
+  assert.match(englishReadme, /retention-en\.png/);
   assert.doesNotMatch(englishReadme, /(?:daytrace-cover|timeline)-ru\.png/);
 
   assert.match(russianReadme, /daytrace-cover-ru\.png/);
@@ -127,6 +132,9 @@ test("English and Russian READMEs use only their matching localized visuals", ()
   assert.match(russianReadme, /purpose-ru\.png/);
   assert.match(russianReadme, /rules-ru\.png/);
   assert.match(russianReadme, /updates-ru\.png/);
+  assert.match(russianReadme, /calendar-ru\.png/);
+  assert.match(russianReadme, /rhythm-ru\.png/);
+  assert.match(russianReadme, /retention-ru\.png/);
   assert.doesNotMatch(russianReadme, /(?:daytrace-cover|timeline)-en\.png/);
 
   for (const relativePath of [
@@ -142,6 +150,12 @@ test("English and Russian READMEs use only their matching localized visuals", ()
     "docs/assets/screenshots/rules-ru.png",
     "docs/assets/screenshots/updates-en.png",
     "docs/assets/screenshots/updates-ru.png",
+    "docs/assets/screenshots/calendar-en.png",
+    "docs/assets/screenshots/calendar-ru.png",
+    "docs/assets/screenshots/rhythm-en.png",
+    "docs/assets/screenshots/rhythm-ru.png",
+    "docs/assets/screenshots/retention-en.png",
+    "docs/assets/screenshots/retention-ru.png",
   ]) {
     assert.equal(fs.existsSync(path.join(root, relativePath)), true, `${relativePath} must exist`);
   }
