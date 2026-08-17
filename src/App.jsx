@@ -456,10 +456,16 @@ function HistoryPage({ state, actions, setPage, selectedDay, language, t }) {
   const stats = useMemo(() => buildOverview(sessions, selectedDay), [sessions, selectedDay]);
   useEffect(() => { setResult(null); }, [language, selectedDay]);
   const classify = (activity, intent) => {
-    const genericTitle = /^(active window|активное окно|telegramdesktop)$/i.test(String(activity.title || ""));
-    const match = genericTitle || !activity.title ? activity.app : activity.title;
-    const rules = (state.settings.intentRules || []).filter((rule) => rule.match.toLocaleLowerCase(t.locale) !== match.toLocaleLowerCase(t.locale));
-    actions.setIntentRules([...rules, { id: `${Date.now()}`, match, intent }]);
+    const app = String(activity.app || activity.process || "").trim();
+    const title = String(activity.title || "").trim();
+    const contextSensitive = /(?:chrome|edge|firefox|brave|opera|vivaldi|safari|browser|telegram|whatsapp|signal|discord|viber|messenger|chatgpt|claude|perplexity|copilot)/i.test(app);
+    const scope = contextSensitive ? "context" : "application";
+    const match = scope === "application" || !title ? app : title;
+    const sameRule = (rule) => rule.scope === scope
+      && String(rule.app || "").toLocaleLowerCase(t.locale) === app.toLocaleLowerCase(t.locale)
+      && (scope !== "context" || String(rule.title || "").toLocaleLowerCase(t.locale) === title.toLocaleLowerCase(t.locale));
+    const rules = (state.settings.intentRules || []).filter((rule) => !sameRule(rule));
+    actions.setIntentRules([...rules, { id: `${Date.now()}`, scope, app, title: scope === "context" ? title : undefined, match, intent }]);
   };
   const removeSession = async (session) => {
     await actions.deleteSession(session);

@@ -27,7 +27,7 @@ const ALLOWED_INTENTS = new Set(["work", "learning", "personal", "entertainment"
 const TITLE_SIGNALS = {
   work: [
     { weight: 5, pattern: /\b(project|client|customer|task|ticket|issue|pull request|merge request|standup|sprint|meeting|brief|proposal|invoice|contract|deadline|roadmap|release|deploy(?:ment)?|production|requirements?|workspace|repository|commit|branch|code review|dashboard|analytics|campaign|crm|sales|payroll|accounting|business)\b/i },
-    { weight: 5, pattern: /(?:проект|клиент|заказчик|заказ\b|задач|тикет|созвон|встреч|бриф|предложен|сч[её]т|договор|дедлайн|релиз|деплой|продакш|требован|макет|репозитор|коммит|ветк|код-ревью|рабоч(?:ая|ий|ее)|аналитик|кампан|продаж|бухгалтер)/i },
+    { weight: 5, pattern: /(?:проект|клиент|заказчик|заказ\b|задач|тикет|созвон|встреч|бриф|коммерческ(?:ое|ие) предложен|предложение клиенту|сч[её]т|договор|дедлайн|релиз|деплой|продакш|требован|макет|репозитор|коммит|ветк|код-ревью|рабоч(?:ая|ий|ее)|аналитик|кампан|продаж|бухгалтер)/i },
     { weight: 4, pattern: /\b(fix|bug|error|debug|build|test suite|ci\/cd|workflow|api|database|backend|frontend|server|website|application|installer|update service|security review|performance|configuration|integration|implementation)\b/i },
     { weight: 4, pattern: /(?:исправ|ошибк|баг\b|отлад|сборк|тесты|тестирован|api\b|баз[аы] данных|бэкенд|фронтенд|сервер|сайт\b|приложен|установщик|обновлен|безопасност|производительност|конфигурац|интеграц|реализац|настройк)/i },
     { weight: 4, pattern: /\b(jira|linear|github|gitlab|bitbucket|figma|confluence|salesforce|hubspot|asana|trello|monday\.com|clickup|miro|airtable|office 365|google workspace|vercel|sentry|datadog)\b/i },
@@ -38,7 +38,7 @@ const TITLE_SIGNALS = {
     { weight: 6, pattern: /\b(tutorial|course|lesson|lecture|documentation|docs|stack overflow|mdn|wikipedia|research paper|study|learn(?:ing)?|textbook|guide|manual|how to|workshop|webinar|masterclass|explained|beginner|certification|training)\b/i },
     { weight: 6, pattern: /(?:курс|урок|лекц|обуч|изуч|документац|учебник|научн(?:ая|ое) стать|исследован|гайд|инструкц|руководств|вебинар|воркшоп|мастер-класс|как сделать|как настроить|разбор темы|подготовка к экзамен|повышение квалификац)/i },
     { weight: 4, pattern: /\b(coursera|udemy|edx|khan academy|stepik|skillbox|netology|geekbrains|duolingo|quizlet|anki|leetcode|codewars)\b/i },
-    { weight: 3, pattern: /(?:статья|энциклопед|словар|справочник|объяснение|обзор технолог|новости науки)/i },
+    { weight: 3, pattern: /(?:статья|энциклопед|словар|справочник|объяснение|обзор технолог|новости науки|экономик|финанс|инвестиц|криптовалют|биткоин)/i },
     { weight: 3, pattern: /\b(search results?|google search|yandex search|comparison|overview|reference|examples?|what is|why does|best way to)\b|(?:результаты поиска|поиск google|яндекс поиск|сравнение|что такое|почему|примеры|лучший способ)/i },
   ],
   personal: [
@@ -66,6 +66,8 @@ const BROWSER_APPS = /(?:chrome|edge|firefox|brave|opera|vivaldi|safari|browser)
 const MESSENGER_APPS = /(?:telegram|whatsapp|signal|discord|viber|messenger)/i;
 
 const SERVICE_RULES = [
+  { intent: "work", confidence: "high", priority: true, pattern: /\b(google cloud|cloud console|aws console|amazon web services|azure portal|digitalocean|cloudflare|vercel|heroku|virustotal|chatcut)\b|(?:консоль google cloud|облачн(?:ая|ый) консоль)/i },
+  { intent: "work", confidence: "medium", priority: true, pattern: /\b(aeza|aéza|яндекс телемост|yandex telemost)\b/i },
   { intent: "work", confidence: "high", pattern: /\b(youtube studio|creator studio|google analytics|search console|ads manager|meta business suite)\b|(?:творческая студия youtube|кабинет рекламодателя)/i },
   { intent: "entertainment", confidence: "medium", pattern: /\b(youtube|youtu\.be|netflix|twitch|tiktok|prime video|disney\+|hbo max|crunchyroll)\b|(?:кинопоиск|иви\b|okko|рутуб|вк видео|яндекс музыка|амедиатек|kion|wink)/i },
   { intent: "learning", confidence: "high", pattern: /\b(coursera|udemy|edx|khan academy|stepik|skillbox|netology|geekbrains|duolingo|quizlet|leetcode|codewars|stack overflow|mdn web docs)\b/i },
@@ -86,11 +88,20 @@ function normalizeIntentRules(value) {
     const match = String(item?.match || "").replace(/\s+/g, " ").trim().slice(0, 120);
     const intent = String(item?.intent || "").toLowerCase();
     if (!match || !ALLOWED_INTENTS.has(intent)) continue;
-    result.push({
+    const rule = {
       id: String(item?.id || `${Date.now()}-${result.length}`).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80),
       match,
       intent,
-    });
+    };
+    if (item?.scope === "context" || item?.scope === "application") {
+      const app = String(item?.app || "").replace(/\s+/g, " ").trim().slice(0, 120);
+      const title = String(item?.title || "").replace(/\s+/g, " ").trim().slice(0, 140);
+      if (!app) continue;
+      rule.scope = item.scope;
+      rule.app = app;
+      if (item.scope === "context") rule.title = title;
+    }
+    result.push(rule);
   }
   return result;
 }
@@ -132,6 +143,7 @@ function serviceClassification(title, semantic) {
   if (!service) return semantic;
   // A specific semantic signal beats a broad service prior: a lecture on
   // YouTube is learning, while YouTube without such evidence is entertainment.
+  if (service.priority) return { intent: service.intent, confidence: service.confidence, reason: "service", evidence: title.match(service.pattern)?.[0]?.slice(0, 120) || "" };
   if (semantic?.intent === "unknown") return semantic;
   if (semantic && semantic.intent !== "unknown" && semantic.confidence === "high") return semantic;
   if (semantic && semantic.intent !== "unknown" && semantic.intent !== service.intent) return semantic;
@@ -140,10 +152,17 @@ function serviceClassification(title, semantic) {
 
 function inferIntentDetails(activity, rules = []) {
   const app = `${activity.app || ""} ${activity.process || ""}`.toLowerCase();
+  const exactApp = String(activity.app || activity.process || "").toLowerCase().replace(/\s+/g, " ").trim();
   const title = String(activity.title || "").toLowerCase().replace(/\s+/g, " ").trim();
   const combined = `${app} ${title}`.replace(/\s+/g, " ");
   const normalizedRules = normalizeIntentRules(rules);
-  const custom = [...normalizedRules].reverse().find((rule) => combined.includes(rule.match.toLowerCase()));
+  const custom = [...normalizedRules].reverse().find((rule) => {
+    if (rule.scope === "application") return exactApp === rule.app.toLowerCase().replace(/\s+/g, " ").trim();
+    if (rule.scope !== "context") return combined.includes(rule.match.toLowerCase());
+    const ruleApp = rule.app.toLowerCase().replace(/\s+/g, " ").trim();
+    const ruleTitle = rule.title.toLowerCase().replace(/\s+/g, " ").trim();
+    return exactApp === ruleApp && title === ruleTitle;
+  });
   if (custom) return { intent: custom.intent, confidence: "high", reason: "custom-rule", evidence: custom.match };
 
   const semantic = semanticClassification(title);

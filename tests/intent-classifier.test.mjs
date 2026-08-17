@@ -74,6 +74,10 @@ test("visible technical and search context is used before falling back to unknow
     ["Telegram Desktop", "Ошибка интеграции API — настройка сервера", "work"],
     ["Google Chrome", "what is event sourcing - Google Search", "learning"],
     ["ChatGPT", "Сравнение локальных моделей и примеры", "learning"],
+    ["Google Chrome", "Personal Account // Aéza", "work"],
+    ["Google Chrome", "VirusTotal - Analysing file", "work"],
+    ["Google Chrome", "ChatCut - AI Video Editor", "work"],
+    ["steamwebhelper", "Специальные предложения", "entertainment"],
   ];
   for (const [app, title, expected] of cases) {
     assert.equal(classifier.inferIntentDetails({ app, title }).intent, expected, `${app}: ${title}`);
@@ -88,6 +92,19 @@ test("custom local rules override heuristics and balanced conflicts are not forc
   assert.equal(custom.intent, "entertainment");
   assert.equal(custom.reason, "custom-rule");
   assert.equal(classifier.inferIntentDetails({ app: "Google Chrome", title: "Project movie night" }).intent, "unknown");
+});
+
+test("timeline corrections stay scoped to one application or exact browser context", () => {
+  const rules = [
+    { id: "game", scope: "application", app: "UnknownGame", match: "UnknownGame", intent: "entertainment" },
+    { id: "guide", scope: "context", app: "Google Chrome", title: "Scrap Mechanic guide", match: "Scrap Mechanic guide", intent: "entertainment" },
+  ];
+  assert.equal(classifier.inferIntentDetails({ app: "UnknownGame", title: "Main menu" }, rules).intent, "entertainment");
+  assert.equal(classifier.inferIntentDetails({ app: "Google Chrome", title: "Scrap Mechanic guide" }, rules).intent, "entertainment");
+  assert.equal(classifier.inferIntentDetails({ app: "Google Chrome", title: "Google Cloud console" }, rules).intent, "work");
+  const otherApp = classifier.inferIntentDetails({ app: "Telegram Desktop", title: "Scrap Mechanic guide" }, rules);
+  assert.notEqual(otherApp.intent, "entertainment");
+  assert.notEqual(otherApp.reason, "custom-rule");
 });
 
 test("ambiguous activity inherits matching surrounding purpose", () => {
@@ -120,7 +137,7 @@ test("a learned active-chat context is reused locally across sessions", () => {
   assert.equal(occurrences[1].intentReason, "repeated-context");
 });
 
-test("conflicting neighbors do not force an ambiguous chat into either purpose", () => {
+test("conflicting neighbors do not force an ambiguous chat into either neighbor", () => {
   const base = new Date("2026-08-16T09:00:00+03:00").getTime();
   const events = [
     { at: new Date(base).toISOString(), kind: "foreground", app: "Steam", title: "Library" },
@@ -129,6 +146,24 @@ test("conflicting neighbors do not force an ambiguous chat into either purpose",
   ];
   const [session] = sessionizer.sessionize(events, base + 180_000, "en");
   const telegram = session.activities.find((activity) => activity.app === "Telegram Desktop");
-  assert.equal(telegram.intent, "unknown");
-  assert.equal(telegram.intentReason, "needs-context");
+  assert.equal(telegram.intent, "personal");
+  assert.equal(telegram.intentReason, "best-effort-messaging");
+});
+
+test("a manual game correction never recolors unrelated applications", () => {
+  const base = new Date("2026-08-16T09:00:00+03:00").getTime();
+  const events = [
+    { at: new Date(base).toISOString(), kind: "foreground", app: "Google Chrome", title: "GitHub pull request", context: "browser" },
+    { at: new Date(base + 60_000).toISOString(), kind: "foreground", app: "ChatGPT", title: "ChatGPT" },
+    { at: new Date(base + 2 * 60_000).toISOString(), kind: "foreground", app: "UnknownGame", title: "Scrap Mechanic" },
+    { at: new Date(base + 10 * 60_000).toISOString(), kind: "foreground", app: "Telegram Desktop", title: "Project chat", context: "messaging" },
+    { at: new Date(base + 11 * 60_000).toISOString(), kind: "foreground", app: "Google Chrome", title: "Google Cloud console", context: "browser" },
+  ];
+  const rules = [{ id: "game", scope: "application", app: "UnknownGame", match: "UnknownGame", intent: "entertainment" }];
+  const activities = sessionizer.sessionize(events, base + 12 * 60_000, "en", rules).flatMap((session) => session.activities);
+  const game = activities.find((activity) => activity.app === "UnknownGame");
+  const unrelated = activities.filter((activity) => activity.app !== "UnknownGame");
+  assert.equal(game.intent, "entertainment");
+  assert.equal(game.intentReason, "custom-rule");
+  assert.equal(unrelated.some((activity) => activity.intent === "entertainment"), false);
 });

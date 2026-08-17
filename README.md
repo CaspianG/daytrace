@@ -17,12 +17,12 @@
   · <a href="SECURITY.md">Security</a>
 </p>
 
-<p align="center"><strong>Current release: v0.5.1</strong> — Windows and macOS artifacts are built from the same tag and published together.</p>
+<p align="center"><strong>Current release: v0.5.2</strong> — Windows and macOS artifacts are built from the same tag and published together.</p>
 
 > **macOS first-launch notice:** the current Mac build is free and fully local, but it is not signed or notarized because the project does not have Apple Developer ID credentials. Gatekeeper will therefore warn on first launch. Read the [safe macOS installation guide](docs/MACOS_INSTALL.md) before downloading; it uses Finder's supported **Open** / **Open Anyway** flow and does not disable Gatekeeper.
 
 <p align="center">
-  <img alt="Current version v0.5.1" src="https://img.shields.io/badge/current-v0.5.1-6f8f67?style=flat-square">
+  <img alt="Current version v0.5.2" src="https://img.shields.io/badge/current-v0.5.2-6f8f67?style=flat-square">
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-6f8f67?style=flat-square">
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-c5684b?style=flat-square">
   <img alt="macOS 12 or newer" src="https://img.shields.io/badge/macOS-12%2B-c5684b?style=flat-square">
@@ -81,7 +81,8 @@ Installed builds check for a stable update shortly after launch and every six ho
 - **Built-in verified updates** with automatic online checks, a manual Settings action, download progress, and a bottom-left action only when a newer stable release exists.
 - **Fine-grained collection controls** for window titles, anonymous active-second samples, browser-tab counts, and private-window filtering.
 - **Two-layer classification** that keeps the application type separate from the inferred purpose. Telegram can be work or personal; a browser can be work, learning, entertainment, or unknown.
-- **Adaptive local purpose analysis** for popular video, streaming, social, shopping, learning, developer, office, creative, and communication contexts, with confidence and the reason for every inference.
+- **Adaptive local purpose analysis** for popular video, streaming, social, shopping, learning, developer, office, creative, and communication contexts, with confidence and the reason for every inference. Opaque contexts receive a low-confidence best estimate instead of a blanket unknown label.
+- **Scoped corrections**: changing a native application affects only that application; changing a browser page or chat affects only that exact app/title context and never recolors neighboring activities.
 - **Broader visible-context understanding** for popular games, packaged game executables, technical work, debugging, installation, infrastructure, searches, comparisons, and reference pages in English and Russian.
 - **One-click local corrections** on timeline entries plus reusable substring rules for chats, page titles, projects, and keywords. Rules never leave the device.
 

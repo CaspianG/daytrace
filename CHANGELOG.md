@@ -2,7 +2,7 @@
 
 All notable changes to Daytrace are documented here.
 
-## Unreleased
+## [0.5.2] - 2026-08-17
 
 ### Day navigation and insights
 
@@ -34,6 +34,11 @@ All notable changes to Daytrace are documented here.
 
 ### Purpose accuracy
 
+- Manual timeline corrections are now scoped to one native application or an exact browser/chat app-title context and are never allowed to train neighboring activities.
+- Removed one-sided neighbor propagation and replaced broad session coloring with guarded context inference that requires multiple independent automatic signals.
+- Opaque activities now receive a visible low-confidence best estimate after semantic, service, application, sequence, and repeated-context analysis, so automatic day summaries no longer default to unknown purpose.
+- Added specific recognition for Google Cloud, AWS, Azure, Aéza, VirusTotal, ChatCut, Telemost, finance-learning contexts, and Steam offers while eliminating a Russian false positive that interpreted generic special offers as work.
+- The real retained 48-hour journal was re-evaluated locally: no automatic activity remained unknown, and the Scrap Mechanic correction stayed confined to game-related contexts instead of recoloring ChatGPT, Telegram, cloud consoles, or other applications.
 - Popular game processes and common packaged-game executable names are recognized as entertainment instead of remaining unknown.
 - Visible active-window titles now cover more development, installation, debugging, infrastructure, search, comparison, and reference contexts in English and Russian.
 - On the same local 48-hour diagnostic journal, unknown observed time fell to 1.7%; the remaining opaque chat titles stay honest rather than being assigned an unsupported purpose.

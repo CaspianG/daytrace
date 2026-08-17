@@ -92,11 +92,21 @@ function setIntent(activity, intent, confidence, reason, evidence, intentLabels)
   activity.intentEvidence = evidence;
 }
 
+const AUTOMATIC_EVIDENCE_REASONS = new Set(["window-title", "service", "application-category"]);
+
+function hasAutomaticEvidence(activity) {
+  return activity.intent !== "unknown" && AUTOMATIC_EVIDENCE_REASONS.has(activity.intentReason);
+}
+
+function hasTeachableEvidence(activity) {
+  return hasAutomaticEvidence(activity) || activity.intentReason === "sequence-context";
+}
+
 function learnRepeatedContexts(sessions, intentLabels) {
   const learned = new Map();
   for (const activity of sessions.flatMap((session) => session.activities)) {
     const key = contextKey(activity);
-    if (!key || activity.intent === "unknown") continue;
+    if (!key || !hasTeachableEvidence(activity)) continue;
     const item = learned.get(key) || { total: 0, intents: new Map() };
     const duration = Math.max(1_000, activity.durationMs);
     item.total += duration;
@@ -105,7 +115,7 @@ function learnRepeatedContexts(sessions, intentLabels) {
   }
   let changed = 0;
   for (const activity of sessions.flatMap((session) => session.activities)) {
-    if (activity.intent !== "unknown") continue;
+    if (activity.intent !== "unknown" || activity.intentReason === "custom-rule") continue;
     const key = contextKey(activity);
     const item = key ? learned.get(key) : null;
     if (!item || item.total < 30_000) continue;
@@ -127,33 +137,56 @@ function contextualizeSession(session, intentLabels) {
     const next = session.activities[index + 1];
     const previousNear = previous && activity.start - previous.end < 3 * 60_000;
     const nextNear = next && next.start - activity.end < 3 * 60_000;
-    const previousIntent = previousNear && previous.intent !== "unknown" ? previous.intent : null;
-    const nextIntent = nextNear && next.intent !== "unknown" ? next.intent : null;
-    if (previousIntent && nextIntent && previousIntent === nextIntent) {
+    const previousIntent = previousNear && hasAutomaticEvidence(previous) ? previous.intent : null;
+    const nextIntent = nextNear && hasAutomaticEvidence(next) ? next.intent : null;
+    if (activity.durationMs <= 2 * 60_000 && previousIntent && nextIntent && previousIntent === nextIntent) {
       setIntent(activity, previousIntent, "medium", "sequence-context", `${previous.app} → ${activity.app} → ${next.app}`, intentLabels);
-      changed += 1;
-    } else if (activity.durationMs <= 15 * 60_000 && (previousIntent || nextIntent) && !(previousIntent && nextIntent && previousIntent !== nextIntent)) {
-      const neighbor = previousIntent ? previous : next;
-      setIntent(activity, previousIntent || nextIntent, "low", "adjacent-context", `${neighbor.app} → ${activity.app}`, intentLabels);
-      changed += 1;
-    }
-  }
-
-  const known = session.activities.filter((activity) => activity.intent !== "unknown");
-  const totals = new Map();
-  for (const activity of known) totals.set(activity.intent, (totals.get(activity.intent) || 0) + activity.durationMs);
-  const ranked = [...totals.entries()].sort((a, b) => b[1] - a[1]);
-  const knownDuration = ranked.reduce((sum, [, duration]) => sum + duration, 0);
-  const [dominantIntent, dominantDuration] = ranked[0] || [];
-  const stableDominant = dominantIntent && knownDuration >= session.durationMs * 0.5 && dominantDuration / knownDuration >= 0.75;
-  if (stableDominant) {
-    for (const activity of session.activities) {
-      if (activity.intent !== "unknown" || activity.durationMs > 20 * 60_000) continue;
-      setIntent(activity, dominantIntent, "low", "session-context", session.label, intentLabels);
       changed += 1;
     }
   }
   return changed;
+}
+
+function applyStableSessionContext(session, intentLabels) {
+  const evidence = session.activities.filter(hasAutomaticEvidence);
+  const contextKeys = new Set(evidence.map(contextKey).filter(Boolean));
+  if (contextKeys.size < 2) return 0;
+
+  const totals = new Map();
+  for (const activity of evidence) totals.set(activity.intent, (totals.get(activity.intent) || 0) + activity.durationMs);
+  const ranked = [...totals.entries()].sort((a, b) => b[1] - a[1]);
+  const evidenceDuration = ranked.reduce((sum, [, duration]) => sum + duration, 0);
+  const [dominantIntent, dominantDuration] = ranked[0] || [];
+  if (!dominantIntent || evidenceDuration < 30_000 || dominantDuration / evidenceDuration < 0.8) return 0;
+
+  let changed = 0;
+  for (const activity of session.activities) {
+    if (activity.intent !== "unknown" || activity.durationMs > 5 * 60_000) continue;
+    setIntent(activity, dominantIntent, "low", "session-context", session.label, intentLabels);
+    changed += 1;
+  }
+  return changed;
+}
+
+function applyBestEffortFallback(sessions, intentLabels) {
+  for (const activity of sessions.flatMap((session) => session.activities)) {
+    if (activity.intent !== "unknown" || activity.intentReason === "custom-rule") continue;
+    const app = `${activity.app || ""} ${activity.process || ""}`.toLowerCase();
+    let intent = "personal";
+    let reason = "best-effort-application";
+    if (/(?:chatgpt|claude|perplexity|copilot)/i.test(app) || ["development", "planning", "design", "audio", "remote", "files"].includes(activity.focus)) {
+      intent = "work";
+      reason = "best-effort-work-app";
+    } else if (activity.focus === "research") {
+      intent = "learning";
+      reason = "best-effort-research";
+    } else if (/(?:telegram|whatsapp|signal|discord|viber|messenger)/i.test(app) || activity.context === "messaging") {
+      reason = "best-effort-messaging";
+    } else if (/(?:chrome|edge|firefox|brave|opera|vivaldi|safari|browser)/i.test(app) || activity.context === "browser") {
+      reason = "best-effort-browser";
+    }
+    setIntent(activity, intent, "low", reason, activity.title || activity.app, intentLabels);
+  }
 }
 
 function sessionize(events, now = Date.now(), language = "ru", intentRules = []) {
@@ -275,12 +308,13 @@ function sessionize(events, now = Date.now(), language = "ru", intentRules = [])
     }
   }
   // Resolve ambiguous general-purpose apps without reading their contents.
-  // Two passes let a confidently classified context teach repeated occurrences,
-  // while keeping conflicting and isolated contexts explicitly unknown.
+  // Manual corrections never seed neighboring activities. Only strong
+  // automatic evidence can bridge a short activity or teach the exact same
+  // app/title context, preventing one game correction from recoloring a day.
   for (const session of sessions) contextualizeSession(session, intentLabels);
   learnRepeatedContexts(sessions, intentLabels);
-  for (const session of sessions) contextualizeSession(session, intentLabels);
-  learnRepeatedContexts(sessions, intentLabels);
+  for (const session of sessions) applyStableSessionContext(session, intentLabels);
+  applyBestEffortFallback(sessions, intentLabels);
 
   for (const session of sessions) {
     const totals = new Map();
