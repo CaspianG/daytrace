@@ -272,6 +272,13 @@ button:focus-visible, input:focus-visible { outline: 2px solid #748e6c; outline-
 .onboarding-privacy > div { display: grid; gap: 4px; }
 .onboarding-privacy span { color: #71806e; font-size: 12px; line-height: 1.45; }
 .onboarding-continue { display: flex; align-items: center; justify-content: center; gap: 9px; width: 100%; min-height: 49px; margin-top: 20px; border: 0; border-radius: 10px; color: #fff; background: #6d8a65; cursor: pointer; font-weight: 700; box-shadow: 0 8px 22px rgba(83, 112, 75, .19); }
+.onboarding-continue:disabled { cursor: wait; opacity: .68; }
+.permission-onboarding-card { width: min(720px, 100%); }
+.permission-steps { display: grid; gap: 11px; margin: 5px 0 22px; padding: 0; list-style: none; }
+.permission-steps li { display: flex; align-items: center; gap: 12px; color: #555750; font-size: 13px; line-height: 1.5; }
+.permission-steps li > span { display: grid; flex: 0 0 30px; width: 30px; height: 30px; place-items: center; border-radius: 50%; color: #587052; background: #e8efe3; font-size: 12px; font-weight: 800; }
+.permission-later { display: block; margin: 13px auto 0; padding: 7px 12px; border: 0; color: #77766f; background: transparent; cursor: pointer; font-size: 12px; font-weight: 600; }
+.permission-later:hover { color: #4f684a; }
 .onboarding-continue:hover { background: #5f7d58; }
 
 @media (max-width: 1180px) {

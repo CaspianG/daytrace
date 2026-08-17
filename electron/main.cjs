@@ -7,6 +7,7 @@ const readline = require("node:readline");
 const { Readable, Transform } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 const { EventStore } = require("./lib/event-store.cjs");
+const { createAccessibilityService } = require("./lib/accessibility-service.cjs");
 const { MAX_RELEASE_JSON_BYTES, MAX_UPDATE_BYTES, normalizeChecksumRelease, normalizeRelease } = require("./lib/update-service.cjs");
 
 app.disableHardwareAcceleration();
@@ -30,6 +31,7 @@ let updateTimer = null;
 let updateAbortController = null;
 let isQuitting = false;
 let availableRelease = null;
+let accessibilityService = null;
 let updateRuntime = {
   status: app.isPackaged ? "idle" : "disabled",
   currentVersion: app.getVersion(),
@@ -51,7 +53,16 @@ const MAIN_TEXT = {
 
 function appLanguage() { return String(store?.settings?.language || app.getLocale() || "en").toLowerCase().startsWith("ru") ? "ru" : "en"; }
 function mainText() { return MAIN_TEXT[appLanguage()]; }
-function accessibilityTrusted(prompt = false) { return process.platform !== "darwin" || systemPreferences.isTrustedAccessibilityClient(prompt); }
+function accessibilityTrusted() { return accessibilityService?.check() ?? process.platform !== "darwin"; }
+function accessibilityChanged(trusted) {
+  if (!store || process.platform !== "darwin") return;
+  if (trusted) {
+    if (store.settings.trackingEnabled && !tracker) startTracker();
+  } else if (store.settings.trackingEnabled && !tracker) {
+    trackerStatus = "permission-required";
+  }
+  sendState();
+}
 function loginItemSettings(enabled) {
   if (process.platform === "darwin") return { openAtLogin: enabled, type: "mainAppService" };
   return { openAtLogin: enabled, path: process.execPath, args: ["--background"], enabled };
@@ -67,7 +78,7 @@ function state() {
       platform: process.platform,
       packaged: app.isPackaged,
       trackerStatus,
-      accessibilityTrusted: accessibilityTrusted(false),
+      accessibilityTrusted: accessibilityTrusted(),
       autoStartSupported: app.isPackaged && ["win32", "darwin"].includes(process.platform),
       autoStartEnabled: currentAutoStart(),
       update: { ...updateRuntime },
@@ -230,7 +241,7 @@ function trackerPath() {
 }
 function startTracker() {
   if (tracker || !store?.settings.trackingEnabled) return;
-  if (process.platform === "darwin" && !accessibilityTrusted(false)) { trackerStatus = "permission-required"; sendState(); return; }
+  if (process.platform === "darwin" && !accessibilityTrusted()) { trackerStatus = "permission-required"; accessibilityService?.watch(); sendState(); return; }
   const executable = trackerPath();
   if (!executable || !fs.existsSync(executable)) { trackerStatus = "unavailable"; startupLog(`tracker-unavailable path=${executable || "none"}`); sendState(); return; }
   trackerStatus = "starting";
@@ -249,7 +260,14 @@ function startTracker() {
     const lines = readline.createInterface({ input: tracker.stdout });
     lines.on("line", (line) => { try { store.append(JSON.parse(line)); } catch { } });
     tracker.once("error", (error) => { trackerStatus = "error"; tracker = null; startupLog("tracker-error", error); sendState(); });
-    tracker.once("exit", (code) => { tracker = null; if (!isQuitting && store.settings.trackingEnabled) trackerStatus = code === 0 ? "stopped" : "error"; sendState(); });
+    tracker.once("exit", (code) => {
+      tracker = null;
+      if (!isQuitting && store.settings.trackingEnabled) {
+        trackerStatus = code === 77 ? "permission-required" : code === 0 ? "stopped" : "error";
+        if (code === 77) accessibilityService?.watch();
+      }
+      sendState();
+    });
     tracker.stderr.on("data", (chunk) => startupLog(`tracker-stderr ${String(chunk).trim()}`));
   } catch (error) { tracker = null; trackerStatus = "error"; startupLog("tracker-spawn-failed", error); }
   sendState();
@@ -296,6 +314,7 @@ async function createWindow() {
   window.webContents.on("did-fail-load", (_event, code, description, url) => startupLog(`did-fail-load code=${code} description=${description} url=${url}`));
   window.on("minimize", (event) => { if (!isQuitting) { event.preventDefault(); hideWindow(window); } });
   window.on("close", (event) => { if (!isQuitting) { event.preventDefault(); hideWindow(window); } });
+  window.on("focus", () => { if (process.platform === "darwin") { accessibilityService?.check(); startTracker(); } });
   window.on("closed", () => { if (mainWindow === window) mainWindow = null; });
   if (!app.isPackaged) await window.loadURL("http://127.0.0.1:5173");
   else await window.loadFile(path.join(__dirname, "..", "dist", "client", "index.html"));
@@ -332,7 +351,13 @@ function registerIpc() {
     store.updateSettings({ autoStartEnabled: currentAutoStart() });
     return state();
   });
-  ipcMain.handle("daytrace:request-accessibility", () => { if (process.platform === "darwin") accessibilityTrusted(true); setTimeout(() => { startTracker(); sendState(); }, 800).unref(); return state(); });
+  ipcMain.handle("daytrace:request-accessibility", async () => {
+    if (process.platform === "darwin") await accessibilityService.request();
+    if (accessibilityTrusted()) startTracker();
+    else { trackerStatus = "permission-required"; accessibilityService?.watch(); }
+    sendState();
+    return state();
+  });
   ipcMain.handle("daytrace:set-exclusions", (_event, apps) => { store.updateSettings({ excludedApps: Array.isArray(apps) ? apps.map(String).map((item) => item.trim()).filter(Boolean).slice(0, 100) : [] }); return state(); });
   ipcMain.handle("daytrace:set-intent-rules", (_event, rules) => { store.updateSettings({ intentRules: Array.isArray(rules) ? rules : [] }); return state(); });
   ipcMain.handle("daytrace:set-language", (_event, language) => { store.updateSettings({ language: String(language || "").toLowerCase().startsWith("ru") ? "ru" : "en" }); if (tray) tray.setToolTip(mainText().tooltip); updateTrayMenu(); return state(); });
@@ -351,6 +376,15 @@ else app.whenReady().then(async () => {
   try {
     Menu.setApplicationMenu(null);
     store = new EventStore(path.join(app.getPath("userData"), "daytrace-data"), broadcastState, { defaultLanguage: app.getLocale() });
+    accessibilityService = createAccessibilityService({
+      platform: process.platform,
+      isTrusted: (prompt) => systemPreferences.isTrustedAccessibilityClient(prompt),
+      openExternal: async (url) => {
+        try { await shell.openExternal(url); }
+        catch (error) { startupLog("accessibility-settings-open-failed", error); }
+      },
+      onChange: accessibilityChanged,
+    });
     store.updateSettings({ autoStartEnabled: currentAutoStart() });
     registerIpc(); createTray();
     const launchedInBackground = process.argv.includes("--background") || app.getLoginItemSettings().wasOpenedAtLogin || app.getLoginItemSettings().wasOpenedAsHidden;
@@ -362,6 +396,6 @@ else app.whenReady().then(async () => {
   }
 });
 app.on("window-all-closed", () => { });
-app.on("activate", () => void openWindow());
+app.on("activate", () => { accessibilityService?.check(); startTracker(); void openWindow(); });
 app.on("second-instance", () => void openWindow());
-app.on("before-quit", () => { isQuitting = true; clearTimeout(releaseTimer); clearTimeout(updateTimer); updateAbortController?.abort(); stopTracker("stopped"); });
+app.on("before-quit", () => { isQuitting = true; clearTimeout(releaseTimer); clearTimeout(updateTimer); updateAbortController?.abort(); accessibilityService?.stop(); stopTracker("stopped"); });

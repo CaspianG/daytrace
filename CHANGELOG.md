@@ -2,6 +2,18 @@
 
 All notable changes to Daytrace are documented here.
 
+## Unreleased
+
+### macOS
+
+- First launch now presents a dedicated, localized Accessibility setup instead of silently leaving the tracker at zero.
+- The permission action invokes the native macOS prompt, opens the exact Accessibility settings pane, and polls only while permission is pending.
+- Returning to Daytrace after granting access starts the native collector automatically; collector exit code 77 is now shown as a permission requirement rather than a generic error.
+
+### Release integrity
+
+- The tagged macOS release job now requires a real Developer ID Application certificate and Apple notarization credentials, signs the embedded native tracker, enables Hardened Runtime, and refuses to publish unless `codesign`, Gatekeeper assessment, and stapler validation all pass.
+
 ## [0.5.1] - 2026-08-16
 
 ### Fixed

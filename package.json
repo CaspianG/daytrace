@@ -33,10 +33,11 @@
     "dist": "npm run dist:win",
     "dist:win": "npm run test && npm run build:tracker:win && npm run build:brand && npm run build && electron-builder --win nsis zip --publish never",
     "dist:mac": "npm run test && npm run build:tracker:mac && npm run build:brand && npm run build && electron-builder --mac dmg zip --universal --publish never",
+    "dist:mac:release": "node scripts/require-apple-signing.mjs && npm run test && npm run build:tracker:mac && npm run build:brand && npm run build && electron-builder --mac dmg zip --universal --publish never -c.mac.forceCodeSigning=true && bash scripts/verify-macos-release.sh",
     "build:brand": "node scripts/build-brand-assets.mjs",
     "screenshots": "npm run build && electron scripts/capture-screenshots.cjs",
     "preview": "vite preview",
-    "test": "node --test tests/privacy.test.mjs tests/sessionizer.test.mjs tests/intent-classifier.test.mjs tests/update-service.test.mjs tests/event-store.test.mjs tests/localization.test.mjs tests/release-docs.test.mjs",
+    "test": "node --test tests/privacy.test.mjs tests/sessionizer.test.mjs tests/intent-classifier.test.mjs tests/update-service.test.mjs tests/accessibility-service.test.mjs tests/event-store.test.mjs tests/localization.test.mjs tests/release-docs.test.mjs",
     "test:sites": "npm run build && node --test tests/sites-worker.test.mjs"
   },
   "dependencies": {},
@@ -123,6 +124,13 @@
       "icon": "build/icon.png",
       "category": "public.app-category.productivity",
       "minimumSystemVersion": "12.0",
+      "hardenedRuntime": true,
+      "notarize": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+      "binaries": [
+        "Contents/Resources/tracker/macos/daytrace-tracker"
+      ],
       "artifactName": "Daytrace-${version}-macOS-${arch}.${ext}",
       "extraResources": [
         {

@@ -39,10 +39,19 @@ jobs:
       - name: Verify tag matches package version
         run: node -e "const expected='v'+require('./package.json').version;if(process.env.GITHUB_REF_NAME!==expected)throw new Error('Expected tag '+expected+', received '+process.env.GITHUB_REF_NAME)"
       - run: npm ci
-      - name: Build macOS artifacts with transient-download retry
+      - name: Build, sign, notarize, and verify macOS artifacts
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           for attempt in 1 2 3; do
-            npm run dist:mac && exit 0
+            npm run dist:mac:release && exit 0
             test "$attempt" = 3 && exit 1
             sleep 15
           done

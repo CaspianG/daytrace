@@ -50,7 +50,9 @@ The current public build is not code-signed yet, so Windows SmartScreen may show
 
 Prefer a portable build? Download `Daytrace-Portable-…-x64.zip`, extract it, and run `Daytrace.exe`.
 
-On macOS 12 or newer, download the universal `Daytrace-…-macOS-universal.dmg`, drag Daytrace to Applications, then grant Accessibility permission when the app asks. The current macOS build is not notarized, so Gatekeeper may require **Open** from Finder's context menu.
+On macOS 12 or newer, download the universal `Daytrace-…-macOS-universal.dmg` and drag Daytrace to Applications. On first launch, Daytrace explains why Accessibility access is needed, opens the exact Privacy & Security pane, and automatically starts tracking when you return after enabling Daytrace. You can continue without the permission, but the timeline will remain empty until it is granted.
+
+The current v0.5.1 macOS build is not notarized, so Gatekeeper may require **Open** from Finder's context menu. The release pipeline is now prepared to refuse future unsigned or unnotarized macOS artifacts; removing this warning from a public build requires the repository owner to configure an Apple Developer ID certificate and notarization key as described in [the macOS signing guide](docs/MACOS_SIGNING.md).
 
 Minimizing or closing the window releases the heavy renderer while the lightweight native tracker continues from the system tray. Double-click the tray icon or launch Daytrace again to reopen the same instance.
 
@@ -71,6 +73,7 @@ Installed builds check for a stable update shortly after launch and every six ho
 - **Local workflow detection** that can export a reviewable `SKILL.md` draft from repeated application sequences.
 - **Complete English and Russian localization** for the interface, timeline labels, local answers, tray menu, installer, and exported skills.
 - **First-run language choice** with an instant language switch available later in Settings.
+- **Guided macOS permission setup** with the native Accessibility prompt, a direct System Settings link, and automatic detection when access is granted.
 - **Launch at login** on Windows and macOS, starting quietly in the tray/menu bar.
 - **Built-in verified updates** with automatic online checks, a manual Settings action, download progress, and a bottom-left action only when a newer stable release exists.
 - **Fine-grained collection controls** for window titles, anonymous active-second samples, browser-tab counts, and private-window filtering.

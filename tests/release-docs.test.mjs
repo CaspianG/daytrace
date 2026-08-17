@@ -9,6 +9,7 @@ const lock = JSON.parse(fs.readFileSync(path.join(root, "package-lock.json"), "u
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 const readmeRu = fs.readFileSync(path.join(root, "README_RU.md"), "utf8");
 const changelog = fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8");
+const releaseWorkflow = fs.readFileSync(path.join(root, ".github", "workflows", "release.yml"), "utf8");
 
 test("release metadata and both READMEs name the same current version", () => {
   const version = pkg.version;
@@ -28,4 +29,14 @@ test("both READMEs document Windows, macOS, and measured system load", () => {
     assert.match(document, /0[,.]039%/);
     assert.match(document, /199 (?:MiB|МиБ)/);
   }
+});
+
+test("macOS tagged releases require signing, notarization, and local verification", () => {
+  assert.match(releaseWorkflow, /MAC_CSC_LINK/);
+  assert.match(releaseWorkflow, /APPLE_API_KEY/);
+  assert.match(releaseWorkflow, /dist:mac:release/);
+  assert.equal(pkg.build.mac.hardenedRuntime, true);
+  assert.equal(pkg.build.mac.notarize, true);
+  assert.match(pkg.scripts["dist:mac:release"], /forceCodeSigning=true/);
+  assert.match(pkg.scripts["dist:mac:release"], /verify-macos-release\.sh/);
 });

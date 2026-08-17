@@ -223,6 +223,31 @@ function Onboarding({ language, onComplete }) {
   </main>;
 }
 
+function MacPermissionOnboarding({ actions, onContinue, t }) {
+  const [requesting, setRequesting] = useState(false);
+  const request = async () => {
+    setRequesting(true);
+    try { await actions.requestAccessibility(); }
+    finally { setRequesting(false); }
+  };
+  return <main className="onboarding-shell">
+    <section className="onboarding-card permission-onboarding-card">
+      <div className="onboarding-logo"><ShieldCheck size={34} weight="fill" /></div>
+      <span className="eyebrow">{t.onboarding.permissionEyebrow}</span>
+      <h1>{t.onboarding.permissionTitle}</h1>
+      <p className="onboarding-subtitle">{t.onboarding.permissionSubtitle}</p>
+      <ol className="permission-steps">
+        <li><span>1</span>{t.onboarding.permissionStepOne}</li>
+        <li><span>2</span>{t.onboarding.permissionStepTwo}</li>
+        <li><span>3</span>{t.onboarding.permissionStepThree}</li>
+      </ol>
+      <div className="onboarding-privacy"><LockKey size={25} /><div><strong>{t.settings.deviceOnly}</strong><span>{t.onboarding.permissionPrivacy}</span></div></div>
+      <button className="onboarding-continue" onClick={request} disabled={requesting}>{requesting ? t.onboarding.permissionWaiting : t.onboarding.permissionGrant}<ArrowRight size={19} /></button>
+      <button className="permission-later" onClick={onContinue}>{t.onboarding.permissionLater}</button>
+    </section>
+  </main>;
+}
+
 function Sidebar({ page, setPage, state, actions, language, t }) {
   const expires = new Date(Date.now() + state.settings.retentionHours * 60 * 60_000);
   const update = state.runtime?.update || {};
@@ -361,6 +386,7 @@ export function App() {
   const { state, actions, isDesktop, language } = useDaytrace();
   const [page, setPage] = useState("history");
   const [selectedDay, setSelectedDay] = useState(() => startOfLocalDay(Date.now()));
+  const [permissionDismissed, setPermissionDismissed] = useState(false);
   const t = translations[language];
   const today = startOfLocalDay(Date.now());
   const displayDay = page === "history" ? selectedDay : today;
@@ -371,5 +397,6 @@ export function App() {
   const canGoNext = selectedDay < today;
   useEffect(() => { document.documentElement.lang = language; document.title = "Daytrace"; }, [language]);
   if (!state.settings.onboardingComplete) return <Onboarding language={language} onComplete={actions.completeOnboarding} />;
+  if (isDesktop && state.runtime?.platform === "darwin" && !state.runtime.accessibilityTrusted && !permissionDismissed) return <MacPermissionOnboarding actions={actions} onContinue={() => setPermissionDismissed(true)} t={t} />;
   return <div className="app-shell"><Sidebar page={page} setPage={setPage} state={state} actions={actions} language={language} t={t} /><div className="app-main"><header className="date-header"><div><h1>{isToday ? `${t.common.today}, ${date.date}` : date.date}</h1><span>{date.weekday}</span></div>{page === "history" && <nav className="day-nav" aria-label={t.nav.history}><button onClick={() => setSelectedDay(previousDay)} disabled={!canGoPrevious} title={t.overview.previousDay}><CaretLeft size={18} /></button><button className="today-button" onClick={() => setSelectedDay(today)} disabled={selectedDay === today}><CalendarBlank size={17} /> {t.overview.backToday}</button><button onClick={() => setSelectedDay(selectedDay + 24 * 60 * 60_000)} disabled={!canGoNext} title={t.overview.nextDay}><CaretRight size={18} /></button></nav>}</header>{page === "history" && <HistoryPage state={state} actions={actions} setPage={setPage} selectedDay={selectedDay} language={language} t={t} />}{page === "ask" && <AskPage actions={actions} setPage={setPage} language={language} t={t} />}{page === "skills" && <SkillsPage state={state} actions={actions} t={t} />}{page === "settings" && <SettingsPage state={state} actions={actions} isDesktop={isDesktop} language={language} t={t} />}{page === "exclusions" && <ExclusionsPage state={state} actions={actions} t={t} />}</div></div>;
 }

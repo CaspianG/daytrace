@@ -89,6 +89,9 @@ export const translations = {
       eyebrow: "Private by design", title: "Choose your language", subtitle: "Daytrace works entirely on this computer. You can change the language at any time in Settings.",
       english: "English", englishDetail: "Interface, timeline, local answers, and tray menu", russian: "Русский", russianDetail: "Интерфейс, таймлайн, локальные ответы и меню трея",
       privacyTitle: "Your activity stays on this device", privacyText: "No screenshots, audio, typed text, account, or cloud storage.", continue: "Continue in English",
+      permissionEyebrow: "One required macOS permission", permissionTitle: "Allow Daytrace to observe the active window", permissionSubtitle: "Without Accessibility access, macOS does not let Daytrace see which application and window are active, so the timeline remains empty.",
+      permissionStepOne: "Click Allow access below.", permissionStepTwo: "Turn on Daytrace in Privacy & Security → Accessibility.", permissionStepThree: "Return to Daytrace — tracking starts automatically.",
+      permissionPrivacy: "Daytrace reads only safe active-window metadata. It never records keys, typed text, screenshots, audio, or clipboard contents.", permissionGrant: "Allow access", permissionWaiting: "Waiting for macOS permission…", permissionLater: "Continue without tracking",
     },
     demo: {
       dataPath: "Local Daytrace folder",
@@ -183,6 +186,9 @@ export const translations = {
       eyebrow: "Приватность по умолчанию", title: "Выберите язык", subtitle: "Daytrace полностью работает на этом компьютере. Язык в любой момент можно изменить в настройках.",
       english: "English", englishDetail: "Interface, timeline, local answers, and tray menu", russian: "Русский", russianDetail: "Интерфейс, таймлайн, локальные ответы и меню трея",
       privacyTitle: "Ваша активность остаётся на устройстве", privacyText: "Без скриншотов, аудио, введённого текста, аккаунта и облачного хранения.", continue: "Продолжить на русском",
+      permissionEyebrow: "Одно обязательное разрешение macOS", permissionTitle: "Разрешите Daytrace видеть активное окно", permissionSubtitle: "Без доступа к Универсальному доступу macOS не сообщает Daytrace, какое приложение и окно активно, поэтому история остаётся пустой.",
+      permissionStepOne: "Нажмите «Разрешить доступ» ниже.", permissionStepTwo: "Включите Daytrace в разделе «Конфиденциальность и безопасность» → «Универсальный доступ».", permissionStepThree: "Вернитесь в Daytrace — сбор запустится автоматически.",
+      permissionPrivacy: "Daytrace читает только безопасные метаданные активного окна. Нажатия клавиш, введённый текст, скриншоты, аудио и буфер обмена не записываются.", permissionGrant: "Разрешить доступ", permissionWaiting: "Ожидаю разрешение macOS…", permissionLater: "Продолжить без сбора",
     },
     demo: {
       dataPath: "Локальная папка Daytrace",
