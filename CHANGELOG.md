@@ -2,6 +2,14 @@
 
 All notable changes to Daytrace are documented here.
 
+## [0.5.3] - 2026-08-18
+
+### macOS permission recovery
+
+- Daytrace now identifies the exact running app bundle and detects copies launched as `Daytrace 2`, directly from a mounted DMG, or outside an Applications folder.
+- Accessibility setup explains that the collector status and permission card refer to the same macOS permission, shows the mismatched copy and path, and offers an in-app restart after access is enabled.
+- The macOS update handoff now explicitly tells users to quit the old app and choose **Replace**, not **Keep Both**, preventing stale copies from receiving the Accessibility grant.
+
 ## [0.5.2] - 2026-08-17
 
 ### Day navigation and insights

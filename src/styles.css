@@ -255,6 +255,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid #748e6c; outline-
 .runtime-card.error, .runtime-card.unavailable, .runtime-card.permission-required { border-color: #e2c0b5; color: #98583f; background: #fff8f5; }
 .permission-card > div { display: grid; flex: 1; gap: 4px; }
 .permission-card button { min-height: 36px; padding: 0 12px; border: 1px solid #9fb297; border-radius: 8px; color: #526e4d; background: white; cursor: pointer; font-weight: 650; }
+.permission-card .permission-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+.permission-copy-warning { display: grid; gap: 5px; margin: 16px 0 0; padding: 14px 16px; border: 1px solid #e2b7a9; border-radius: 10px; color: #955a47; background: #fff8f5; }
+.permission-copy-warning span { font-size: 12px; line-height: 1.5; }
+.permission-restart { width: 100%; min-height: 43px; margin-top: 9px; border: 1px solid #9fb297; border-radius: 10px; color: #526e4d; background: #fff; cursor: pointer; font-weight: 700; }
 .update-settings { display: grid; gap: 16px; }
 .update-copy { display: grid; gap: 10px; }
 .update-copy > div:first-child { display: grid; gap: 5px; }

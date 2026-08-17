@@ -10,7 +10,8 @@ missing paid Apple certificate; it is not a malware detection result.
 
 1. Compare the downloaded DMG's SHA-256 with SHA256SUMS.txt on the same GitHub
    Release page.
-2. Open the DMG and drag Daytrace to Applications.
+2. Open the DMG and drag Daytrace to Applications. During an update choose
+   Replace, not Keep Both; keep exactly one /Applications/Daytrace.app copy.
 3. In Finder > Applications, Control-click (or right-click) Daytrace and choose
    Open, then choose Open again.
 4. If it is still blocked, open System Settings > Privacy & Security, scroll to
@@ -34,7 +35,8 @@ Gatekeeper из-за отсутствия платного сертификат�
 обнаружения вируса.
 
 1. Сверьте SHA-256 скачанного DMG с файлом SHA256SUMS.txt в том же GitHub Release.
-2. Откройте DMG и перетащите Daytrace в «Программы».
+2. Откройте DMG и перетащите Daytrace в «Программы». При обновлении выберите
+   «Заменить», а не «Сохранить обе»; оставьте одну /Applications/Daytrace.app.
 3. В Finder > «Программы» нажмите Daytrace с удержанием Control (или правой
    кнопкой), выберите «Открыть», затем ещё раз «Открыть».
 4. Если запуск всё ещё заблокирован, откройте «Системные настройки» >

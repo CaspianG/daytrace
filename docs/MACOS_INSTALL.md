@@ -33,7 +33,7 @@ You normally need this exception only for the first launch of that downloaded bu
 
 After the app itself opens, Daytrace presents a separate Accessibility setup. This permission lets the native local collector observe the active application and visible active-window metadata. It does not grant cloud access and is unrelated to the Gatekeeper warning.
 
-Choose **Open Accessibility Settings**, enable Daytrace under **System Settings → Privacy & Security → Accessibility**, then return to Daytrace. Collection starts automatically. You can continue without permission, but the timeline remains empty until it is granted.
+Choose **Open Accessibility Settings**, enable Daytrace under **System Settings → Privacy & Security → Accessibility**, then return to Daytrace. Keep exactly one installed copy named `/Applications/Daytrace.app`; when updating, choose **Replace**, not **Keep Both**, so macOS does not create `Daytrace 2.app` with a separate permission record. If macOS does not apply the new grant immediately, use **Restart Daytrace** in the app. You can continue without permission, but the timeline remains empty until it is granted.
 
 ## Why the warning cannot be removed in code
 

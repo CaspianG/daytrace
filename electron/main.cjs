@@ -8,6 +8,7 @@ const { Readable, Transform } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 const { EventStore } = require("./lib/event-store.cjs");
 const { createAccessibilityService } = require("./lib/accessibility-service.cjs");
+const { getMacInstallInfo } = require("./lib/mac-install-service.cjs");
 const { MAX_RELEASE_JSON_BYTES, MAX_UPDATE_BYTES, normalizeChecksumRelease, normalizeRelease, windowsInstallerArgs } = require("./lib/update-service.cjs");
 
 app.disableHardwareAcceleration();
@@ -79,6 +80,7 @@ function state() {
       packaged: app.isPackaged,
       trackerStatus,
       accessibilityTrusted: accessibilityTrusted(),
+      macInstall: getMacInstallInfo({ platform: process.platform, packaged: app.isPackaged, execPath: process.execPath }),
       autoStartSupported: app.isPackaged && ["win32", "darwin"].includes(process.platform),
       autoStartEnabled: currentAutoStart(),
       update: { ...updateRuntime },
@@ -365,6 +367,10 @@ function registerIpc() {
     else { trackerStatus = "permission-required"; accessibilityService?.watch(); }
     sendState();
     return state();
+  });
+  ipcMain.handle("daytrace:relaunch", () => {
+    app.relaunch();
+    app.exit(0);
   });
   ipcMain.handle("daytrace:set-exclusions", (_event, apps) => { store.updateSettings({ excludedApps: Array.isArray(apps) ? apps.map(String).map((item) => item.trim()).filter(Boolean).slice(0, 100) : [] }); return state(); });
   ipcMain.handle("daytrace:set-intent-rules", (_event, rules) => { store.updateSettings({ intentRules: Array.isArray(rules) ? rules : [] }); return state(); });
