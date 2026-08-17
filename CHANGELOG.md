@@ -2,6 +2,15 @@
 
 All notable changes to Daytrace are documented here.
 
+## [0.5.4] - 2026-08-18
+
+### One-click macOS updates
+
+- After downloading and SHA-256 verification, Daytrace now mounts the universal DMG read-only, checks the embedded app version, replaces the installed application, and relaunches it automatically.
+- Updating from a numbered duplicate such as `Daytrace 2.app` repairs the installation back to the canonical `/Applications/Daytrace.app` instead of preserving two conflicting copies.
+- The replacement helper backs up both the canonical and duplicate copies and restores the previous app if copying or relaunching fails. If the Applications folder is not writable, Daytrace opens the verified DMG and clearly labels the manual Finder flow as a fallback.
+- Because current public builds are not Developer ID signed, macOS can still ask the user to enable Accessibility again after an update; Daytrace cannot silently grant that protected permission.
+
 ## [0.5.3] - 2026-08-18
 
 ### macOS permission recovery

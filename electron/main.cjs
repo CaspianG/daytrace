@@ -9,6 +9,7 @@ const { pipeline } = require("node:stream/promises");
 const { EventStore } = require("./lib/event-store.cjs");
 const { createAccessibilityService } = require("./lib/accessibility-service.cjs");
 const { getMacInstallInfo } = require("./lib/mac-install-service.cjs");
+const { findStaleMacDuplicates, prepareMacUpdate } = require("./lib/mac-update-service.cjs");
 const { MAX_RELEASE_JSON_BYTES, MAX_UPDATE_BYTES, normalizeChecksumRelease, normalizeRelease, windowsInstallerArgs } = require("./lib/update-service.cjs");
 
 app.disableHardwareAcceleration();
@@ -227,9 +228,24 @@ async function downloadAndInstallUpdate() {
       setUpdateRuntime({ status: "restarting", progress: 100 });
       setTimeout(() => app.quit(), 700).unref();
     } else if (process.platform === "darwin") {
-      const openError = await shell.openPath(destination);
-      if (openError) throw new Error(openError);
-      setUpdateRuntime({ status: "installer-opened" });
+      setUpdateRuntime({ status: "installing", progress: 100 });
+      const installInfo = getMacInstallInfo({ platform: process.platform, packaged: app.isPackaged, execPath: process.execPath });
+      try {
+        await prepareMacUpdate({
+          dmgPath: destination,
+          currentBundlePath: installInfo.bundlePath,
+          expectedVersion: release.version,
+          tempDir: updateDir,
+        });
+        isQuitting = true;
+        setUpdateRuntime({ status: "restarting", progress: 100 });
+        setTimeout(() => app.quit(), 700).unref();
+      } catch (automaticError) {
+        startupLog("mac-automatic-update-fallback", automaticError);
+        const openError = await shell.openPath(destination);
+        if (openError) throw new Error(openError);
+        setUpdateRuntime({ status: "installer-opened", error: String(automaticError?.message || automaticError).slice(0, 160) });
+      }
     } else {
       await shell.openExternal(release.releaseUrl);
     }
@@ -240,6 +256,20 @@ async function downloadAndInstallUpdate() {
     updateAbortController = null;
   }
   return updateRuntime;
+}
+
+async function cleanStaleMacDuplicates() {
+  if (process.platform !== "darwin" || !app.isPackaged) return;
+  const installInfo = getMacInstallInfo({ platform: process.platform, packaged: app.isPackaged, execPath: process.execPath });
+  const duplicates = await findStaleMacDuplicates({ currentBundlePath: installInfo.bundlePath, currentVersion: app.getVersion() });
+  for (const duplicatePath of duplicates) {
+    try {
+      await shell.trashItem(duplicatePath);
+      startupLog(`mac-stale-duplicate-trashed path=${duplicatePath}`);
+    } catch (error) {
+      startupLog(`mac-stale-duplicate-cleanup-failed path=${duplicatePath}`, error);
+    }
+  }
 }
 
 function trackerPath() {
@@ -403,6 +433,7 @@ else app.whenReady().then(async () => {
     registerIpc(); createTray();
     const launchedInBackground = process.argv.includes("--background") || app.getLoginItemSettings().wasOpenedAtLogin || app.getLoginItemSettings().wasOpenedAsHidden;
     if (!launchedInBackground) await openWindow(); else setTimeout(startTracker, 400).unref();
+    setTimeout(() => void cleanStaleMacDuplicates(), 1_000).unref();
     setInterval(() => store.prune(), 15 * 60_000).unref();
     scheduleUpdateCheck();
   } catch (error) {

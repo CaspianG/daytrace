@@ -21,6 +21,13 @@ missing paid Apple certificate; it is not a malware detection result.
    the permission. This second permission is required for local activity
    tracking and is separate from Gatekeeper.
 
+From v0.5.4 onward, the in-app Update button verifies the DMG, replaces the
+installed app, repairs a numbered copy such as Daytrace 2.app, and relaunches
+Daytrace automatically. Updating from v0.5.3 or older requires this manual DMG
+replacement once because the old installed binary does not contain the new
+updater. An unsigned update can still make macOS request Accessibility again;
+Daytrace can open the correct settings page but cannot grant itself access.
+
 Do not disable Gatekeeper globally. Download Daytrace only from the official
 GitHub repository: https://github.com/CaspianG/daytrace/releases/latest
 
@@ -46,6 +53,13 @@ Gatekeeper из-за отсутствия платного сертификат�
 5. Запустите Daytrace и выдайте «Универсальный доступ», когда приложение объяснит
    разрешение. Оно нужно для локального сбора активности и не связано с
    предупреждением Gatekeeper.
+
+Начиная с v0.5.4 кнопка обновления сама проверяет DMG, заменяет установленное
+приложение, исправляет номерную копию вроде Daytrace 2.app и перезапускает
+Daytrace. При переходе с v0.5.3 или старше ручную замену через DMG нужно сделать
+один раз: в старом установленном файле нового механизма ещё нет. После обновления
+без подписи macOS всё ещё может повторно запросить «Универсальный доступ»;
+Daytrace откроет нужный раздел, но не может выдать разрешение самому себе.
 
 Не отключайте Gatekeeper целиком. Скачивайте Daytrace только из официального
 репозитория: https://github.com/CaspianG/daytrace/releases/latest

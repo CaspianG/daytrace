@@ -35,6 +35,14 @@ After the app itself opens, Daytrace presents a separate Accessibility setup. Th
 
 Choose **Open Accessibility Settings**, enable Daytrace under **System Settings → Privacy & Security → Accessibility**, then return to Daytrace. Keep exactly one installed copy named `/Applications/Daytrace.app`; when updating, choose **Replace**, not **Keep Both**, so macOS does not create `Daytrace 2.app` with a separate permission record. If macOS does not apply the new grant immediately, use **Restart Daytrace** in the app. You can continue without permission, but the timeline remains empty until it is granted.
 
+## Updates after installation
+
+Starting with v0.5.4, **Settings → Updates → Update** is the normal one-click path. Daytrace downloads the official universal DMG, verifies its SHA-256, mounts it read-only, checks the embedded app version, replaces `/Applications/Daytrace.app`, removes a numbered running duplicate such as `Daytrace 2.app`, and reopens Daytrace. The old copy is kept as a temporary rollback until the new app launches successfully. Finder opens only if macOS does not allow automatic replacement.
+
+The transition from v0.5.3 or older is a one-time exception: those installed binaries only know how to open the DMG, so perform the replacement described above once. Updates from v0.5.4 onward use the automatic path.
+
+Because the current public build has no stable Developer ID signature, macOS can still ask you to enable Daytrace in Accessibility again after an update. Daytrace detects this and opens the correct settings pane, but no application is allowed to grant this protected permission to itself.
+
 ## Why the warning cannot be removed in code
 
 Apple removes this first-launch warning for software distributed outside the App Store only after the app is signed with a paid **Developer ID Application** certificate and accepted by Apple's notarization service. A self-signed or ad-hoc signature cannot create that trust. The project keeps a strict signed-release path ready for the future, but current public macOS artifacts deliberately identify themselves as unsigned and include this guide.
