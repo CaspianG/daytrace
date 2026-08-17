@@ -32,7 +32,7 @@ app.whenReady().then(async () => {
     await window.webContents.executeJavaScript("document.querySelector('.intent-rule-editor').scrollIntoView({ block: 'center' }); new Promise(resolve => setTimeout(resolve, 250))");
     const rules = await window.webContents.capturePage();
     fs.writeFileSync(path.join(output, `rules-${language}.png`), rules.toPNG());
-    await window.loadURL(`${pathToFileURL(entry).href}?lang=${language}&update=available`);
+    await window.loadURL(`${pathToFileURL(entry).href}?lang=${language}&update=downloading`);
     await window.webContents.executeJavaScript("document.fonts.ready.then(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))");
     await window.webContents.executeJavaScript("document.querySelector('.main-nav button:nth-child(3)').click(); new Promise(resolve => setTimeout(resolve, 250))");
     await window.webContents.executeJavaScript("new Promise(resolve => setTimeout(resolve, 250))");

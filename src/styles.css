@@ -37,8 +37,13 @@ button { color: inherit; }
 .status-dot.on { background: #6fa063; }
 .status-dot.off { background: #c2765b; }
 .expiry { margin-left: 28px; color: #8d8a83; }
-.sidebar-update-button { display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 46px; margin: 0 0 10px; padding: 0 12px; border: 1px solid #6f8e67; border-radius: 10px; color: #fff; background: #708d68; box-shadow: 0 7px 20px rgba(76, 106, 68, .16); cursor: pointer; font-size: 12px; font-weight: 750; }
-.sidebar-update-button:hover { background: #607d59; }
+.sidebar-update-status { position: relative; display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 7px; min-height: 43px; margin: 0 0 10px; padding: 7px 10px; overflow: hidden; border: 1px solid #a9bca2; border-radius: 10px; color: #50684b; background: #f5f8f2; cursor: pointer; font-size: 11px; font-weight: 750; text-align: left; }
+.sidebar-update-status:hover { border-color: #789570; background: #eff5eb; }
+.sidebar-update-status.available { border-color: #6f8e67; color: #fff; background: #708d68; box-shadow: 0 7px 20px rgba(76, 106, 68, .16); }
+.sidebar-update-status.available:hover { background: #607d59; }
+.sidebar-update-status.error { border-color: #dfb4a6; color: #98583f; background: #fff8f5; }
+.sidebar-update-status em { font-size: 10px; font-style: normal; }
+.sidebar-update-status i { position: absolute; bottom: 0; left: 0; height: 3px; border-radius: 0 2px 2px 0; background: #6f8e67; transition: width .25s ease; }
 .tracking-button { display: flex; align-items: center; justify-content: center; gap: 11px; min-height: 55px; border-radius: 10px; background: transparent; font-family: "Source Serif 4", Georgia, serif; font-size: 17px; font-weight: 600; cursor: pointer; }
 .tracking-button.pause { border: 1px solid var(--clay); color: var(--clay-dark); }
 .tracking-button.resume { border: 1px solid var(--sage); color: #50704d; }
@@ -298,8 +303,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid #748e6c; outline-
   .sidebar { position: sticky; top: 0; height: 100vh; align-items: center; padding-inline: 10px; }
   .brand-mark { margin-left: 0; }
   .main-nav button { justify-content: center; padding: 0; }
-  .main-nav button span, .sidebar-status, .tracking-button, .sidebar-update-button span { display: none; }
-  .sidebar-update-button { width: 46px; padding: 0; }
+  .main-nav button span, .sidebar-status, .tracking-button, .sidebar-update-status span, .sidebar-update-status em { display: none; }
+  .sidebar-update-status { display: flex; width: 46px; padding: 0; justify-content: center; }
   .app-main { height: auto; min-height: 100vh; padding: 45px 24px; overflow: visible; }
   .question-bar { width: 100%; min-width: 0; }
   .history-page { display: block; }
@@ -311,7 +316,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid #748e6c; outline-
 @media (max-width: 650px) {
   .app-shell { grid-template-columns: 1fr; }
   .sidebar { position: fixed; right: 0; bottom: 0; left: 0; top: auto; z-index: 20; flex-direction: row; width: 100%; height: 66px; padding: 6px 10px; border-top: 1px solid var(--line); border-right: 0; }
-  .brand-mark, .main-nav button:nth-child(4), .main-nav button.separated, .sidebar-update-button { display: none; }
+  .brand-mark, .main-nav button:nth-child(4), .main-nav button.separated, .sidebar-update-status { display: none; }
   .main-nav { display: grid; grid-template-columns: repeat(3, 1fr); width: 100%; }
   .main-nav button { min-height: 52px; }
   .app-main { padding: 28px 17px 90px; }

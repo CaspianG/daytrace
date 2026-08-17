@@ -8,7 +8,7 @@ const { Readable, Transform } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 const { EventStore } = require("./lib/event-store.cjs");
 const { createAccessibilityService } = require("./lib/accessibility-service.cjs");
-const { MAX_RELEASE_JSON_BYTES, MAX_UPDATE_BYTES, normalizeChecksumRelease, normalizeRelease } = require("./lib/update-service.cjs");
+const { MAX_RELEASE_JSON_BYTES, MAX_UPDATE_BYTES, normalizeChecksumRelease, normalizeRelease, windowsInstallerArgs } = require("./lib/update-service.cjs");
 
 app.disableHardwareAcceleration();
 const startupLogPath = path.join(app.getPath("userData"), "startup.log");
@@ -214,10 +214,16 @@ async function downloadAndInstallUpdate() {
     if (await sha256(destination) !== release.asset.digest) throw new Error("update-digest-mismatch");
     setUpdateRuntime({ status: "ready", progress: 100, error: null });
     if (process.platform === "win32") {
-      const installer = spawn(destination, ["/S"], { detached: true, windowsHide: true, stdio: "ignore" });
+      setUpdateRuntime({ status: "installing", progress: 100 });
+      const installer = spawn(destination, windowsInstallerArgs(process.execPath), { detached: true, windowsHide: true, stdio: "ignore" });
+      await new Promise((resolve, reject) => {
+        installer.once("spawn", resolve);
+        installer.once("error", reject);
+      });
       installer.unref();
       isQuitting = true;
-      setTimeout(() => app.quit(), 250).unref();
+      setUpdateRuntime({ status: "restarting", progress: 100 });
+      setTimeout(() => app.quit(), 700).unref();
     } else if (process.platform === "darwin") {
       const openError = await shell.openPath(destination);
       if (openError) throw new Error(openError);

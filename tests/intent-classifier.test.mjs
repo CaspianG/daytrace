@@ -60,6 +60,20 @@ test("dedicated application priors cover common creative, office, development, a
     ["Anki", "Deck", "learning"],
     ["Steam", "Library", "entertainment"],
     ["Spotify", "Home", "entertainment"],
+    ["ScrapMechanic", "Scrap Mechanic", "entertainment"],
+    ["FactoryGame-Win64-Shipping", "Satisfactory", "entertainment"],
+  ];
+  for (const [app, title, expected] of cases) {
+    assert.equal(classifier.inferIntentDetails({ app, title }).intent, expected, `${app}: ${title}`);
+  }
+});
+
+test("visible technical and search context is used before falling back to unknown", () => {
+  const cases = [
+    ["Google Chrome", "Fix installer restart after silent update", "work"],
+    ["Telegram Desktop", "Ошибка интеграции API — настройка сервера", "work"],
+    ["Google Chrome", "what is event sourcing - Google Search", "learning"],
+    ["ChatGPT", "Сравнение локальных моделей и примеры", "learning"],
   ];
   for (const [app, title, expected] of cases) {
     assert.equal(classifier.inferIntentDetails({ app, title }).intent, expected, `${app}: ${title}`);

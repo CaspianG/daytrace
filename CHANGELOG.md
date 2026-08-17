@@ -14,6 +14,17 @@ All notable changes to Daytrace are documented here.
 
 - The tagged macOS release job now requires a real Developer ID Application certificate and Apple notarization credentials, signs the embedded native tracker, enables Hardened Runtime, and refuses to publish unless `codesign`, Gatekeeper assessment, and stapler validation all pass.
 
+### Updates
+
+- A compact bottom-left status now shows update checking, download percentage, verification, installation, restart, macOS DMG handoff, and failures without requiring a trip to Settings.
+- Silent Windows updates now use NSIS update mode, preserve the current installation directory, and force Daytrace to reopen after installation.
+
+### Purpose accuracy
+
+- Popular game processes and common packaged-game executable names are recognized as entertainment instead of remaining unknown.
+- Visible active-window titles now cover more development, installation, debugging, infrastructure, search, comparison, and reference contexts in English and Russian.
+- On the same local 48-hour diagnostic journal, unknown observed time fell to 1.7%; the remaining opaque chat titles stay honest rather than being assigned an unsupported purpose.
+
 ## [0.5.1] - 2026-08-16
 
 ### Fixed

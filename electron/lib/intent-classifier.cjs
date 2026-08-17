@@ -28,6 +28,8 @@ const TITLE_SIGNALS = {
   work: [
     { weight: 5, pattern: /\b(project|client|customer|task|ticket|issue|pull request|merge request|standup|sprint|meeting|brief|proposal|invoice|contract|deadline|roadmap|release|deploy(?:ment)?|production|requirements?|workspace|repository|commit|branch|code review|dashboard|analytics|campaign|crm|sales|payroll|accounting|business)\b/i },
     { weight: 5, pattern: /(?:проект|клиент|заказчик|заказ\b|задач|тикет|созвон|встреч|бриф|предложен|сч[её]т|договор|дедлайн|релиз|деплой|продакш|требован|макет|репозитор|коммит|ветк|код-ревью|рабоч(?:ая|ий|ее)|аналитик|кампан|продаж|бухгалтер)/i },
+    { weight: 4, pattern: /\b(fix|bug|error|debug|build|test suite|ci\/cd|workflow|api|database|backend|frontend|server|website|application|installer|update service|security review|performance|configuration|integration|implementation)\b/i },
+    { weight: 4, pattern: /(?:исправ|ошибк|баг\b|отлад|сборк|тесты|тестирован|api\b|баз[аы] данных|бэкенд|фронтенд|сервер|сайт\b|приложен|установщик|обновлен|безопасност|производительност|конфигурац|интеграц|реализац|настройк)/i },
     { weight: 4, pattern: /\b(jira|linear|github|gitlab|bitbucket|figma|confluence|salesforce|hubspot|asana|trello|monday\.com|clickup|miro|airtable|office 365|google workspace|vercel|sentry|datadog)\b/i },
     { weight: 4, pattern: /(?:техзадан|техническ(?:ое|ая) задани|план работ|рабочий чат|командный чат|обсуждение api|тестирован|отладк|разработк|программирован)/i },
     { weight: 3, pattern: /\b([\w.-]+\.(?:js|jsx|ts|tsx|py|go|rs|java|kt|swift|cs|cpp|c|h|vue|svelte|sql|yaml|yml|toml|json|md)|localhost|127\.0\.0\.1|devtools|terminal)\b/i },
@@ -37,6 +39,7 @@ const TITLE_SIGNALS = {
     { weight: 6, pattern: /(?:курс|урок|лекц|обуч|изуч|документац|учебник|научн(?:ая|ое) стать|исследован|гайд|инструкц|руководств|вебинар|воркшоп|мастер-класс|как сделать|как настроить|разбор темы|подготовка к экзамен|повышение квалификац)/i },
     { weight: 4, pattern: /\b(coursera|udemy|edx|khan academy|stepik|skillbox|netology|geekbrains|duolingo|quizlet|anki|leetcode|codewars)\b/i },
     { weight: 3, pattern: /(?:статья|энциклопед|словар|справочник|объяснение|обзор технолог|новости науки)/i },
+    { weight: 3, pattern: /\b(search results?|google search|yandex search|comparison|overview|reference|examples?|what is|why does|best way to)\b|(?:результаты поиска|поиск google|яндекс поиск|сравнение|что такое|почему|примеры|лучший способ)/i },
   ],
   personal: [
     { weight: 5, pattern: /\b(family|friends?|personal|bank(?:ing)?|shopping|checkout|order|delivery|travel|vacation|health|doctor|appointment|rent|mortgage|insurance|pharmacy|fitness|recipe|weather|maps|booking|hotel|flight|train tickets?)\b/i },
@@ -57,6 +60,7 @@ const WORK_APPS = /(?:visual studio|\bcode\b|zcode|cursor|windsurf|terminal|powe
 const COMMUNICATION_WORK_APPS = /(?:slack|microsoft teams|\bteams\b|zoom|webex|outlook|thunderbird)/i;
 const LEARNING_APPS = /(?:anki|duolingo|kindle|calibre|quizlet)/i;
 const ENTERTAINMENT_APPS = /(?:steam|epicgames|epic games|battle\.net|riotclient|riot client|playstation|xbox|netflix|twitch|spotify|vlc|foobar2000|winamp)/i;
+const GAME_APPS = /(?:scrapmechanic|scrap mechanic|minecraft|javaw.*minecraft|roblox|fortnite|valorant|leagueclient|league of legends|dota2|cs2|counter.?strike|gta|grand theft auto|cyberpunk|witcher|eldenring|elden ring|baldur.?s gate|terraria|stardew|factorio|satisfactory|overwatch|hearthstone|genshin|warframe|worldoftanks|world of tanks|worldofwarships|war thunder|r5apex|apex legends|pubg|rocketleague|rocket league|eu4|hoi4|civilization|cities.?skylines|rimworld|game\.exe|win64[_-]shipping)/i;
 const PERSONAL_APPS = /(?:sber|сбер|tinkoff|тинькофф|revolut|wise|paypal|health|fitness|weather)/i;
 const BROWSER_APPS = /(?:chrome|edge|firefox|brave|opera|vivaldi|safari|browser)/i;
 const MESSENGER_APPS = /(?:telegram|whatsapp|signal|discord|viber|messenger)/i;
@@ -146,7 +150,7 @@ function inferIntentDetails(activity, rules = []) {
   const classified = BROWSER_APPS.test(app) ? serviceClassification(title, semantic) : semantic;
   if (classified) return classified;
 
-  if (ENTERTAINMENT_APPS.test(app)) return { intent: "entertainment", confidence: "medium", reason: "application-category", evidence: activity.app || activity.process || "" };
+  if (ENTERTAINMENT_APPS.test(app) || GAME_APPS.test(app)) return { intent: "entertainment", confidence: "high", reason: "application-category", evidence: activity.app || activity.process || "" };
   if (LEARNING_APPS.test(app)) return { intent: "learning", confidence: "medium", reason: "application-category", evidence: activity.app || activity.process || "" };
   if (PERSONAL_APPS.test(app)) return { intent: "personal", confidence: "medium", reason: "application-category", evidence: activity.app || activity.process || "" };
   if (WORK_APPS.test(app) || COMMUNICATION_WORK_APPS.test(app)) return { intent: "work", confidence: "medium", reason: "application-category", evidence: activity.app || activity.process || "" };

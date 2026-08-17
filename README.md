@@ -56,7 +56,7 @@ The current v0.5.1 macOS build is not notarized, so Gatekeeper may require **Ope
 
 Minimizing or closing the window releases the heavy renderer while the lightweight native tracker continues from the system tray. Double-click the tray icon or launch Daytrace again to reopen the same instance.
 
-Installed builds check for a stable update shortly after launch and every six hours while online. You can also use **Settings → Updates → Check for updates**. When a newer release exists, an **Update** button appears at the bottom left. Windows verifies and starts the installer automatically; macOS verifies and opens the universal DMG for the standard user-confirmed installation flow.
+Installed builds check for a stable update shortly after launch and every six hours while online. You can also use **Settings → Updates → Check for updates**. A compact bottom-left status shows checking, download percentage, verification, installation, restart, or an actionable error without opening Settings. Windows verifies the installer, preserves the current install location, updates silently, and reopens Daytrace automatically. macOS verifies and opens the universal DMG, then shows that Finder still needs the standard user-confirmed replacement.
 
 ## What you get
 
@@ -79,6 +79,7 @@ Installed builds check for a stable update shortly after launch and every six ho
 - **Fine-grained collection controls** for window titles, anonymous active-second samples, browser-tab counts, and private-window filtering.
 - **Two-layer classification** that keeps the application type separate from the inferred purpose. Telegram can be work or personal; a browser can be work, learning, entertainment, or unknown.
 - **Adaptive local purpose analysis** for popular video, streaming, social, shopping, learning, developer, office, creative, and communication contexts, with confidence and the reason for every inference.
+- **Broader visible-context understanding** for popular games, packaged game executables, technical work, debugging, installation, infrastructure, searches, comparisons, and reference pages in English and Russian.
 - **One-click local corrections** on timeline entries plus reusable substring rules for chats, page titles, projects, and keywords. Rules never leave the device.
 
 ![Daytrace day overview and latest activity in English](docs/assets/screenshots/timeline-en.png)

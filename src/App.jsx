@@ -46,7 +46,8 @@ function demoLanguage() {
 function demoState(language = demoLanguage(), onboardingComplete = true) {
   const lang = normalizeLanguage(language);
   const t = translations[lang];
-  const updatePreview = new URLSearchParams(window.location.search).get("update") === "available";
+  const updatePreview = new URLSearchParams(window.location.search).get("update");
+  const updateStatus = ["available", "downloading", "ready", "installing", "restarting", "installer-opened", "error"].includes(updatePreview) ? updatePreview : "up-to-date";
   const apps = ["Visual Studio Code", "Google Chrome", "Telegram Desktop", "Visual Studio Code", "Visual Studio Code", "Google Chrome", "Figma", "Telegram Desktop", "Gmail"];
   const focuses = ["development", "planning", "communication", "development", "development", "research", "design", "communication", "communication"];
   const intents = ["work", "work", "work", "work", "work", "learning", "work", "personal", "work"];
@@ -59,7 +60,7 @@ function demoState(language = demoLanguage(), onboardingComplete = true) {
   const makeSession = (id, from, to, focus, intent) => ({ id, start: activities[from].start, end: activities[to].end, durationMs: activities[to].end - activities[from].start, focus, label: FOCUS_LABELS[lang][focus], intent, intentLabel: INTENT_LABELS[lang][intent], activities: activities.slice(from, to + 1) });
   return {
     settings: { trackingEnabled: true, retentionHours: 48, excludePrivateWindows: true, collectWindowTitles: true, collectInputCounts: true, collectBrowserTabCount: true, autoStartEnabled: false, excludedApps: ["1Password", "Bitwarden", "KeePass"], intentRules: [{ id: "demo-friends", match: lang === "ru" ? "Друзья" : "Friends", intent: "personal" }], language: lang, onboardingComplete },
-    runtime: { platform: updatePreview ? "win32" : "browser", trackerStatus: "running", accessibilityTrusted: true, autoStartSupported: false, autoStartEnabled: false, update: { status: updatePreview ? "available" : "up-to-date", currentVersion: "0.5.1", latestVersion: updatePreview ? "0.5.2" : "0.5.1", checkedAt: Date.now(), progress: 0 } },
+    runtime: { platform: updatePreview ? "win32" : "browser", trackerStatus: "running", accessibilityTrusted: true, autoStartSupported: false, autoStartEnabled: false, update: { status: updateStatus, currentVersion: "0.5.1", latestVersion: updatePreview ? "0.5.2" : "0.5.1", checkedAt: Date.now(), progress: updateStatus === "downloading" ? 64 : ["ready", "installing", "restarting"].includes(updateStatus) ? 100 : 0 } },
     sessions: [
       makeSession("demo-1", 0, 2, "mixed", "work"), makeSession("demo-2", 3, 6, "mixed", "work"), makeSession("demo-3", 7, 8, "communication", "mixed"),
       { id: "demo-break", start: startOfToday(12, 5), end: startOfToday(12, 20), durationMs: 15 * 60_000, focus: "break", label: FOCUS_LABELS[lang].break, intent: "unknown", intentLabel: INTENT_LABELS[lang].unknown, activities: [] },
@@ -248,15 +249,40 @@ function MacPermissionOnboarding({ actions, onContinue, t }) {
   </main>;
 }
 
+function SidebarUpdateStatus({ update, actions, setPage, t }) {
+  const status = update.status;
+  const visible = ["checking", "available", "downloading", "ready", "installing", "restarting", "installer-opened", "error"].includes(status);
+  if (!visible) return null;
+  const progress = Math.max(0, Math.min(100, Number(update.progress || 0)));
+  const labels = {
+    checking: t.status.updateChecking,
+    available: text(t.status.update, { version: update.latestVersion }),
+    downloading: text(t.status.updateDownloading, { progress }),
+    ready: t.status.updateReady,
+    installing: t.status.updateInstalling,
+    restarting: t.status.updateRestarting,
+    "installer-opened": t.status.updateMacOpened,
+    error: t.status.updateFailed,
+  };
+  const busy = ["checking", "downloading", "installing", "restarting"].includes(status);
+  const Icon = status === "error" ? X : ["ready", "installer-opened"].includes(status) ? Check : status === "available" || status === "downloading" ? DownloadSimple : ArrowClockwise;
+  const activate = () => status === "available" ? actions.installUpdate() : setPage("settings");
+  return <button className={`sidebar-update-status ${status}`} onClick={activate} title={labels[status]} aria-label={labels[status]}>
+    <Icon size={19} weight="bold" className={busy && status !== "downloading" ? "spin" : ""} />
+    <span>{labels[status]}</span>
+    {status === "downloading" && <em>{progress}%</em>}
+    {status === "downloading" && <i style={{ width: `${Math.max(3, progress)}%` }} />}
+  </button>;
+}
+
 function Sidebar({ page, setPage, state, actions, language, t }) {
   const expires = new Date(Date.now() + state.settings.retentionHours * 60 * 60_000);
   const update = state.runtime?.update || {};
-  const updateAvailable = update.status === "available";
   return <aside className="sidebar">
     <div className="brand-mark"><Compass size={29} weight="fill" /></div>
     <nav className="main-nav" aria-label={language === "ru" ? "Разделы" : "Sections"}>{NAVIGATION.map(({ id, icon: Icon, separated }) => <button key={id} className={`${page === id ? "active" : ""} ${separated ? "separated" : ""}`} onClick={() => setPage(id)}><Icon size={25} weight={page === id ? "fill" : "regular"} /><span>{t.nav[id]}</span></button>)}</nav>
     <div className="sidebar-status"><div className="status-row"><span className={`status-dot ${state.settings.trackingEnabled ? "on" : "off"}`} /><span>{state.settings.trackingEnabled ? t.common.local : t.status.paused}</span></div><div className="status-row muted"><Database size={18} /><span>{text(t.status.retention, { hours: state.settings.retentionHours })}</span></div><div className="expiry">{text(t.status.deletion, { time: formatTime(expires, language) })}</div></div>
-    {updateAvailable && <button className="sidebar-update-button" onClick={actions.installUpdate} title={text(t.status.update, { version: update.latestVersion })}><DownloadSimple size={21} weight="bold" /><span>{text(t.status.update, { version: update.latestVersion })}</span></button>}
+    <SidebarUpdateStatus update={update} actions={actions} setPage={setPage} t={t} />
     <button className={`tracking-button ${state.settings.trackingEnabled ? "pause" : "resume"}`} onClick={() => actions.setTracking(!state.settings.trackingEnabled)}>{state.settings.trackingEnabled ? <Pause size={22} weight="fill" /> : <Play size={22} weight="fill" />}{state.settings.trackingEnabled ? t.status.pause : t.status.resume}</button>
   </aside>;
 }
@@ -366,10 +392,11 @@ function UpdateSettings({ runtime, actions, pending, run, t }) {
   const update = runtime.update || { status: "disabled", currentVersion: "—" };
   const checking = update.status === "checking";
   const downloading = update.status === "downloading";
+  const installing = ["installing", "restarting"].includes(update.status);
   const available = update.status === "available";
   const status = t.settings.updateStatuses[update.status] || t.settings.updateStatuses.idle;
   const checked = update.checkedAt ? new Intl.DateTimeFormat(t.locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(update.checkedAt)) : null;
-  return <div className="update-settings"><div className="update-copy"><div><strong>{text(t.settings.currentVersion, { version: update.currentVersion || "—" })}</strong><span>{available ? text(t.settings.availableVersion, { version: update.latestVersion }) : status}</span>{checked && <small>{text(t.settings.lastChecked, { time: checked })}</small>}</div>{downloading && <div className="update-progress"><span style={{ width: `${Math.max(3, Number(update.progress || 0))}%` }} /></div>}{update.error && <small className="update-error">{t.settings.updateError}</small>}</div><div className="update-actions"><button className="secondary-button" disabled={Boolean(pending) || checking || downloading || update.status === "disabled"} onClick={() => run("check-update", actions.checkUpdates)}><ArrowClockwise size={18} className={checking ? "spin" : ""} /> {checking ? t.settings.checking : t.settings.checkUpdates}</button>{available && <button className="primary-update-button" disabled={Boolean(pending)} onClick={() => run("install-update", actions.installUpdate)}><DownloadSimple size={18} /> {runtime.platform === "darwin" ? text(t.settings.downloadMac, { version: update.latestVersion }) : text(t.settings.installUpdate, { version: update.latestVersion })}</button>}</div><p>{t.settings.updatePrivacy}</p></div>;
+  return <div className="update-settings"><div className="update-copy"><div><strong>{text(t.settings.currentVersion, { version: update.currentVersion || "—" })}</strong><span>{available ? text(t.settings.availableVersion, { version: update.latestVersion }) : status}</span>{checked && <small>{text(t.settings.lastChecked, { time: checked })}</small>}</div>{downloading && <div className="update-progress"><span style={{ width: `${Math.max(3, Number(update.progress || 0))}%` }} /></div>}{update.error && <small className="update-error">{t.settings.updateError}</small>}</div><div className="update-actions"><button className="secondary-button" disabled={Boolean(pending) || checking || downloading || installing || update.status === "disabled"} onClick={() => run("check-update", actions.checkUpdates)}><ArrowClockwise size={18} className={checking ? "spin" : ""} /> {checking ? t.settings.checking : t.settings.checkUpdates}</button>{available && <button className="primary-update-button" disabled={Boolean(pending)} onClick={() => run("install-update", actions.installUpdate)}><DownloadSimple size={18} /> {runtime.platform === "darwin" ? text(t.settings.downloadMac, { version: update.latestVersion }) : text(t.settings.installUpdate, { version: update.latestVersion })}</button>}</div><p>{t.settings.updatePrivacy}</p></div>;
 }
 
 function SettingsPage({ state, actions, isDesktop, language, t }) {
