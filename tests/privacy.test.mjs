@@ -14,4 +14,6 @@ test("Daytrace never records its own window", () => {
   const settings = { trackingEnabled: true, excludePrivateWindows: true, excludedApps: [] };
   assert.equal(privacy.shouldRecord({ app: "Daytrace", process: "Daytrace", title: "Daytrace" }, settings), false);
   assert.equal(privacy.shouldRecord({ app: "Daytrace Tracker", process: "Daytrace.Tracker" }, settings), false);
+  assert.equal(privacy.shouldRecord({ app: "Daytrace", process: "local.daytrace.desktop", title: "Today" }, settings), false);
+  assert.equal(privacy.shouldRecord({ app: "Daytrace", process: "local.daytrace.desktop", title: "Сегодня" }, settings), false);
 });

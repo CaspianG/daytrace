@@ -1,6 +1,6 @@
 {
   "name": "daytrace-local",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "private": true,
   "description": "Private, fully local activity timeline and workday recall for Windows and macOS.",
   "author": "Daytrace contributors",
@@ -28,17 +28,19 @@
     "dev:desktop": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on tcp:5173 && electron .\"",
     "build": "vite build && node scripts/prepare-sites-build.mjs",
     "build:tracker": "npm run build:tracker:win",
-    "build:tracker:win": "dotnet publish native/windows-tracker/Daytrace.Tracker.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishReadyToRun=true",
+    "build:tracker:win": "node scripts/build-windows-tracker.cjs",
     "build:tracker:mac": "bash scripts/build-macos-tracker.sh",
     "dist": "npm run dist:win",
-    "dist:win": "npm run test && npm run build:tracker:win && npm run build:brand && npm run build && electron-builder --win nsis zip --publish never",
-    "dist:mac": "npm run test && npm run build:tracker:mac && npm run build:brand && npm run build && electron-builder --mac dmg zip --universal --publish never -c.mac.identity=null -c.mac.notarize=false && bash scripts/bundle-macos-install-guide.sh",
-    "dist:mac:release": "node scripts/require-apple-signing.mjs && npm run test && npm run build:tracker:mac && npm run build:brand && npm run build && electron-builder --mac dmg zip --universal --publish never -c.mac.forceCodeSigning=true && bash scripts/bundle-macos-install-guide.sh && bash scripts/verify-macos-release.sh",
+    "dist:win": "npm run test && npm run build:tracker:win && npm run build:brand && npm run build && npm run test:desktop && electron-builder --win nsis zip --publish never && npm run test:packaged:win",
+    "dist:mac": "npm run test && npm run build:tracker:mac && npm run build:brand && npm run build && npm run test:desktop && electron-builder --mac dmg zip --universal --publish never -c.mac.identity=null -c.mac.notarize=false && bash scripts/bundle-macos-install-guide.sh",
+    "dist:mac:release": "node scripts/require-apple-signing.mjs && npm run test && npm run build:tracker:mac && npm run build:brand && npm run build && npm run test:desktop && electron-builder --mac dmg zip --universal --publish never -c.mac.forceCodeSigning=true && bash scripts/bundle-macos-install-guide.sh && bash scripts/verify-macos-release.sh",
     "build:brand": "node scripts/build-brand-assets.mjs",
     "screenshots": "npm run build && electron scripts/capture-screenshots.cjs",
     "preview": "vite preview",
-    "test": "node --test tests/privacy.test.mjs tests/sessionizer.test.mjs tests/intent-classifier.test.mjs tests/update-service.test.mjs tests/accessibility-service.test.mjs tests/mac-install-service.test.mjs tests/mac-update-service.test.mjs tests/event-store.test.mjs tests/localization.test.mjs tests/release-docs.test.mjs",
-    "test:sites": "npm run build && node --test tests/sites-worker.test.mjs"
+    "test": "node --test tests/privacy.test.mjs tests/sessionizer.test.mjs tests/intent-classifier.test.mjs tests/update-service.test.mjs tests/accessibility-service.test.mjs tests/mac-install-service.test.mjs tests/mac-update-service.test.mjs tests/event-store.test.mjs tests/localization.test.mjs tests/runtime-security.test.mjs tests/native-collector-contract.test.mjs tests/release-docs.test.mjs",
+    "test:sites": "npm run build && node --test tests/sites-worker.test.mjs",
+    "test:desktop": "node scripts/run-desktop-smoke.cjs",
+    "test:packaged:win": "node scripts/run-packaged-windows-smoke.cjs"
   },
   "dependencies": {},
   "devDependencies": {
@@ -64,6 +66,10 @@
   "build": {
     "appId": "local.daytrace.desktop",
     "productName": "Daytrace",
+    "electronLanguages": [
+      "en-US",
+      "ru"
+    ],
     "afterPack": "scripts/after-pack.cjs",
     "artifactName": "Daytrace-Portable-${version}-${arch}.${ext}",
     "files": [
@@ -97,7 +103,7 @@
       "icon": "build/icon.ico",
       "extraResources": [
         {
-          "from": "native/windows-tracker/bin/Release/net8.0-windows/win-x64/publish/",
+          "from": "native/windows-tracker/bin/Release/daytrace-win-x64/",
           "to": "tracker/windows",
           "filter": [
             "**/*"

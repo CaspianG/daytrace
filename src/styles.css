@@ -253,6 +253,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid #748e6c; outline-
 .runtime-card small, .permission-card span { color: #71806e; font-size: 12px; }
 .runtime-card em { margin-left: auto; color: #6b7568; font-size: 11px; font-style: normal; font-weight: 700; }
 .runtime-card.error, .runtime-card.unavailable, .runtime-card.permission-required { border-color: #e2c0b5; color: #98583f; background: #fff8f5; }
+.settings-action-error { display: flex; align-items: flex-start; gap: 9px; margin-top: 10px; padding: 12px 14px; border: 1px solid #e2b7a9; border-radius: 9px; color: #955a47; background: #fff8f5; font-size: 12px; line-height: 1.5; }
+.settings-action-error svg { flex: 0 0 auto; margin-top: 1px; }
 .permission-card > div { display: grid; flex: 1; gap: 4px; }
 .permission-card button { min-height: 36px; padding: 0 12px; border: 1px solid #9fb297; border-radius: 8px; color: #526e4d; background: white; cursor: pointer; font-weight: 650; }
 .permission-card .permission-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }

@@ -10,11 +10,15 @@ const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 const readmeRu = fs.readFileSync(path.join(root, "README_RU.md"), "utf8");
 const changelog = fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8");
 const releaseWorkflow = fs.readFileSync(path.join(root, ".github", "workflows", "release.yml"), "utf8");
+const ciWorkflow = fs.readFileSync(path.join(root, ".github", "workflows", "ci.yml"), "utf8");
+const securityWorkflow = fs.readFileSync(path.join(root, ".github", "workflows", "security.yml"), "utf8");
+const dependabot = fs.readFileSync(path.join(root, ".github", "dependabot.yml"), "utf8");
 const releaseBody = fs.readFileSync(path.join(root, ".github", "RELEASE_BODY.md"), "utf8");
 const macGuide = fs.readFileSync(path.join(root, "docs", "MACOS_INSTALL.md"), "utf8");
 const macGuideRu = fs.readFileSync(path.join(root, "docs", "MACOS_INSTALL_RU.md"), "utf8");
 const bundledMacGuide = fs.readFileSync(path.join(root, "MACOS_INSTALL.txt"), "utf8");
 const bundleMacGuideScript = fs.readFileSync(path.join(root, "scripts", "bundle-macos-install-guide.sh"), "utf8");
+const windowsTrackerBuild = fs.readFileSync(path.join(root, "scripts", "build-windows-tracker.cjs"), "utf8");
 
 test("release metadata and both READMEs name the same current version", () => {
   const version = pkg.version;
@@ -34,6 +38,19 @@ test("both READMEs document Windows, macOS, and measured system load", () => {
     assert.match(document, /0[,.]039%/);
     assert.match(document, /199 (?:MiB|МиБ)/);
   }
+});
+
+test("Windows native collector remains self-contained with a lean fast-start publish", () => {
+  assert.equal(pkg.scripts["build:tracker:win"], "node scripts/build-windows-tracker.cjs");
+  assert.match(windowsTrackerBuild, /"--self-contained", "true"/);
+  assert.match(windowsTrackerBuild, /PublishSingleFile=false/);
+  assert.match(windowsTrackerBuild, /PublishReadyToRun=true/);
+  assert.match(windowsTrackerBuild, /DebugSymbols=false/);
+  assert.match(windowsTrackerBuild, /SatelliteResourceLanguages=en/);
+  assert.match(windowsTrackerBuild, /Refusing unsafe tracker output cleanup/);
+  assert.equal(pkg.build.win.extraResources[0].from, "native/windows-tracker/bin/Release/daytrace-win-x64/");
+  assert.deepEqual(pkg.build.electronLanguages, ["en-US", "ru"]);
+  assert.match(pkg.scripts["dist:win"], /electron-builder[\s\S]*npm run test:packaged:win/);
 });
 
 test("macOS tagged releases remain publishable without unavailable Apple credentials", () => {
@@ -72,4 +89,18 @@ test("macOS downloaders see safe bilingual Gatekeeper instructions before and in
   assert.match(macGuideRu, /Всё равно открыть/);
   assert.match(bundledMacGuide, /READ BEFORE INSTALLING/);
   assert.match(bundledMacGuide, /ПРОЧИТАЙТЕ ПЕРЕД УСТАНОВКОЙ/);
+});
+
+test("repository automation uses least privilege and continuous security checks", () => {
+  for (const workflow of [ciWorkflow, releaseWorkflow, securityWorkflow]) {
+    for (const action of workflow.matchAll(/uses:\s+[^\s@]+@([^\s#]+)/g)) assert.match(action[1], /^[a-f0-9]{40}$/);
+  }
+  assert.match(releaseWorkflow, /permissions:\s*\n\s+contents: read/);
+  assert.match(releaseWorkflow, /publish:[\s\S]*?permissions:\s*\n\s+contents: write/);
+  assert.match(securityWorkflow, /github\/codeql-action\/init@[a-f0-9]{40}/);
+  assert.match(securityWorkflow, /javascript-typescript/);
+  assert.match(securityWorkflow, /csharp/);
+  assert.match(ciWorkflow, /npx --yes npm@11\.6\.2 audit --audit-level=high/);
+  assert.match(dependabot, /package-ecosystem: npm/);
+  assert.match(dependabot, /package-ecosystem: github-actions/);
 });

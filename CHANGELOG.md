@@ -2,6 +2,32 @@
 
 All notable changes to Daytrace are documented here.
 
+## [0.5.5] - 2026-08-20
+
+### Crash-safe macOS updates
+
+- The macOS updater no longer treats a successful `open` request as proof that the new application works. The replacement must now render and show a non-empty Daytrace window, then return a one-time cryptographic readiness token.
+- The previous application remains backed up while the helper waits up to 90 seconds for that signal. A Gatekeeper block, startup crash, empty renderer, or missing signal terminates the failed copy, restores the previous bundle, and reopens it automatically.
+- Readiness files are accepted only inside the exact private update work directory and cannot be reused or redirected to an arbitrary path.
+- A persistent local log at `~/Library/Logs/Daytrace/updater.log` records readiness and rollback outcomes without activity data.
+- macOS CI now includes real helper integration scenarios using temporary app bundles, system `ditto`, and Launch Services `open`, covering both successful confirmation and timeout rollback.
+
+### Security, accuracy, and resource use
+
+- The Electron renderer can no longer navigate to an arbitrary site and retain Daytrace IPC privileges. Navigation, popups, webviews, IPC senders, and executable content are restricted to the exact local renderer and a strict Content Security Policy.
+- The macOS bundle identifier is now recognized as Daytrace itself, so opening the application never records its own settings or timeline window.
+- Collector restarts are serialized and old child-process exit events cannot clear a newer collector reference or create duplicate background trackers.
+- Collection and private-window settings remain editable while tracking is paused, failed changes now show an in-app error, and privacy-only changes no longer restart the native collector.
+- Generic browser windows such as New Tab now close the previous page context instead of incorrectly charging later activity to an old title.
+- Invalid event timestamps, event kinds, settings, and deletion ranges fail closed. A malformed retention update preserves the previous period instead of silently falling back to 48 hours and pruning history. Local journals, settings, generated workflows, and updater logs use private owner-only permissions on macOS.
+- Normal questions read only their requested time window instead of synchronously loading a one-year archive. Retention pruning skips recent hourly files without rereading their contents.
+- A synthetic one-year archive of 8,760 hourly files opened in 63.3 ms on the Windows verification machine; recent state took 106.2 ms and a today-only question 28.7 ms while reading 48 events.
+- The self-contained Windows native collector keeps ReadyToRun startup optimization but removes debug payloads and unused localized framework resources. The verified output fell from 160.1 MiB across 464 files to 144.5 MiB across 242 files without requiring a separate .NET installation.
+- Desktop packages keep only the English and Russian Electron locales that Daytrace supports instead of shipping dozens of unused Chromium locale packs.
+- Windows release builds now launch the already packaged executable and require a non-empty renderer plus a working preload/IPC/local-state bridge, catching packaged-only white-window failures before publication.
+- Generated workflows must match a current local suggestion and treat observed application labels as untrusted data rather than executable instructions.
+- GitHub Actions are pinned to reviewed commits, release write access is limited to the publishing job, weekly CodeQL analysis covers JavaScript and C#, and Dependabot now monitors npm and workflow dependencies.
+
 ## [0.5.4] - 2026-08-18
 
 ### One-click macOS updates

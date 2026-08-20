@@ -28,6 +28,11 @@ replacement once because the old installed binary does not contain the new
 updater. An unsigned update can still make macOS request Accessibility again;
 Daytrace can open the correct settings page but cannot grant itself access.
 
+From v0.5.5 onward, Daytrace keeps the previous app until the new version has
+rendered and shown a real window. If Gatekeeper blocks it or startup fails, the
+updater restores and reopens the previous copy automatically. A local outcome
+log is stored at ~/Library/Logs/Daytrace/updater.log without activity data.
+
 Do not disable Gatekeeper globally. Download Daytrace only from the official
 GitHub repository: https://github.com/CaspianG/daytrace/releases/latest
 
@@ -60,6 +65,11 @@ Daytrace. При переходе с v0.5.3 или старше ручную з�
 один раз: в старом установленном файле нового механизма ещё нет. После обновления
 без подписи macOS всё ещё может повторно запросить «Универсальный доступ»;
 Daytrace откроет нужный раздел, но не может выдать разрешение самому себе.
+
+Начиная с v0.5.5 Daytrace хранит предыдущую версию, пока новая действительно не
+отрисует и не покажет окно. Если её заблокирует Gatekeeper или запуск завершится
+ошибкой, updater автоматически восстановит и откроет предыдущую копию. Локальный
+журнал результата: ~/Library/Logs/Daytrace/updater.log, без данных активности.
 
 Не отключайте Gatekeeper целиком. Скачивайте Daytrace только из официального
 репозитория: https://github.com/CaspianG/daytrace/releases/latest

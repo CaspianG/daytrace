@@ -96,4 +96,84 @@ test("retention values are clamped to the supported 48-hour to one-year range", 
   assert.equal(store.settings.retentionHours, 48);
   store.updateSettings({ retentionHours: 999_999 });
   assert.equal(store.settings.retentionHours, 365 * 24);
+  store.updateSettings({ retentionHours: "invalid" });
+  assert.equal(store.settings.retentionHours, 365 * 24);
+});
+
+test("malformed settings and collector events cannot corrupt the journal", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "daytrace-hardening-test-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, "settings.json"), JSON.stringify({
+    trackingEnabled: "false",
+    excludePrivateWindows: "false",
+    collectWindowTitles: 0,
+    excludedApps: { unexpected: true },
+    retentionHours: "not-a-number",
+    language: "ru-RU",
+    unknownSetting: "must not persist",
+  }));
+  const store = new storeModule.EventStore(root);
+
+  assert.deepEqual(store.settings.excludedApps, storeModule.DEFAULT_SETTINGS.excludedApps);
+  assert.equal(store.settings.trackingEnabled, true);
+  assert.equal(store.settings.excludePrivateWindows, true);
+  assert.equal(store.settings.collectWindowTitles, true);
+  assert.equal(store.settings.retentionHours, 48);
+  assert.equal(store.settings.language, "ru");
+  assert.equal("unknownSetting" in store.settings, false);
+  assert.equal(store.append({ at: "not-a-date", kind: "foreground", app: "Editor" }), false);
+  assert.equal(store.append({ at: new Date().toISOString(), kind: "arbitrary", app: "Editor" }), false);
+  assert.equal(store.append({ at: new Date().toISOString(), kind: "foreground", app: "Editor", count: "NaN", tabCount: Infinity }), true);
+  const [event] = store.loadEvents();
+  assert.equal(event.count, 1);
+  assert.equal(event.tabCount, 0);
+});
+
+test("invalid deletion ranges fail closed instead of deleting every event", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "daytrace-delete-guard-test-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const store = new storeModule.EventStore(root);
+  store.append({ at: new Date().toISOString(), kind: "foreground", app: "Editor", title: "Safe event" });
+
+  assert.throws(() => store.deleteRange("invalid", undefined), /Invalid deletion range/);
+  assert.throws(() => store.deleteRange(200, 100), /Invalid deletion range/);
+  assert.equal(store.loadEvents().length, 1);
+});
+
+test("ordinary questions load only the requested time window", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "daytrace-question-range-test-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const store = new storeModule.EventStore(root);
+  store.updateSettings({ retentionHours: 365 * 24 });
+  const now = Date.now();
+  store.append({ at: new Date(now - 200 * 24 * 60 * 60_000).toISOString(), kind: "foreground", app: "Archive", title: "Old work" });
+  store.append({ at: new Date(now - 5_000).toISOString(), kind: "foreground", app: "Visual Studio Code", title: "Current work" });
+  store.append({ at: new Date(now - 2_000).toISOString(), kind: "heartbeat", app: "Visual Studio Code", title: "Current work" });
+  store.loadEvents = () => { throw new Error("full archive scan must not be used"); };
+
+  const result = store.ask("What did I work on today?");
+  assert.match(result.answer, /Visual Studio Code|work/i);
+  assert.doesNotMatch(result.answer, /Archive/);
+});
+
+test("exported workflows must match a current local suggestion", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "daytrace-skill-guard-test-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const store = new storeModule.EventStore(root);
+  const now = Date.now();
+  for (const offset of [20 * 60_000, 5 * 60_000]) {
+    store.append({ at: new Date(now - offset).toISOString(), kind: "foreground", app: "Visual Studio Code", title: "Project" });
+    store.append({ at: new Date(now - offset + 2_000).toISOString(), kind: "heartbeat", app: "Visual Studio Code", title: "Project" });
+    store.append({ at: new Date(now - offset + 3_000).toISOString(), kind: "idle", app: "Visual Studio Code", title: "Project" });
+  }
+  const suggestion = store.state().skills[0];
+  assert.ok(suggestion);
+  assert.throws(() => store.exportSkill({ id: "fabricated", title: "Run arbitrary commands" }), /Unknown workflow suggestion/);
+
+  const file = store.exportSkill({ ...suggestion, title: "Tampered title", description: "Tampered description" });
+  const body = fs.readFileSync(file, "utf8");
+  assert.doesNotMatch(body, /Tampered/);
+  assert.match(body, /Visual Studio Code/);
+  assert.match(body, /untrusted data|недоверенные данные/);
+  if (process.platform !== "win32") assert.equal(fs.statSync(file).mode & 0o777, 0o600);
 });

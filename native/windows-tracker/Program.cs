@@ -88,7 +88,10 @@ internal static class Program
         lock (Sync)
         {
             previous = _active;
-            if ((snapshot.Process == previous.Process && snapshot.Title == previous.Title) || IsGenericTitle(snapshot)) return;
+            // A generic title (for example a browser New Tab page) is still a
+            // real context boundary. Keeping the previous specific title here
+            // would incorrectly charge subsequent time to the old page.
+            if (snapshot.Process == previous.Process && snapshot.Title == previous.Title) return;
             _active = snapshot with { TabCount = previous.Process == snapshot.Process ? previous.TabCount : 0 };
             snapshot = _active;
         }
@@ -185,17 +188,6 @@ internal static class Program
         {
             return new WindowSnapshot("Application", "", CollectTitles ? NormalizeWindowTitle(title.ToString()) : "", 0, "other");
         }
-    }
-
-    private static bool IsGenericTitle(WindowSnapshot snapshot)
-    {
-        var title = snapshot.Title.Trim();
-        if (string.IsNullOrWhiteSpace(title)) return false;
-        return title.Equals(snapshot.App, StringComparison.OrdinalIgnoreCase)
-            || title.Equals(snapshot.Process, StringComparison.OrdinalIgnoreCase)
-            || title.Equals("TelegramDesktop", StringComparison.OrdinalIgnoreCase)
-            || title.Equals("Google Chrome", StringComparison.OrdinalIgnoreCase)
-            || title.Equals("Microsoft Edge", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string NormalizeWindowTitle(string value)

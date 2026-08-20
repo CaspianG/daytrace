@@ -17,12 +17,12 @@
   · <a href="SECURITY.md">Security</a>
 </p>
 
-<p align="center"><strong>Current release: v0.5.4</strong> — Windows and macOS artifacts are built from the same tag and published together.</p>
+<p align="center"><strong>Current release: v0.5.5</strong> — Windows and macOS artifacts are built from the same tag and published together.</p>
 
 > **macOS first-launch notice:** the current Mac build is free and fully local, but it is not signed or notarized because the project does not have Apple Developer ID credentials. Gatekeeper will therefore warn on first launch. Read the [safe macOS installation guide](docs/MACOS_INSTALL.md) before downloading; it uses Finder's supported **Open** / **Open Anyway** flow and does not disable Gatekeeper.
 
 <p align="center">
-  <img alt="Current version v0.5.4" src="https://img.shields.io/badge/current-v0.5.4-6f8f67?style=flat-square">
+  <img alt="Current version v0.5.5" src="https://img.shields.io/badge/current-v0.5.5-6f8f67?style=flat-square">
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-6f8f67?style=flat-square">
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-c5684b?style=flat-square">
   <img alt="macOS 12 or newer" src="https://img.shields.io/badge/macOS-12%2B-c5684b?style=flat-square">
@@ -59,7 +59,11 @@ After the app opens, Daytrace separately explains why Accessibility access is ne
 
 Minimizing or closing the window releases the heavy renderer while the lightweight native tracker continues from the system tray. Double-click the tray icon or launch Daytrace again to reopen the same instance.
 
-Installed builds check for a stable update shortly after launch and every six hours while online. You can also use **Settings → Updates → Check for updates**. A compact bottom-left status shows checking, download percentage, verification, installation, restart, or an actionable error without opening Settings. Windows verifies the installer, preserves the current install location, updates silently, and reopens Daytrace automatically. Starting with v0.5.4, macOS verifies the universal DMG, checks the embedded version, replaces the installed app, removes a numbered duplicate, and reopens the canonical copy automatically. Finder is shown only as a fallback when macOS does not allow automatic replacement. Users upgrading from v0.5.3 or older need the documented manual DMG replacement once because those installed versions do not yet contain the new updater.
+Installed builds check for a stable update shortly after launch and every six hours while online. You can also use **Settings → Updates → Check for updates**. A compact bottom-left status shows checking, download percentage, verification, installation, restart, or an actionable error without opening Settings. Windows verifies the installer, preserves the current install location, updates silently, and reopens Daytrace automatically. On macOS, Daytrace verifies the universal DMG, checks the embedded version, replaces the installed app, removes a numbered duplicate, and reopens the canonical copy automatically. Since v0.5.5, the old app remains recoverable until the new version has rendered and shown a real window; a Gatekeeper block or startup failure automatically restores and reopens the previous copy. Finder is shown only as a fallback when macOS does not allow automatic replacement. Users upgrading from v0.5.3 or older need the documented manual DMG replacement once because those installed versions do not yet contain the automatic updater.
+
+### v0.5.5 reliability and security audit
+
+The v0.5.5 release also closes several less-visible failure modes found during a full pre-release audit. Remote navigation cannot inherit the local IPC bridge, every IPC request must come from the exact Daytrace renderer, and the renderer has a restrictive Content Security Policy. macOS no longer records Daytrace's own window. Collector restarts cannot create duplicate trackers, generic browser windows stop time from leaking into an older tab title, malformed deletion requests fail closed, and ordinary questions load only the requested time range instead of scanning a long archive. Sensitive local files use owner-only permissions on macOS. CI now includes CodeQL, Dependabot configuration, pinned action revisions, and least-privilege release permissions.
 
 ## What you get
 
@@ -160,7 +164,7 @@ flowchart LR
     V -->|"SHA-256 verified installer"| G["Windows setup or macOS DMG"]
 ```
 
-The native tracker emits foreground-window changes, samples only the foreground title every few seconds, writes idle-aware heartbeats, checks a numeric browser-tab count once per minute on Windows, and records only anonymous activity aggregates. Both platforms detect five minutes without system input and emit local idle/resume boundaries. The Windows collector uses no global keyboard or mouse hook. Electron's local main process applies privacy rules, stores hourly JSONL segments, and exposes state to the sandboxed renderer over a narrow IPC bridge. It never reads message bodies, typed text, URLs, pointer coordinates, or background-tab titles. There is no cloud backend; only release metadata and verified installer downloads use the network.
+The native tracker emits foreground-window changes, samples only the foreground title every few seconds, writes idle-aware heartbeats, checks a numeric browser-tab count once per minute on Windows, and records only anonymous activity aggregates. Both platforms detect five minutes without system input and emit local idle/resume boundaries. The Windows collector uses no global keyboard or mouse hook. Electron's local main process applies privacy rules, stores hourly JSONL segments, and exposes state to the sandboxed renderer over a sender-validated IPC bridge with navigation locked to the packaged local interface. It never reads message bodies, typed text, URLs, pointer coordinates, or background-tab titles. There is no cloud backend; only release metadata and verified installer downloads use the network.
 
 Durations are observed foreground intervals, not the time an application merely remained open. Leaving a browser tab open overnight cannot reconnect the previous evening to the next morning: an explicit idle event closes it, and a six-minute signal-gap guard also protects legacy journals, sleep/wake cycles, and collector restarts. Minute heartbeats still preserve passive reading or video viewing while the computer remains in use. Repeated title events are collapsed, sub-second fragments and system windows are ignored, and overview totals are calculated per activity rather than inherited from the first application in a work block.
 
@@ -170,12 +174,18 @@ Local answers do not use an LLM. A deterministic on-device parser recognizes the
 
 Daytrace uses native foreground events and coarse samples instead of screenshots or continuous screen polling. On the Windows verification machine, the packaged v0.4.0 background process measured **0.039% total CPU** over a 30-second sample and **199 MiB combined working memory** across Electron and the native collector with no renderer process. A clean packaged launch reached a validated non-empty window in **1.14 s**. The updater adds one small metadata request after startup and then at most once every six hours while online; it does not continuously poll. Measurements vary by hardware, antivirus, event volume, and operating system; macOS packaging is verified in CI, but equivalent physical-Mac load measurements are still being collected.
 
+The v0.5.5 long-history path was also measured separately with a synthetic one-year archive of **8,760 hourly files** on the Windows verification machine. Opening the store took **63.3 ms**, building the bounded recent state took **106.2 ms**, and answering a today-only question took **28.7 ms** while reading just **48 recent events**. This is a storage/analysis benchmark, not a claim about total launch time; it demonstrates that selecting one-year retention does not turn the full archive into continuous background work.
+
+The Windows native collector remains self-contained, so users do not install .NET separately. The lean v0.5.5 publish keeps ReadyToRun startup optimization while removing debug payloads and unused framework localizations, reducing its verified output from **160.1 MiB / 464 files to 144.5 MiB / 242 files**.
+
 ## Current limitations
 
 - Windows x64 is tested on Windows 10/11. The macOS universal build targets macOS 12+ and its packaging is checked by CI; broader real-device coverage is still needed.
 - Local Q&A is deterministic and heuristic — it is not a bundled language model.
 - Daytrace analyzes only the foreground app and visible active-window title. It does not read message bodies, page contents, URLs, or background-tab titles, so an opaque chat or page can still require a local correction.
 - Private-window detection depends on browser title conventions and cannot be guaranteed for every browser/version.
+- Local journals rely on operating-system account permissions and are not separately encrypted at rest; use BitLocker or FileVault when device-at-rest protection matters.
+- The Windows updater verifies the installer and requests an NSIS relaunch, but it does not yet have the macOS updater's post-launch readiness token and automatic rollback. The installed Start Menu shortcut remains the recovery path if NSIS cannot reopen the app.
 - The installer is not code-signed yet.
 
 These boundaries are documented because privacy software should be explicit about what it can and cannot prove.

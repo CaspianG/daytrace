@@ -9,14 +9,31 @@ const { pipeline } = require("node:stream/promises");
 const { EventStore } = require("./lib/event-store.cjs");
 const { createAccessibilityService } = require("./lib/accessibility-service.cjs");
 const { getMacInstallInfo } = require("./lib/mac-install-service.cjs");
-const { findStaleMacDuplicates, prepareMacUpdate } = require("./lib/mac-update-service.cjs");
+const { confirmMacUpdateReady, findStaleMacDuplicates, getMacUpdateReadyRequest, prepareMacUpdate } = require("./lib/mac-update-service.cjs");
+const { assertTrustedIpcSender, isSafeExternalUrl, isTrustedRendererUrl } = require("./lib/runtime-security.cjs");
 const { MAX_RELEASE_JSON_BYTES, MAX_UPDATE_BYTES, normalizeChecksumRelease, normalizeRelease, windowsInstallerArgs } = require("./lib/update-service.cjs");
 
 app.disableHardwareAcceleration();
+const SMOKE_TEST = process.argv.includes("--daytrace-smoke-test");
+const smokeTempRoot = path.resolve(app.getPath("temp"));
+const smokeUserDataArgument = process.argv.find((argument) => String(argument).startsWith("--daytrace-smoke-user-data="));
+const requestedSmokeUserData = smokeUserDataArgument ? path.resolve(String(smokeUserDataArgument).slice("--daytrace-smoke-user-data=".length)) : "";
+const smokeUserData = SMOKE_TEST && path.dirname(requestedSmokeUserData) === smokeTempRoot && path.basename(requestedSmokeUserData).startsWith("daytrace-desktop-smoke-")
+  ? requestedSmokeUserData
+  : SMOKE_TEST ? path.join(smokeTempRoot, `daytrace-desktop-smoke-${process.pid}`) : "";
+if (SMOKE_TEST) app.setPath("userData", smokeUserData);
 const startupLogPath = path.join(app.getPath("userData"), "startup.log");
 function startupLog(message, error = null) {
   const suffix = error ? `\n${error?.stack || String(error)}` : "";
-  try { fs.mkdirSync(path.dirname(startupLogPath), { recursive: true }); fs.appendFileSync(startupLogPath, `${new Date().toISOString()} ${message}${suffix}\n`, "utf8"); } catch { }
+  try {
+    fs.mkdirSync(path.dirname(startupLogPath), { recursive: true, mode: 0o700 });
+    if (fs.existsSync(startupLogPath) && fs.statSync(startupLogPath).size > 1024 * 1024) {
+      fs.rmSync(`${startupLogPath}.1`, { force: true });
+      fs.renameSync(startupLogPath, `${startupLogPath}.1`);
+    }
+    fs.appendFileSync(startupLogPath, `${new Date().toISOString()} ${message}${suffix}\n`, { encoding: "utf8", mode: 0o600 });
+    if (process.platform !== "win32") fs.chmodSync(startupLogPath, 0o600);
+  } catch { }
 }
 process.on("uncaughtException", (error) => startupLog("uncaughtException", error));
 process.on("unhandledRejection", (error) => startupLog("unhandledRejection", error));
@@ -34,6 +51,11 @@ let updateAbortController = null;
 let isQuitting = false;
 let availableRelease = null;
 let accessibilityService = null;
+let trackerStarting = false;
+const macUpdateReadyRequest = process.platform === "darwin" ? getMacUpdateReadyRequest({
+  argv: process.argv,
+  updateDir: path.join(app.getPath("temp"), "daytrace-updates"),
+}) : null;
 let updateRuntime = {
   status: app.isPackaged ? "idle" : "disabled",
   currentVersion: app.getVersion(),
@@ -47,6 +69,9 @@ const RELEASES_API = "https://api.github.com/repos/CaspianG/daytrace/releases/la
 const RELEASES_FEED = "https://github.com/CaspianG/daytrace/releases.atom";
 const UPDATE_INTERVAL_MS = 6 * 60 * 60_000;
 const OFFLINE_RETRY_MS = 30 * 60_000;
+const RENDERER_FILE = path.join(__dirname, "..", "dist", "client", "index.html");
+const DEV_RENDERER_ORIGIN = "http://127.0.0.1:5173";
+const USE_LOCAL_RENDERER = app.isPackaged || SMOKE_TEST;
 
 const MAIN_TEXT = {
   en: { open: "Open Daytrace", pause: "Pause tracking", resume: "Resume tracking", quit: "Quit", tooltip: "Daytrace — local day history", startupTitle: "Daytrace could not start", startupMessage: "The local window could not be opened. Details were written to startup.log." },
@@ -60,8 +85,8 @@ function accessibilityChanged(trusted) {
   if (!store || process.platform !== "darwin") return;
   if (trusted) {
     if (store.settings.trackingEnabled && !tracker) startTracker();
-  } else if (store.settings.trackingEnabled && !tracker) {
-    trackerStatus = "permission-required";
+  } else if (store.settings.trackingEnabled) {
+    stopTracker("permission-required");
   }
   sendState();
 }
@@ -175,6 +200,7 @@ async function sha256(file) {
 
 async function downloadAndInstallUpdate() {
   if (!app.isPackaged) return updateRuntime;
+  if (["downloading", "installing", "restarting"].includes(updateRuntime.status)) return updateRuntime;
   if (!availableRelease) await checkForUpdates();
   const release = availableRelease;
   if (!release?.available || !release.asset) return updateRuntime;
@@ -188,7 +214,8 @@ async function downloadAndInstallUpdate() {
     return updateRuntime;
   }
   const updateDir = path.join(app.getPath("temp"), "daytrace-updates");
-  fs.mkdirSync(updateDir, { recursive: true });
+  fs.mkdirSync(updateDir, { recursive: true, mode: 0o700 });
+  if (process.platform !== "win32") fs.chmodSync(updateDir, 0o700);
   const destination = path.join(updateDir, release.asset.name);
   if (fs.existsSync(destination)) fs.rmSync(destination, { force: true });
   updateAbortController = new AbortController();
@@ -250,6 +277,7 @@ async function downloadAndInstallUpdate() {
       await shell.openExternal(release.releaseUrl);
     }
   } catch (error) {
+    try { if (fs.existsSync(destination)) fs.rmSync(destination, { force: true }); } catch { }
     setUpdateRuntime({ status: error?.name === "AbortError" ? "available" : "error", error: String(error?.message || error).slice(0, 160) });
     startupLog("update-install-failed", error);
   } finally {
@@ -273,18 +301,19 @@ async function cleanStaleMacDuplicates() {
 }
 
 function trackerPath() {
-  if (process.platform === "win32") return app.isPackaged ? path.join(process.resourcesPath, "tracker", "windows", "Daytrace.Tracker.exe") : path.join(__dirname, "..", "native", "windows-tracker", "bin", "Release", "net8.0-windows", "win-x64", "publish", "Daytrace.Tracker.exe");
+  if (process.platform === "win32") return app.isPackaged ? path.join(process.resourcesPath, "tracker", "windows", "Daytrace.Tracker.exe") : path.join(__dirname, "..", "native", "windows-tracker", "bin", "Release", "daytrace-win-x64", "Daytrace.Tracker.exe");
   if (process.platform === "darwin") return app.isPackaged ? path.join(process.resourcesPath, "tracker", "macos", "daytrace-tracker") : path.join(__dirname, "..", "native", "macos-tracker", "build", "daytrace-tracker");
   return null;
 }
 function startTracker() {
-  if (tracker || !store?.settings.trackingEnabled) return;
-  if (process.platform === "darwin" && !accessibilityTrusted()) { trackerStatus = "permission-required"; accessibilityService?.watch(); sendState(); return; }
-  const executable = trackerPath();
-  if (!executable || !fs.existsSync(executable)) { trackerStatus = "unavailable"; startupLog(`tracker-unavailable path=${executable || "none"}`); sendState(); return; }
-  trackerStatus = "starting";
+  if (tracker || trackerStarting || !store?.settings.trackingEnabled) return;
+  trackerStarting = true;
   try {
-    tracker = spawn(executable, [], {
+    if (process.platform === "darwin" && !accessibilityTrusted()) { trackerStatus = "permission-required"; accessibilityService?.watch(); sendState(); return; }
+    const executable = trackerPath();
+    if (!executable || !fs.existsSync(executable)) { trackerStatus = "unavailable"; startupLog(`tracker-unavailable path=${executable || "none"}`); sendState(); return; }
+    trackerStatus = "starting";
+    const child = spawn(executable, [], {
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: {
@@ -294,11 +323,16 @@ function startTracker() {
         DAYTRACE_COLLECT_TAB_COUNT: store.settings.collectBrowserTabCount ? "1" : "0",
       },
     });
+    tracker = child;
     trackerStatus = "running";
-    const lines = readline.createInterface({ input: tracker.stdout });
+    const lines = readline.createInterface({ input: child.stdout });
     lines.on("line", (line) => { try { store.append(JSON.parse(line)); } catch { } });
-    tracker.once("error", (error) => { trackerStatus = "error"; tracker = null; startupLog("tracker-error", error); sendState(); });
-    tracker.once("exit", (code) => {
+    child.once("error", (error) => {
+      if (tracker !== child) return;
+      trackerStatus = "error"; tracker = null; startupLog("tracker-error", error); sendState();
+    });
+    child.once("exit", (code) => {
+      if (tracker !== child) return;
       tracker = null;
       if (!isQuitting && store.settings.trackingEnabled) {
         trackerStatus = code === 77 ? "permission-required" : code === 0 ? "stopped" : "error";
@@ -306,12 +340,17 @@ function startTracker() {
       }
       sendState();
     });
-    tracker.stderr.on("data", (chunk) => startupLog(`tracker-stderr ${String(chunk).trim()}`));
+    child.stderr.on("data", (chunk) => startupLog(`tracker-stderr ${String(chunk).trim()}`));
   } catch (error) { tracker = null; trackerStatus = "error"; startupLog("tracker-spawn-failed", error); }
+  finally { trackerStarting = false; }
   sendState();
 }
-function stopTracker(status = "paused") { if (tracker) tracker.kill(); tracker = null; trackerStatus = status; sendState(); }
-function restartTracker() { stopTracker("starting"); setTimeout(startTracker, 250).unref(); }
+function stopTracker(status = "paused") { const child = tracker; tracker = null; trackerStarting = false; if (child) child.kill(); trackerStatus = status; sendState(); }
+function restartTracker() {
+  const shouldRun = Boolean(store?.settings.trackingEnabled);
+  stopTracker(shouldRun ? "starting" : "paused");
+  if (shouldRun) setTimeout(startTracker, 250).unref();
+}
 
 function trayIconPath() { return path.join(__dirname, "..", "build", process.platform === "win32" ? "icon.ico" : "icon.png"); }
 function updateTrayMenu() {
@@ -339,6 +378,24 @@ function scheduleWindowRelease(window) {
 }
 function hideWindow(window) { if (isQuitting || !window || window.isDestroyed()) return; window.hide(); scheduleWindowRelease(window); }
 
+function openAllowedExternal(url) {
+  if (!isSafeExternalUrl(url)) return;
+  void shell.openExternal(url).catch((error) => startupLog("external-link-open-failed", error));
+}
+
+function secureWindowNavigation(window) {
+  window.webContents.on("will-navigate", (event, url) => {
+    if (isTrustedRendererUrl(url, { packaged: USE_LOCAL_RENDERER, rendererFile: RENDERER_FILE, devOrigin: DEV_RENDERER_ORIGIN })) return;
+    event.preventDefault();
+    openAllowedExternal(url);
+  });
+  window.webContents.on("will-attach-webview", (event) => event.preventDefault());
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    openAllowedExternal(url);
+    return { action: "deny" };
+  });
+}
+
 async function createWindow() {
   startupLog(`createWindow packaged=${app.isPackaged}`);
   const window = new BrowserWindow({
@@ -347,18 +404,29 @@ async function createWindow() {
     webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: true },
   });
   mainWindow = window;
+  secureWindowNavigation(window);
   window.webContents.on("did-finish-load", () => startupLog("did-finish-load"));
-  window.webContents.on("console-message", (_event, details) => { if (details.level === "error") startupLog(`renderer-error ${details.message}`); });
+  window.webContents.on("console-message", (details) => { if (details.level === "error") startupLog(`renderer-error ${details.message}`); });
   window.webContents.on("did-fail-load", (_event, code, description, url) => startupLog(`did-fail-load code=${code} description=${description} url=${url}`));
   window.on("minimize", (event) => { if (!isQuitting) { event.preventDefault(); hideWindow(window); } });
   window.on("close", (event) => { if (!isQuitting) { event.preventDefault(); hideWindow(window); } });
   window.on("focus", () => { if (process.platform === "darwin") { accessibilityService?.check(); startTracker(); } });
   window.on("closed", () => { if (mainWindow === window) mainWindow = null; });
-  if (!app.isPackaged) await window.loadURL("http://127.0.0.1:5173");
-  else await window.loadFile(path.join(__dirname, "..", "dist", "client", "index.html"));
+  if (!USE_LOCAL_RENDERER) await window.loadURL(DEV_RENDERER_ORIGIN);
+  else await window.loadFile(RENDERER_FILE);
   const renderer = await window.webContents.executeJavaScript("(() => { const root = document.getElementById('root'); return { children: root?.childElementCount || 0, text: root?.innerText.trim().length || 0 }; })()");
   if (renderer.children < 1 || renderer.text < 1) throw new Error("Renderer loaded without visible content");
-  window.show(); window.focus(); startupLog(`window-visible children=${renderer.children} text=${renderer.text}`);
+  const bridgeReady = await window.webContents.executeJavaScript("window.daytrace?.getState().then((value) => Boolean(value?.settings && value?.runtime)).catch(() => false)");
+  if (!bridgeReady) throw new Error("Renderer could not reach the local Daytrace service");
+  if (SMOKE_TEST) {
+    startupLog(`desktop-smoke-ready children=${renderer.children} text=${renderer.text}`);
+  } else {
+    window.show(); window.focus(); startupLog(`window-visible children=${renderer.children} text=${renderer.text}`);
+    if (macUpdateReadyRequest) {
+      confirmMacUpdateReady(macUpdateReadyRequest);
+      startupLog("mac-update-ready-confirmed");
+    }
+  }
   setTimeout(startTracker, 400).unref();
   return window;
 }
@@ -374,44 +442,57 @@ function setTracking(enabled) {
   if (enabled) startTracker(); else stopTracker("paused");
   updateTrayMenu(); return state();
 }
+function handleIpc(channel, listener) {
+  ipcMain.handle(channel, (event, ...args) => {
+    assertTrustedIpcSender(event, {
+      expectedWebContents: mainWindow?.webContents,
+      packaged: USE_LOCAL_RENDERER,
+      rendererFile: RENDERER_FILE,
+      devOrigin: DEV_RENDERER_ORIGIN,
+    });
+    return listener(...args);
+  });
+}
 function registerIpc() {
-  ipcMain.handle("daytrace:get-state", () => state());
-  ipcMain.handle("daytrace:get-day", (_event, day) => store.dayState(day));
-  ipcMain.handle("daytrace:ask", (_event, question) => store.ask(question));
-  ipcMain.handle("daytrace:set-tracking", (_event, enabled) => setTracking(enabled));
-  ipcMain.handle("daytrace:set-setting", (_event, key, value) => {
+  handleIpc("daytrace:get-state", () => state());
+  handleIpc("daytrace:get-day", (day) => store.dayState(day));
+  handleIpc("daytrace:ask", (question) => store.ask(question));
+  handleIpc("daytrace:set-tracking", (enabled) => setTracking(enabled));
+  handleIpc("daytrace:set-setting", (key, value) => {
     const allowed = new Set(["excludePrivateWindows", "collectWindowTitles", "collectInputCounts", "collectBrowserTabCount"]);
     if (!allowed.has(key)) throw new Error("Unsupported setting");
-    store.updateSettings({ [key]: Boolean(value) }); restartTracker(); return state();
+    store.updateSettings({ [key]: Boolean(value) });
+    if (key !== "excludePrivateWindows") restartTracker();
+    return state();
   });
-  ipcMain.handle("daytrace:set-retention", (_event, hours) => { store.updateSettings({ retentionHours: hours }); return state(); });
-  ipcMain.handle("daytrace:set-autostart", (_event, enabled) => {
+  handleIpc("daytrace:set-retention", (hours) => { store.updateSettings({ retentionHours: hours }); return state(); });
+  handleIpc("daytrace:set-autostart", (enabled) => {
     if (!app.isPackaged || !["win32", "darwin"].includes(process.platform)) return state();
     app.setLoginItemSettings(loginItemSettings(Boolean(enabled)));
     store.updateSettings({ autoStartEnabled: currentAutoStart() });
     return state();
   });
-  ipcMain.handle("daytrace:request-accessibility", async () => {
+  handleIpc("daytrace:request-accessibility", async () => {
     if (process.platform === "darwin") await accessibilityService.request();
     if (accessibilityTrusted()) startTracker();
     else { trackerStatus = "permission-required"; accessibilityService?.watch(); }
     sendState();
     return state();
   });
-  ipcMain.handle("daytrace:relaunch", () => {
+  handleIpc("daytrace:relaunch", () => {
     app.relaunch();
     app.exit(0);
   });
-  ipcMain.handle("daytrace:set-exclusions", (_event, apps) => { store.updateSettings({ excludedApps: Array.isArray(apps) ? apps.map(String).map((item) => item.trim()).filter(Boolean).slice(0, 100) : [] }); return state(); });
-  ipcMain.handle("daytrace:set-intent-rules", (_event, rules) => { store.updateSettings({ intentRules: Array.isArray(rules) ? rules : [] }); return state(); });
-  ipcMain.handle("daytrace:set-language", (_event, language) => { store.updateSettings({ language: String(language || "").toLowerCase().startsWith("ru") ? "ru" : "en" }); if (tray) tray.setToolTip(mainText().tooltip); updateTrayMenu(); return state(); });
-  ipcMain.handle("daytrace:complete-onboarding", (_event, language) => { store.updateSettings({ language: String(language || "").toLowerCase().startsWith("ru") ? "ru" : "en", onboardingComplete: true }); updateTrayMenu(); return state(); });
-  ipcMain.handle("daytrace:delete-all", () => { store.deleteAll(); return state(); });
-  ipcMain.handle("daytrace:delete-session", (_event, start, end) => { store.deleteRange(start, end); return state(); });
-  ipcMain.handle("daytrace:export-skill", (_event, skill) => store.exportSkill(skill));
-  ipcMain.handle("daytrace:reveal-data", () => shell.openPath(store.root));
-  ipcMain.handle("daytrace:check-updates", async () => { await checkForUpdates(); return state(); });
-  ipcMain.handle("daytrace:install-update", async () => { await downloadAndInstallUpdate(); return state(); });
+  handleIpc("daytrace:set-exclusions", (apps) => { store.updateSettings({ excludedApps: apps }); return state(); });
+  handleIpc("daytrace:set-intent-rules", (rules) => { store.updateSettings({ intentRules: Array.isArray(rules) ? rules : [] }); return state(); });
+  handleIpc("daytrace:set-language", (language) => { store.updateSettings({ language: String(language || "").toLowerCase().startsWith("ru") ? "ru" : "en" }); if (tray) tray.setToolTip(mainText().tooltip); updateTrayMenu(); return state(); });
+  handleIpc("daytrace:complete-onboarding", (language) => { store.updateSettings({ language: String(language || "").toLowerCase().startsWith("ru") ? "ru" : "en", onboardingComplete: true }); updateTrayMenu(); return state(); });
+  handleIpc("daytrace:delete-all", () => { store.deleteAll(); return state(); });
+  handleIpc("daytrace:delete-session", (start, end) => { store.deleteRange(start, end); return state(); });
+  handleIpc("daytrace:export-skill", (skill) => store.exportSkill(skill));
+  handleIpc("daytrace:reveal-data", () => shell.openPath(store.root));
+  handleIpc("daytrace:check-updates", async () => { await checkForUpdates(); return state(); });
+  handleIpc("daytrace:install-update", async () => { await downloadAndInstallUpdate(); return state(); });
 }
 
 startupLog(`process-start version=${app.getVersion()}`);
@@ -433,11 +514,14 @@ else app.whenReady().then(async () => {
     registerIpc(); createTray();
     const launchedInBackground = process.argv.includes("--background") || app.getLoginItemSettings().wasOpenedAtLogin || app.getLoginItemSettings().wasOpenedAsHidden;
     if (!launchedInBackground) await openWindow(); else setTimeout(startTracker, 400).unref();
+    if (SMOKE_TEST) { startupLog("desktop-smoke-passed"); isQuitting = true; app.exit(0); return; }
     setTimeout(() => void cleanStaleMacDuplicates(), 1_000).unref();
     setInterval(() => store.prune(), 15 * 60_000).unref();
     scheduleUpdateCheck();
   } catch (error) {
-    startupLog("startup-failed", error); const { dialog } = require("electron"); const t = mainText(); dialog.showErrorBox(t.startupTitle, t.startupMessage); app.quit();
+    startupLog("startup-failed", error);
+    if (SMOKE_TEST) { isQuitting = true; app.exit(1); return; }
+    const { dialog } = require("electron"); const t = mainText(); dialog.showErrorBox(t.startupTitle, t.startupMessage); app.quit();
   }
 });
 app.on("window-all-closed", () => { });

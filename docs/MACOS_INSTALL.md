@@ -39,7 +39,9 @@ Choose **Open Accessibility Settings**, enable Daytrace under **System Settings 
 
 Starting with v0.5.4, **Settings → Updates → Update** is the normal one-click path. Daytrace downloads the official universal DMG, verifies its SHA-256, mounts it read-only, checks the embedded app version, replaces `/Applications/Daytrace.app`, removes a numbered running duplicate such as `Daytrace 2.app`, and reopens Daytrace. The old copy is kept as a temporary rollback until the new app launches successfully. Finder opens only if macOS does not allow automatic replacement.
 
-The transition from v0.5.3 or older is a one-time exception: those installed binaries only know how to open the DMG, so perform the replacement described above once. Updates from v0.5.4 onward use the automatic path.
+Starting with v0.5.5, “launches successfully” means that the new application has rendered and shown a real non-empty window and returned a protected one-time readiness token. A successful `open` request alone is not enough. If Gatekeeper blocks the new bundle, the renderer fails, or no readiness signal arrives within 90 seconds, Daytrace terminates that copy, restores the previous application, and reopens it automatically. The local outcome log is `~/Library/Logs/Daytrace/updater.log`; it never contains activity history.
+
+The transition from v0.5.3 or older is a one-time exception: those installed binaries only know how to open the DMG, so perform the replacement described above once. Updates from v0.5.4 onward use the automatic path, while v0.5.5 adds readiness-confirmed rollback safety.
 
 Because the current public build has no stable Developer ID signature, macOS can still ask you to enable Daytrace in Accessibility again after an update. Daytrace detects this and opens the correct settings pane, but no application is allowed to grant this protected permission to itself.
 

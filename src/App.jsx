@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowClockwise, ArrowRight, ArrowsLeftRight, Brain, Browsers, CalendarBlank, CaretLeft, CaretRight, ChartBar, Check, Clock, Compass, Database, DownloadSimple, EyeSlash, FolderOpen, Gear, Globe, LockKey, MagnifyingGlass, Pause, Play, Plus, ShieldCheck, Sparkle, Timer, Trash, X } from "@phosphor-icons/react";
+import { ArrowClockwise, ArrowRight, ArrowsLeftRight, Brain, Browsers, CalendarBlank, CaretLeft, CaretRight, ChartBar, Check, Clock, Compass, Database, DownloadSimple, EyeSlash, FolderOpen, Gear, Globe, LockKey, MagnifyingGlass, Pause, Play, Plus, ShieldCheck, Sparkle, Timer, Trash, WarningCircle, X } from "@phosphor-icons/react";
 import { SiFigma, SiGooglechrome, SiGmail, SiTelegram } from "react-icons/si";
 import { FaEdge } from "react-icons/fa6";
 import { VscVscode } from "react-icons/vsc";
@@ -62,7 +62,7 @@ function demoState(language = demoLanguage(), onboardingComplete = true) {
   const makeSession = (id, from, to, focus, intent) => ({ id, start: activities[from].start, end: activities[to].end, durationMs: activities[to].end - activities[from].start, focus, label: FOCUS_LABELS[lang][focus], intent, intentLabel: INTENT_LABELS[lang][intent], activities: activities.slice(from, to + 1) });
   return {
     settings: { trackingEnabled: true, retentionHours: 48, excludePrivateWindows: true, collectWindowTitles: true, collectInputCounts: true, collectBrowserTabCount: true, autoStartEnabled: false, excludedApps: ["1Password", "Bitwarden", "KeePass"], intentRules: [{ id: "demo-friends", match: lang === "ru" ? "Друзья" : "Friends", intent: "personal" }], language: lang, onboardingComplete },
-    runtime: { platform: updatePreview ? "win32" : "browser", trackerStatus: "running", accessibilityTrusted: true, autoStartSupported: false, autoStartEnabled: false, update: { status: updateStatus, currentVersion: "0.5.4", latestVersion: updatePreview ? "0.5.5" : "0.5.4", checkedAt: Date.now(), progress: updateStatus === "downloading" ? 64 : ["ready", "installing", "restarting"].includes(updateStatus) ? 100 : 0 } },
+    runtime: { platform: updatePreview ? "win32" : "browser", trackerStatus: "running", accessibilityTrusted: true, autoStartSupported: false, autoStartEnabled: false, update: { status: updateStatus, currentVersion: "0.5.5", latestVersion: updatePreview ? "0.5.6" : "0.5.5", checkedAt: Date.now(), progress: updateStatus === "downloading" ? 64 : ["ready", "installing", "restarting"].includes(updateStatus) ? 100 : 0 } },
     sessions: [
       makeSession("demo-1", 0, 2, "mixed", "work"), makeSession("demo-2", 3, 6, "mixed", "work"), makeSession("demo-3", 7, 8, "communication", "mixed"),
       { id: "demo-break", start: startOfToday(12, 5), end: startOfToday(12, 20), durationMs: 15 * 60_000, focus: "break", label: FOCUS_LABELS[lang].break, intent: "unknown", intentLabel: INTENT_LABELS[lang].unknown, activities: [] },
@@ -533,15 +533,100 @@ function RetentionSettings({ hours, actions, pending, run, t }) {
 function SettingsPage({ state, actions, isDesktop, language, t }) {
   const [confirming, setConfirming] = useState(false);
   const [pending, setPending] = useState("");
-  const run = async (key, action) => { setPending(key); try { await action(); } finally { setPending(""); } };
+  const [actionError, setActionError] = useState("");
+  const run = async (key, action) => {
+    setPending(key);
+    setActionError("");
+    try {
+      await action();
+    } catch {
+      setActionError(t.settings.actionFailed);
+    } finally {
+      setPending("");
+    }
+  };
   const runtime = state.runtime || {};
   const macInstall = runtime.macInstall || {};
   const accessibilityText = macInstall.issue
     ? text(t.settings.accessibilityInstallIssues[macInstall.issue] || t.settings.accessibilityInstallIssues["unknown-location"], { name: macInstall.appName || "Daytrace", path: macInstall.bundlePath || "—" })
     : t.settings.accessibilityText;
   const statusLabel = t.settings.statuses[runtime.trackerStatus] || t.settings.statuses.stopped;
-  const setting = (key, title, description) => <div className="setting-row" key={key}><div><strong>{title}</strong><span>{description}</span></div><SettingSwitch checked={Boolean(state.settings[key])} disabled={Boolean(pending) || !state.settings.trackingEnabled} label={title} onChange={(enabled) => run(key, () => actions.setSetting(key, enabled))} /></div>;
-  return <div className="subpage narrow-page"><div className="subpage-heading"><Gear size={29} /><div><h2>{t.settings.title}</h2><p>{t.settings.subtitle}</p></div></div><div className={`runtime-card ${runtime.trackerStatus || "stopped"}`}><span className="status-dot on" /><div><strong>{statusLabel}</strong><small>{t.settings.runtimeText}</small></div>{runtime.platform && <em>{runtime.platform === "darwin" ? "macOS" : runtime.platform === "win32" ? "Windows" : runtime.platform}</em>}</div>{runtime.platform === "darwin" && !runtime.accessibilityTrusted && <div className="permission-card"><ShieldCheck size={22} /><div><strong>{t.settings.accessibility}</strong><span>{accessibilityText}</span></div><div className="permission-actions"><button onClick={() => run("accessibility", actions.requestAccessibility)} disabled={Boolean(pending)}>{t.settings.grantAccess}</button><button onClick={actions.relaunch}>{t.settings.restartAfterAccess}</button></div></div>}<div className="settings-section"><h3>{t.settings.language}</h3><LanguageSelector language={language} onChange={actions.setLanguage} t={t} /></div><div className="settings-section"><h3>{t.settings.updates}</h3><UpdateSettings runtime={runtime} actions={actions} pending={pending} run={run} t={t} /></div><div className="settings-section"><h3>{t.settings.activity}</h3><div className="setting-row"><div><strong>{t.settings.record}</strong><span>{t.settings.recordText}</span></div><SettingSwitch checked={state.settings.trackingEnabled} disabled={Boolean(pending)} label={t.settings.record} onChange={(enabled) => run("tracking", () => actions.setTracking(enabled))} /></div>{setting("collectWindowTitles", t.settings.titles, t.settings.titlesText)}{setting("collectInputCounts", t.settings.inputs, t.settings.inputsText)}{setting("collectBrowserTabCount", t.settings.tabs, t.settings.tabsText)}<div className="setting-row"><div><strong>{t.settings.private}</strong><span>{state.settings.excludePrivateWindows ? t.settings.privateText : t.settings.privateWarning}</span></div><SettingSwitch checked={state.settings.excludePrivateWindows} disabled={Boolean(pending) || !state.settings.trackingEnabled} label={t.settings.private} onChange={(enabled) => run("private", () => actions.setSetting("excludePrivateWindows", enabled))} /></div></div><div className="settings-section"><h3>{t.settings.analysis}</h3><IntentRuleEditor rules={state.settings.intentRules || []} onChange={actions.setIntentRules} t={t} /></div><div className="settings-section"><h3>{t.settings.system}</h3><div className="setting-row"><div><strong>{t.settings.autostart}</strong><span>{runtime.autoStartSupported ? t.settings.autostartText : t.settings.autostartUnavailable}</span></div><SettingSwitch checked={Boolean(runtime.autoStartEnabled)} disabled={Boolean(pending) || !runtime.autoStartSupported} label={t.settings.autostart} onChange={(enabled) => run("autostart", () => actions.setAutoStart(enabled))} /></div></div><div className="settings-section"><h3>{t.settings.data}</h3><RetentionSettings hours={state.settings.retentionHours} actions={actions} pending={pending} run={run} t={t} /><div className="data-facts"><div><Database size={21} /><span><strong>{text(t.settings.events, { count: state.eventCount })}</strong><small>{text(t.settings.autoDelete, { period: formatRetention(state.settings.retentionHours, t) })}</small></span></div><div><FolderOpen size={21} /><span><strong>{t.settings.deviceOnly}</strong><small>{state.dataPath}</small></span></div></div>{isDesktop && <button className="secondary-button" onClick={actions.revealData}><FolderOpen size={18} /> {t.settings.openData}</button>}</div><div className="danger-zone"><h3>{t.settings.clear}</h3><p>{t.settings.clearText}</p>{confirming ? <div className="confirm-row"><button onClick={() => { actions.deleteAll(); setConfirming(false); }}><Trash size={18} /> {t.settings.deleteAll}</button><button className="cancel" onClick={() => setConfirming(false)}>{t.common.cancel}</button></div> : <button onClick={() => setConfirming(true)}><Trash size={18} /> {t.settings.clearJournal}</button>}</div></div>;
+  const setting = (key, title, description) => (
+    <div className="setting-row" key={key}>
+      <div><strong>{title}</strong><span>{description}</span></div>
+      <SettingSwitch checked={Boolean(state.settings[key])} disabled={Boolean(pending)} label={title} onChange={(enabled) => run(key, () => actions.setSetting(key, enabled))} />
+    </div>
+  );
+  return (
+    <div className="subpage narrow-page">
+      <div className="subpage-heading"><Gear size={29} /><div><h2>{t.settings.title}</h2><p>{t.settings.subtitle}</p></div></div>
+      <div className={`runtime-card ${runtime.trackerStatus || "stopped"}`}>
+        <span className="status-dot on" />
+        <div><strong>{statusLabel}</strong><small>{t.settings.runtimeText}</small></div>
+        {runtime.platform && <em>{runtime.platform === "darwin" ? "macOS" : runtime.platform === "win32" ? "Windows" : runtime.platform}</em>}
+      </div>
+      {actionError && <div className="settings-action-error" role="alert"><WarningCircle size={20} /><span>{actionError}</span></div>}
+      {runtime.platform === "darwin" && !runtime.accessibilityTrusted && (
+        <div className="permission-card">
+          <ShieldCheck size={22} />
+          <div><strong>{t.settings.accessibility}</strong><span>{accessibilityText}</span></div>
+          <div className="permission-actions">
+            <button onClick={() => run("accessibility", actions.requestAccessibility)} disabled={Boolean(pending)}>{t.settings.grantAccess}</button>
+            <button onClick={actions.relaunch}>{t.settings.restartAfterAccess}</button>
+          </div>
+        </div>
+      )}
+      <div className="settings-section">
+        <h3>{t.settings.language}</h3>
+        <LanguageSelector language={language} onChange={(next) => run("language", () => actions.setLanguage(next))} t={t} />
+      </div>
+      <div className="settings-section">
+        <h3>{t.settings.updates}</h3>
+        <UpdateSettings runtime={runtime} actions={actions} pending={pending} run={run} t={t} />
+      </div>
+      <div className="settings-section">
+        <h3>{t.settings.activity}</h3>
+        <div className="setting-row">
+          <div><strong>{t.settings.record}</strong><span>{t.settings.recordText}</span></div>
+          <SettingSwitch checked={state.settings.trackingEnabled} disabled={Boolean(pending)} label={t.settings.record} onChange={(enabled) => run("tracking", () => actions.setTracking(enabled))} />
+        </div>
+        {setting("collectWindowTitles", t.settings.titles, t.settings.titlesText)}
+        {setting("collectInputCounts", t.settings.inputs, t.settings.inputsText)}
+        {setting("collectBrowserTabCount", t.settings.tabs, t.settings.tabsText)}
+        <div className="setting-row">
+          <div><strong>{t.settings.private}</strong><span>{state.settings.excludePrivateWindows ? t.settings.privateText : t.settings.privateWarning}</span></div>
+          <SettingSwitch checked={state.settings.excludePrivateWindows} disabled={Boolean(pending)} label={t.settings.private} onChange={(enabled) => run("private", () => actions.setSetting("excludePrivateWindows", enabled))} />
+        </div>
+      </div>
+      <div className="settings-section">
+        <h3>{t.settings.analysis}</h3>
+        <IntentRuleEditor rules={state.settings.intentRules || []} onChange={(rules) => run("intent-rules", () => actions.setIntentRules(rules))} t={t} />
+      </div>
+      <div className="settings-section">
+        <h3>{t.settings.system}</h3>
+        <div className="setting-row">
+          <div><strong>{t.settings.autostart}</strong><span>{runtime.autoStartSupported ? t.settings.autostartText : t.settings.autostartUnavailable}</span></div>
+          <SettingSwitch checked={Boolean(runtime.autoStartEnabled)} disabled={Boolean(pending) || !runtime.autoStartSupported} label={t.settings.autostart} onChange={(enabled) => run("autostart", () => actions.setAutoStart(enabled))} />
+        </div>
+      </div>
+      <div className="settings-section">
+        <h3>{t.settings.data}</h3>
+        <RetentionSettings hours={state.settings.retentionHours} actions={actions} pending={pending} run={run} t={t} />
+        <div className="data-facts">
+          <div><Database size={21} /><span><strong>{text(t.settings.events, { count: state.eventCount })}</strong><small>{text(t.settings.autoDelete, { period: formatRetention(state.settings.retentionHours, t) })}</small></span></div>
+          <div><FolderOpen size={21} /><span><strong>{t.settings.deviceOnly}</strong><small>{state.dataPath}</small></span></div>
+        </div>
+        {isDesktop && <button className="secondary-button" onClick={() => run("reveal-data", actions.revealData)}><FolderOpen size={18} /> {t.settings.openData}</button>}
+      </div>
+      <div className="danger-zone">
+        <h3>{t.settings.clear}</h3>
+        <p>{t.settings.clearText}</p>
+        {confirming
+          ? <div className="confirm-row"><button disabled={Boolean(pending)} onClick={() => run("delete-all", async () => { await actions.deleteAll(); setConfirming(false); })}><Trash size={18} /> {t.settings.deleteAll}</button><button className="cancel" onClick={() => setConfirming(false)}>{t.common.cancel}</button></div>
+          : <button onClick={() => setConfirming(true)}><Trash size={18} /> {t.settings.clearJournal}</button>}
+      </div>
+    </div>
+  );
 }
 
 export function App() {

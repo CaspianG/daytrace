@@ -29,7 +29,7 @@ const FOCUS_LABELS = {
   },
 };
 
-const { isSystemNoise } = require("./privacy.cjs");
+const { isDaytraceEvent, isSystemNoise } = require("./privacy.cjs");
 const { INTENT_LABELS, contextKey, inferIntentDetails } = require("./intent-classifier.cjs");
 
 const SIGNAL_TAIL_MS = 75_000;
@@ -228,7 +228,7 @@ function sessionize(events, now = Date.now(), language = "ru", intentRules = [])
   for (const event of sorted) {
     const at = new Date(event.at).getTime();
     if (!Number.isFinite(at)) continue;
-    if (isSystemNoise(event) || /^daytrace(?:\.tracker)?$/i.test(String(event.process || ""))) continue;
+    if (isSystemNoise(event) || isDaytraceEvent(event)) continue;
 
     // A suspended machine, an idle night, or a collector restart must never
     // reconnect the old interval when the same window is used again. Current
