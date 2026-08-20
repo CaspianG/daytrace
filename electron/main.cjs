@@ -15,11 +15,13 @@ const { MAX_RELEASE_JSON_BYTES, MAX_UPDATE_BYTES, normalizeChecksumRelease, norm
 
 app.disableHardwareAcceleration();
 const SMOKE_TEST = process.argv.includes("--daytrace-smoke-test");
-const smokeTempRoot = path.resolve(app.getPath("temp"));
+const smokeTempRoot = fs.realpathSync(app.getPath("temp"));
 const smokeUserDataArgument = process.argv.find((argument) => String(argument).startsWith("--daytrace-smoke-user-data="));
 const requestedSmokeUserData = smokeUserDataArgument ? path.resolve(String(smokeUserDataArgument).slice("--daytrace-smoke-user-data=".length)) : "";
-const smokeUserData = SMOKE_TEST && path.dirname(requestedSmokeUserData) === smokeTempRoot && path.basename(requestedSmokeUserData).startsWith("daytrace-desktop-smoke-")
-  ? requestedSmokeUserData
+let canonicalSmokeUserData = "";
+try { canonicalSmokeUserData = requestedSmokeUserData ? fs.realpathSync(requestedSmokeUserData) : ""; } catch { }
+const smokeUserData = SMOKE_TEST && path.dirname(canonicalSmokeUserData) === smokeTempRoot && path.basename(canonicalSmokeUserData).startsWith("daytrace-desktop-smoke-")
+  ? canonicalSmokeUserData
   : SMOKE_TEST ? path.join(smokeTempRoot, `daytrace-desktop-smoke-${process.pid}`) : "";
 if (SMOKE_TEST) app.setPath("userData", smokeUserData);
 const startupLogPath = path.join(app.getPath("userData"), "startup.log");
