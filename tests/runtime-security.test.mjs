@@ -46,7 +46,7 @@ test("desktop runtime blocks navigation, webviews, and tracker restart races", (
   assert.match(mainSource, /trackerStarting/);
   assert.match(mainSource, /if \(tracker !== child\) return/);
   assert.match(mainSource, /const shouldRun = Boolean\(store\?\.settings\.trackingEnabled\)/);
-  assert.match(mainSource, /if \(key !== "excludePrivateWindows"\) restartTracker\(\)/);
+  assert.match(mainSource, /\["collectWindowTitles", "collectInputCounts", "collectBrowserTabCount"\]\.includes\(key\)\) restartTracker\(\)/);
   assert.match(html, /Content-Security-Policy/);
   assert.match(html, /object-src 'none'/);
   assert.match(html, /connect-src 'self'/);

@@ -54,10 +54,3 @@ test("rate-limit fallback accepts only an official tag and exact checksum entry"
   assert.equal(updater.normalizeChecksumRelease("https://github.com.evil.example/CaspianG/daytrace/releases/tag/v0.4.2", checksums, "win32", "0.4.1"), null);
   assert.equal(updater.normalizeChecksumRelease("https://github.com/CaspianG/daytrace/releases/tag/v0.4.2", `${"c".repeat(64)}  other.exe`, "win32", "0.4.1"), null);
 });
-
-test("silent Windows updates preserve the install directory and force a restart", () => {
-  assert.deepEqual(
-    updater.windowsInstallerArgs("C:\\Users\\Person\\AppData\\Local\\Programs\\Daytrace\\Daytrace.exe"),
-    ["--updated", "/S", "--force-run", "/D=C:\\Users\\Person\\AppData\\Local\\Programs\\Daytrace"],
-  );
-});

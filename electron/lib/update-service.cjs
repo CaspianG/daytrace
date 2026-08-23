@@ -1,6 +1,5 @@
 const MAX_RELEASE_JSON_BYTES = 1_000_000;
 const MAX_UPDATE_BYTES = 350 * 1024 * 1024;
-const path = require("node:path");
 
 function versionParts(value) {
   const cleaned = String(value || "").trim().replace(/^v/i, "").split("-")[0];
@@ -22,13 +21,6 @@ function expectedAssetName(version, platform) {
   if (platform === "win32") return `Daytrace-Setup-${version}-x64.exe`;
   if (platform === "darwin") return `Daytrace-${version}-macOS-universal.dmg`;
   return null;
-}
-
-function windowsInstallerArgs(executablePath) {
-  const installDirectory = path.win32.dirname(String(executablePath || "").trim());
-  const args = ["--updated", "/S", "--force-run"];
-  if (installDirectory && installDirectory !== ".") args.push(`/D=${installDirectory}`);
-  return args;
 }
 
 function isGitHubUrl(value, pathPrefix = "/") {
@@ -93,4 +85,4 @@ function normalizeRelease(payload, platform, currentVersion) {
   };
 }
 
-module.exports = { MAX_RELEASE_JSON_BYTES, MAX_UPDATE_BYTES, compareVersions, expectedAssetName, isGitHubUrl, normalizeChecksumRelease, normalizeRelease, releaseVersionFromUrl, versionParts, windowsInstallerArgs };
+module.exports = { MAX_RELEASE_JSON_BYTES, MAX_UPDATE_BYTES, compareVersions, expectedAssetName, isGitHubUrl, normalizeChecksumRelease, normalizeRelease, releaseVersionFromUrl, versionParts };

@@ -137,7 +137,7 @@ test("a learned active-chat context is reused locally across sessions", () => {
   assert.equal(occurrences[1].intentReason, "repeated-context");
 });
 
-test("conflicting neighbors do not force an ambiguous chat into either neighbor", () => {
+test("conflicting neighbors leave an ambiguous chat explicit instead of pretending it is personal", () => {
   const base = new Date("2026-08-16T09:00:00+03:00").getTime();
   const events = [
     { at: new Date(base).toISOString(), kind: "foreground", app: "Steam", title: "Library" },
@@ -146,8 +146,10 @@ test("conflicting neighbors do not force an ambiguous chat into either neighbor"
   ];
   const [session] = sessionizer.sessionize(events, base + 180_000, "en");
   const telegram = session.activities.find((activity) => activity.app === "Telegram Desktop");
-  assert.equal(telegram.intent, "personal");
-  assert.equal(telegram.intentReason, "best-effort-messaging");
+  assert.equal(telegram.intent, "unknown");
+  assert.equal(telegram.intentReason, "needs-context");
+  assert.equal(telegram.observedLabel, "General chat");
+  assert.equal(telegram.needsReview, true);
 });
 
 test("a manual game correction never recolors unrelated applications", () => {

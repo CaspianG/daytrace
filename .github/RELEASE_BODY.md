@@ -1,5 +1,13 @@
 ## Downloads
 
+### What is new in v0.5.6
+
+- Observed facts and inferred purpose are now separate, with visible evidence, confidence, an ambiguity review queue, correction preview, and Undo. Ambiguous activity is no longer silently labeled Personal.
+- Day briefs include observed themes, likely completed work, open loops, interruptions, and returns. Local questions support exact dates and period comparisons in English and Russian without an LLM.
+- Optional local intelligence can be added through a separately downloaded classifier pinned to this release and checked against an app-embedded SHA-256, plus a foreground-only Chromium companion. Both remain local; Incognito, page contents, credentials, query strings, fragments, and background tabs are rejected.
+- JSON/CSV exports, encrypted `.daytrace` backup/restore, and built-in self-diagnostics are available in Settings.
+- Windows updates now use a staged readiness handshake and automatic rollback, matching the crash-safe macOS outcome check.
+
 - **Windows:** use `Daytrace-Setup-…-x64.exe` for guided installation or the portable ZIP.
 - **macOS 12+: read this first.** The current universal DMG/ZIP is not signed with an Apple Developer ID and is not notarized. Gatekeeper may say Apple cannot verify that Daytrace is free of malware. This warning is expected because the project does not currently have Apple signing credentials; it is not a VirusTotal or antivirus detection result.
 
@@ -13,6 +21,6 @@ Starting with v0.5.4, future updates use a verified one-click replacement and re
 
 Starting with v0.5.5, the previous app is not removed until the new version has rendered and shown a real window. A Gatekeeper block, startup failure, or missing readiness signal restores and reopens the previous copy automatically. The local updater outcome log is `~/Library/Logs/Daytrace/updater.log` and contains no activity data.
 
-This release also includes a full privacy and reliability hardening pass: exact renderer and IPC validation, blocked remote navigation and webviews, a strict Content Security Policy, private local file permissions on macOS, duplicate-collector race prevention, self-window exclusion on macOS, fail-closed deletion validation, faster range-limited questions, and corrected browser context boundaries. Repository CI now adds CodeQL and Dependabot coverage with pinned Actions and least-privilege publishing permissions.
+Starting with v0.5.6, Windows updates also keep the previous installation until the replacement has shown a non-empty window, reached the local preload/IPC bridge, and returned a one-time readiness token. Before Daytrace closes, the SHA-256-verified Setup payload is extracted to an isolated staging directory and checked for safe paths, exact product version, required files, size, reparse points, and available disk space. A failed preflight leaves the existing installation untouched; a startup failure or missing readiness signal restores and reopens it automatically. If Windows cannot use this transactional path safely, the verified interactive Setup opens as a fallback.
 
-Windows packages now run a post-packaging white-window/IPC smoke test, include only the supported English and Russian Electron locales, and use a cleaned self-contained tracker publish with fewer files and no separate .NET installation.
+Windows packages run a post-packaging white-window/IPC smoke test. The release check also extracts `Daytrace.exe`, `resources/app.asar`, the Incognito-disabled browser companion manifest, and its lean native host from the actual NSIS artifact and requires their SHA-256 values to match the packaged application exactly. A framed end-to-end host/pipe round trip must store a synthetic foreground context, and the optional classifier must not be bundled or loaded by default.

@@ -19,6 +19,9 @@ const macGuideRu = fs.readFileSync(path.join(root, "docs", "MACOS_INSTALL_RU.md"
 const bundledMacGuide = fs.readFileSync(path.join(root, "MACOS_INSTALL.txt"), "utf8");
 const bundleMacGuideScript = fs.readFileSync(path.join(root, "scripts", "bundle-macos-install-guide.sh"), "utf8");
 const windowsTrackerBuild = fs.readFileSync(path.join(root, "scripts", "build-windows-tracker.cjs"), "utf8");
+const windowsUpdateService = fs.readFileSync(path.join(root, "electron", "lib", "windows-update-service.cjs"), "utf8");
+const packagedWindowsSmoke = fs.readFileSync(path.join(root, "scripts", "run-packaged-windows-smoke.cjs"), "utf8");
+const windowsInstallerInclude = fs.readFileSync(path.join(root, "build", "installer.nsh"), "utf8");
 
 test("release metadata and both READMEs name the same current version", () => {
   const version = pkg.version;
@@ -51,6 +54,28 @@ test("Windows native collector remains self-contained with a lean fast-start pub
   assert.equal(pkg.build.win.extraResources[0].from, "native/windows-tracker/bin/Release/daytrace-win-x64/");
   assert.deepEqual(pkg.build.electronLanguages, ["en-US", "ru"]);
   assert.match(pkg.scripts["dist:win"], /electron-builder[\s\S]*npm run test:packaged:win/);
+});
+
+test("Windows installer offers the documented Desktop shortcut choice and cleans native-host registration", () => {
+  assert.equal(pkg.build.nsis.include, "build/installer.nsh");
+  assert.equal(pkg.build.nsis.createDesktopShortcut, false);
+  assert.match(windowsInstallerInclude, /DaytraceShortcutCheckboxText/);
+  assert.match(windowsInstallerInclude, /CreateShortCut/);
+  assert.match(windowsInstallerInclude, /DeleteRegKey HKCU "Software\\Google\\Chrome\\NativeMessagingHosts\\com\.daytrace\.browser"/);
+  assert.match(windowsInstallerInclude, /DeleteRegKey HKCU "Software\\Daytrace\\BrowserHost"/);
+});
+
+test("Windows releases document and verify readiness-confirmed transactional rollback", () => {
+  assert.match(readme, /v0\.5\.6 crash-safe Windows updates/);
+  assert.match(readmeRu, /Безопасные Windows-обновления v0\.5\.6/);
+  assert.match(releaseBody, /Windows updates also keep the previous installation/);
+  assert.match(windowsUpdateService, /DAYTRACE_UPDATE_READY_TOKEN/);
+  assert.match(windowsUpdateService, /Move-DirectoryWithRetry \$backupDirectory \$installDirectory/);
+  assert.match(packagedWindowsSmoke, /installer-payload/);
+  assert.match(packagedWindowsSmoke, /sha256\(extractedExecutable\) !== sha256\(executable\)/);
+  assert.match(packagedWindowsSmoke, /sha256\(extractedNativeHost\) !== sha256\(packagedNativeHost\)/);
+  assert.match(packagedWindowsSmoke, /Packaged one-shot browser native host smoke passed/);
+  assert.match(pkg.scripts.test, /windows-update-service\.test\.mjs/);
 });
 
 test("macOS tagged releases remain publishable without unavailable Apple credentials", () => {

@@ -4,7 +4,7 @@ const INTENT_LABELS = {
     learning: "Learning",
     personal: "Personal",
     entertainment: "Entertainment",
-    unknown: "Unknown purpose",
+    unknown: "Ambiguous purpose",
     mixed: "Mixed purpose",
   },
   ru: {
@@ -12,7 +12,7 @@ const INTENT_LABELS = {
     learning: "Обучение",
     personal: "Личное",
     entertainment: "Развлечения",
-    unknown: "Цель не определена",
+    unknown: "Неоднозначная цель",
     mixed: "Смешанная цель",
   },
 };
@@ -49,7 +49,7 @@ const TITLE_SIGNALS = {
   ],
   entertainment: [
     { weight: 6, pattern: /\b(movie|film|series|season|episode|trailer|comedy|meme|funny|stream|playlist|music video|official video|concert|karaoke|gameplay|lets play|walkthrough|highlights|reaction|podcast)\b/i },
-    { weight: 6, pattern: /(?:фильм|кино\b|сериал|сезон|эпизод|серия\b|трейлер|комеди|мем|прикол|смешн|стрим|плейлист|клип|концерт|караоке|геймплей|прохождение игр|летсплей|нарезк|реакци|подкаст)/i },
+    { weight: 6, pattern: /(?:фильм|кино(?=\s|$|[—:,.!?])|сериал|сезон|эпизод|серия(?=\s|$|[—:,.!?])|трейлер|комеди|мем|прикол|смешн|стрим|плейлист|клип|концерт|караоке|геймплей|прохождение игр|летсплей|нарезк|реакци|подкаст)/i },
     { weight: 5, pattern: /\b(netflix|twitch|tiktok|steam|epic games|battle\.net|riot games|playstation|xbox|spotify|soundcloud|apple music|youtube music|prime video|disney\+|hbo max|crunchyroll)\b/i },
     { weight: 5, pattern: /(?:кинопоиск|иви\b|okko|рутуб|вк видео|вк клипы|яндекс музыка|музыка вк|амедиатек|kion|wink|start\.ru|premier)/i },
     { weight: 4, pattern: /\b(gaming|video game|matchmaking|ranked match|multiplayer)\b|(?:видеоигр|игровой стрим|игровая сесси|рейтинговый матч)/i },
@@ -81,10 +81,11 @@ function normalizeLanguage(value) {
   return String(value || "").toLowerCase().startsWith("ru") ? "ru" : "en";
 }
 
-function normalizeIntentRules(value) {
+function normalizeIntentRules(value, limit = 100) {
   if (!Array.isArray(value)) return [];
   const result = [];
-  for (const item of value.slice(-100)) {
+  const safeLimit = Math.max(1, Math.min(2_000, Number(limit) || 100));
+  for (const item of value.slice(-safeLimit)) {
     const match = String(item?.match || "").replace(/\s+/g, " ").trim().slice(0, 120);
     const intent = String(item?.intent || "").toLowerCase();
     if (!match || !ALLOWED_INTENTS.has(intent)) continue;
@@ -100,6 +101,11 @@ function normalizeIntentRules(value) {
       rule.scope = item.scope;
       rule.app = app;
       if (item.scope === "context") rule.title = title;
+    }
+    if (item?.source === "smart-model") {
+      rule.source = "smart-model";
+      rule.confidenceScore = Math.max(0.5, Math.min(0.99, Number(item.confidenceScore) || 0.5));
+      rule.evidence = String(item?.evidence || match).replace(/\s+/g, " ").trim().slice(0, 120);
     }
     result.push(rule);
   }
@@ -154,7 +160,9 @@ function inferIntentDetails(activity, rules = []) {
   const app = `${activity.app || ""} ${activity.process || ""}`.toLowerCase();
   const exactApp = String(activity.app || activity.process || "").toLowerCase().replace(/\s+/g, " ").trim();
   const title = String(activity.title || "").toLowerCase().replace(/\s+/g, " ").trim();
-  const combined = `${app} ${title}`.replace(/\s+/g, " ");
+  const domain = String(activity.domain || "").toLowerCase().replace(/\s+/g, " ").trim();
+  const urlPath = String(activity.urlPath || "").toLowerCase().replace(/\s+/g, " ").trim();
+  const combined = `${app} ${title} ${domain} ${urlPath}`.replace(/\s+/g, " ");
   const normalizedRules = normalizeIntentRules(rules);
   const custom = [...normalizedRules].reverse().find((rule) => {
     if (rule.scope === "application") return exactApp === rule.app.toLowerCase().replace(/\s+/g, " ").trim();
@@ -163,10 +171,13 @@ function inferIntentDetails(activity, rules = []) {
     const ruleTitle = rule.title.toLowerCase().replace(/\s+/g, " ").trim();
     return exactApp === ruleApp && title === ruleTitle;
   });
-  if (custom) return { intent: custom.intent, confidence: "high", reason: "custom-rule", evidence: custom.match };
+  if (custom) return custom.source === "smart-model"
+    ? { intent: custom.intent, confidence: custom.confidenceScore >= 0.82 ? "high" : "medium", reason: "smart-model", evidence: custom.evidence || custom.match, score: custom.confidenceScore }
+    : { intent: custom.intent, confidence: "high", reason: "custom-rule", evidence: custom.match, score: 1 };
 
-  const semantic = semanticClassification(title);
-  const classified = BROWSER_APPS.test(app) ? serviceClassification(title, semantic) : semantic;
+  const visibleContext = `${title} ${domain} ${urlPath}`.trim();
+  const semantic = semanticClassification(visibleContext);
+  const classified = BROWSER_APPS.test(app) ? serviceClassification(visibleContext, semantic) : semantic;
   if (classified) return classified;
 
   if (ENTERTAINMENT_APPS.test(app) || GAME_APPS.test(app)) return { intent: "entertainment", confidence: "high", reason: "application-category", evidence: activity.app || activity.process || "" };
@@ -186,8 +197,11 @@ function inferIntentDetails(activity, rules = []) {
 function contextKey(activity) {
   const app = String(activity.app || activity.process || "").toLowerCase().replace(/\s+/g, " ").trim();
   const title = String(activity.title || "").toLowerCase().replace(/\s+/g, " ").trim();
-  if (!app || !title || /^(active window|активное окно|home|new tab|новая вкладка)$/i.test(title)) return "";
-  return `${app}|${title}`.slice(0, 360);
+  const domain = String(activity.domain || "").toLowerCase().replace(/\s+/g, " ").trim();
+  const urlPath = String(activity.urlPath || "").toLowerCase().replace(/\s+/g, " ").trim();
+  const genericTitle = /^(active window|активное окно|home|new tab|новая вкладка)$/i.test(title);
+  if (!app || ((!title || genericTitle) && !domain)) return "";
+  return `${app}|${genericTitle ? "" : title}|${domain}|${urlPath}`.slice(0, 500);
 }
 
 function labelForIntent(intent, language = "en") {

@@ -20,7 +20,7 @@ app.whenReady().then(async () => {
   const consoleErrors = [];
   window.webContents.on("console-message", (details) => { if (details.level === "error") consoleErrors.push(details.message); });
   for (const language of ["en", "ru"]) {
-    await window.loadURL(`${pathToFileURL(entry).href}?lang=${language}`);
+    await window.loadURL(`${pathToFileURL(entry).href}?lang=${language}&capture=desktop`);
     await window.webContents.executeJavaScript("document.documentElement.classList.add('capture'); document.fonts.ready.then(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))");
     await window.webContents.executeJavaScript("document.querySelector('.main-nav button:nth-child(1)').click(); new Promise(resolve => setTimeout(resolve, 250))");
     const image = await window.webContents.capturePage();
@@ -50,7 +50,14 @@ app.whenReady().then(async () => {
     await window.webContents.executeJavaScript("document.querySelector('.intent-rule-editor').scrollIntoView({ block: 'center' }); new Promise(resolve => setTimeout(resolve, 250))");
     const rules = await window.webContents.capturePage();
     fs.writeFileSync(path.join(output, `rules-${language}.png`), rules.toPNG());
-    await window.loadURL(`${pathToFileURL(entry).href}?lang=${language}&update=downloading`);
+    for (const [selector, name] of [[".smart-analysis-section", "smart-analysis"], [".browser-companion-section", "browser-companion"], [".system-section", "diagnostics"], [".data-section", "data-portability"]]) {
+      if (!await window.webContents.executeJavaScript(`Boolean(document.querySelector('${selector}'))`)) throw new Error(`${name} section is missing in ${language}`);
+      await window.webContents.executeJavaScript(`document.querySelector('${selector}').scrollIntoView({ block: 'center' }); new Promise(resolve => setTimeout(resolve, 250))`);
+      if (name === "diagnostics") await window.webContents.executeJavaScript("document.querySelector('.diagnostics-settings button').click(); new Promise(resolve => setTimeout(resolve, 250))");
+      const section = await window.webContents.capturePage();
+      fs.writeFileSync(path.join(output, `${name}-${language}.png`), section.toPNG());
+    }
+    await window.loadURL(`${pathToFileURL(entry).href}?lang=${language}&capture=desktop&update=downloading`);
     await window.webContents.executeJavaScript("document.documentElement.classList.add('capture'); document.fonts.ready.then(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))");
     await window.webContents.executeJavaScript("document.querySelector('.main-nav button:nth-child(3)').click(); new Promise(resolve => setTimeout(resolve, 250))");
     await window.webContents.executeJavaScript("new Promise(resolve => setTimeout(resolve, 250))");
@@ -63,4 +70,7 @@ app.whenReady().then(async () => {
   // app.quit(); this script is a one-shot build tool, so exit explicitly once
   // every localized file has been flushed to disk.
   app.exit(0);
+}).catch((error) => {
+  console.error(error);
+  app.exit(1);
 });

@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Daytrace Browser Companion",
+  "version": "1.0.0",
+  "description": "Adds the active tab domain, safe path and title to the local Daytrace timeline. No page content or private tabs.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqKMZPAyDofB0WKsI2PMrwGwb4T4+wJbYPxuWoGSYz7tb5OtiGx/JbuFYyNL9rySSSgaC59beD8wzpBOl/sJS5W556ANKphSIP7/PZsSz+dTm9UZ7u+8HjqFEfKfoqpVfT1RxfQ+EluGru9yoKQH+qc4X8rv2qhAX0LiqyaLEnEmDpA8HarkSrfoHuwu+jmVULIH50+AsjNxtwTIUN2dgVO0TaR91P8s1ovfJz8yKMXOX4MV+7W6mKMABXV3wzvPf8hshNYT2H6wZGP4NequpBbNUE0b/SiudAB6dYT5L8cVhVY0PeIzIzH/dzVwR9K1pqe353h3eQX61YdiFfyGgmQIDAQAB",
+  "incognito": "not_allowed",
+  "permissions": [
+    "tabs",
+    "nativeMessaging"
+  ],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "action": {
+    "default_title": "Daytrace Browser Companion"
+  }
+}

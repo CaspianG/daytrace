@@ -51,4 +51,9 @@ FunctionEnd
 !macro customUnInstall
   Delete "$DESKTOP\${SHORTCUT_NAME}.lnk"
   WinShell::UninstShortcut "$DESKTOP\${SHORTCUT_NAME}.lnk"
+  DeleteRegKey HKCU "Software\Google\Chrome\NativeMessagingHosts\com.daytrace.browser"
+  DeleteRegKey HKCU "Software\Microsoft\Edge\NativeMessagingHosts\com.daytrace.browser"
+  DeleteRegKey HKCU "Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\com.daytrace.browser"
+  DeleteRegKey HKCU "Software\Vivaldi\NativeMessagingHosts\com.daytrace.browser"
+  DeleteRegKey HKCU "Software\Daytrace\BrowserHost"
 !macroend

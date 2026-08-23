@@ -23,8 +23,9 @@ function isDaytraceEvent(event) {
 }
 
 function isPrivateWindow(event) {
+  if (event?.private === true || event?.incognito === true) return true;
   const app = normalize(event.app || event.process);
-  const browser = /(chrome|msedge|edge|firefox|brave|opera|vivaldi)/.test(app);
+  const browser = /(chrome|chromium|msedge|edge|firefox|brave|opera|vivaldi|safari|arc|orion)/.test(app);
   if (!browser) return false;
   return PRIVATE_WINDOW_PATTERNS.some((pattern) => pattern.test(event.title || ""));
 }
