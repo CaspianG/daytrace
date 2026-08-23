@@ -51,7 +51,7 @@ No administrator account, separate .NET installation, browser extension, cloud a
 
 The current public build is not code-signed yet, so Windows SmartScreen may show **Unknown publisher**. Check the SHA-256 value published in the release notes before running it.
 
-An independently submitted Windows artifact has a public [VirusTotal report](https://www.virustotal.com/gui/file/9a898a7eb1bec9ee2d7b97d3593f7c17b02a9902dbbdb24959b1528082c117a6/detection) for SHA-256 `9a898a7eb1bec9ee2d7b97d3593f7c17b02a9902dbbdb24959b1528082c117a6`. The report applies only when your downloaded file has exactly that hash; it is additional multi-engine evidence, not a substitute for the release's `SHA256SUMS.txt`, source review, or a fresh scan of a newer build.
+The exact v0.5.6 Windows installer has a public [VirusTotal report](https://www.virustotal.com/gui/file/56d1da401a82580e7e3f120fdc0e862b1fb289d8b1ce756b251fb87438b6793a?nocache=1): **0 of 65 engines flagged it** when the scan completed on August 24, 2026. Its SHA-256 is `56d1da401a82580e7e3f120fdc0e862b1fb289d8b1ce756b251fb87438b6793a`. This point-in-time result applies only when your downloaded file has exactly that hash; it is additional multi-engine evidence, not a substitute for `SHA256SUMS.txt`, source review, or future rescans.
 
 Prefer a portable build? Download `Daytrace-Portable-…-x64.zip`, extract it, and run `Daytrace.exe`.
 
