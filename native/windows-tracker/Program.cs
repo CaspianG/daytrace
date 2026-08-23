@@ -28,8 +28,13 @@ internal static class Program
     private static readonly bool CollectInput = Environment.GetEnvironmentVariable("DAYTRACE_COLLECT_INPUT") != "0";
     private static readonly bool CollectTabCount = Environment.GetEnvironmentVariable("DAYTRACE_COLLECT_TAB_COUNT") != "0";
 
-    public static void Main()
+    public static void Main(string[] args)
     {
+        if (BrowserNativeHost.ShouldRun(args))
+        {
+            BrowserNativeHost.Run(args);
+            return;
+        }
         Console.OutputEncoding = Encoding.UTF8;
         _active = ReadActiveWindow();
         _lastInputTime = GetLastInputTime();

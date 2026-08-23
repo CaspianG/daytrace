@@ -17,12 +17,12 @@
   · <a href="SECURITY.md">Security</a>
 </p>
 
-<p align="center"><strong>Current release: v0.5.5</strong> — Windows and macOS artifacts are built from the same tag and published together.</p>
+<p align="center"><strong>Current release: v0.5.6</strong> — Windows and macOS artifacts are built from the same tag and published together.</p>
 
 > **macOS first-launch notice:** the current Mac build is free and fully local, but it is not signed or notarized because the project does not have Apple Developer ID credentials. Gatekeeper will therefore warn on first launch. Read the [safe macOS installation guide](docs/MACOS_INSTALL.md) before downloading; it uses Finder's supported **Open** / **Open Anyway** flow and does not disable Gatekeeper.
 
 <p align="center">
-  <img alt="Current version v0.5.5" src="https://img.shields.io/badge/current-v0.5.5-6f8f67?style=flat-square">
+  <img alt="Current version v0.5.6" src="https://img.shields.io/badge/current-v0.5.6-6f8f67?style=flat-square">
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-6f8f67?style=flat-square">
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-c5684b?style=flat-square">
   <img alt="macOS 12 or newer" src="https://img.shields.io/badge/macOS-12%2B-c5684b?style=flat-square">
@@ -37,7 +37,7 @@ The useful question is simple: **“What was I working on this morning?”** The
 
 OpenAI's announcement of Computer History validated this new category of desktop software. Its initial rollout was described as macOS-only and limited to Pro, Business, and Enterprise plans. Daytrace is an independent cross-platform alternative for people who want the utility without a subscription or a hosted activity history.
 
-Daytrace requires no account and no API key. Events are captured, filtered, grouped, queried, and deleted on your computer. The only built-in network feature is the updater: it checks the official GitHub Releases endpoint using the installed version and never includes activity data.
+Daytrace requires no account and no API key. Events are captured, filtered, grouped, queried, and deleted on your computer. Capture and analysis work offline. Network access is limited to two explicit GitHub operations: verified update checks/downloads, and an optional separately downloaded local classifier pack. Neither request contains activity data.
 
 > Computer History availability and plan limits may change after the initial announcement. Daytrace is not affiliated with or endorsed by OpenAI.
 
@@ -51,6 +51,8 @@ No administrator account, separate .NET installation, browser extension, cloud a
 
 The current public build is not code-signed yet, so Windows SmartScreen may show **Unknown publisher**. Check the SHA-256 value published in the release notes before running it.
 
+An independently submitted Windows artifact has a public [VirusTotal report](https://www.virustotal.com/gui/file/9a898a7eb1bec9ee2d7b97d3593f7c17b02a9902dbbdb24959b1528082c117a6/detection) for SHA-256 `9a898a7eb1bec9ee2d7b97d3593f7c17b02a9902dbbdb24959b1528082c117a6`. The report applies only when your downloaded file has exactly that hash; it is additional multi-engine evidence, not a substitute for the release's `SHA256SUMS.txt`, source review, or a fresh scan of a newer build.
+
 Prefer a portable build? Download `Daytrace-Portable-…-x64.zip`, extract it, and run `Daytrace.exe`.
 
 On macOS 12 or newer, first read the [macOS installation guide](docs/MACOS_INSTALL.md), then download the universal `Daytrace-…-macOS-universal.dmg`. The release page and mounted DMG both contain the same warning and instructions. Drag Daytrace to Applications, then use **Control-click/right-click → Open** for the first launch. If it is still blocked, use **System Settings → Privacy & Security → Open Anyway**. This Gatekeeper message is expected because the project does not currently have the paid Apple Developer ID certificate required for signing and notarization; it is not a malware detection result. Do not disable Gatekeeper globally.
@@ -59,7 +61,11 @@ After the app opens, Daytrace separately explains why Accessibility access is ne
 
 Minimizing or closing the window releases the heavy renderer while the lightweight native tracker continues from the system tray. Double-click the tray icon or launch Daytrace again to reopen the same instance.
 
-Installed builds check for a stable update shortly after launch and every six hours while online. You can also use **Settings → Updates → Check for updates**. A compact bottom-left status shows checking, download percentage, verification, installation, restart, or an actionable error without opening Settings. Windows verifies the installer, preserves the current install location, updates silently, and reopens Daytrace automatically. On macOS, Daytrace verifies the universal DMG, checks the embedded version, replaces the installed app, removes a numbered duplicate, and reopens the canonical copy automatically. Since v0.5.5, the old app remains recoverable until the new version has rendered and shown a real window; a Gatekeeper block or startup failure automatically restores and reopens the previous copy. Finder is shown only as a fallback when macOS does not allow automatic replacement. Users upgrading from v0.5.3 or older need the documented manual DMG replacement once because those installed versions do not yet contain the automatic updater.
+Installed builds check for a stable update shortly after launch and every six hours while online. You can also use **Settings → Updates → Check for updates**. A compact bottom-left status shows checking, download percentage, verification, installation, restart, or an actionable error without opening Settings. On Windows, Daytrace verifies the installer, prepares the exact packaged payload without changing the current installation, then replaces it transactionally and reopens the same path. On macOS, Daytrace verifies the universal DMG, checks the embedded version, replaces the installed app, removes a numbered duplicate, and reopens the canonical copy automatically. The previous version remains recoverable until the replacement has rendered and shown a real window; a startup failure or missing readiness signal automatically restores and reopens the previous copy. Finder or the verified Windows installer is shown only when the platform does not allow the automatic path. Users upgrading from macOS v0.5.3 or older need the documented manual DMG replacement once because those installed versions do not yet contain the automatic updater.
+
+### v0.5.6 crash-safe Windows updates
+
+Windows updates now use the same outcome-based safety rule as macOS: starting a process is not treated as success. The SHA-256-verified Setup is first listed and extracted into an isolated sibling staging directory with path, size, reparse-point, payload, disk-space, and exact product-version checks. Daytrace closes only after the helper confirms that this preflight succeeded. The old installation is then renamed to a unique backup, the staged application takes its original path, and the new process must show a non-empty renderer, reach the preload/IPC/local-state bridge, return a one-time 256-bit readiness token, and remain alive before the backup is removed. A failed extraction, locked folder, startup crash, missing signal, or immediate exit keeps or restores the previous installation and reopens it. The installed uninstaller and shortcuts remain valid because the application path is preserved. If Windows cannot use the transactional path safely, the already verified Setup opens for manual confirmation and the existing app stays available.
 
 ### v0.5.5 reliability and security audit
 
@@ -70,10 +76,10 @@ The v0.5.5 release also closes several less-visible failure modes found during a
 - **A complete day overview** with active time, applications, context switches, browser-tab maximum, focus distribution, top applications, and an interactive hourly rhythm chart with per-hour application and purpose details.
 - **A newest-first timeline** grouped into focus sessions instead of a raw event dump, with smooth day navigation, the real selected date in the header, and an in-style calendar that marks days containing saved activity.
 - **Explicit away-time boundaries**: five minutes without system input closes active tracking, returning to the same window starts a new interval, and gaps between sessions appear as localized Break entries.
-- **Local questions about your day**, including morning, afternoon, evening, today, yesterday, and purpose-specific questions such as “How long did I study?”
-- **A selected-day summary** showing work, learning, personal, entertainment, and honestly unknown time separately.
+- **Local questions across the retained calendar**, including exact dates, morning/afternoon/evening, relative ranges, and comparisons such as “Compare this week with last week.”
+- **A real selected-day brief** with main contexts, likely completed items, open loops, long interruptions, and returns after a break — derived from observed local activity rather than invented task text.
 - **Richer application context** from native Windows and macOS accessibility signals: active Chrome tab-title changes, numeric tab count, Telegram active-window/chat-title changes, and idle-aware reading time.
-- **Private-window filtering** for common Incognito, InPrivate, and Private Browsing titles before disk writes.
+- **Private-window filtering** for Chrome Incognito, Edge InPrivate, Safari Private Browsing, and other common private-title conventions before disk writes. The optional browser companion supplies an explicit private flag and rejects it again at the local host boundary.
 - **Application exclusions** with password managers excluded by default.
 - **Configurable local retention**: 48 hours by default, or 7, 30, 90, or 365 days, with precise automatic pruning. Older days load only when selected, so a long archive does not become continuous background analysis.
 - **Pause, session deletion, and delete-all controls** inside the app.
@@ -84,11 +90,16 @@ The v0.5.5 release also closes several less-visible failure modes found during a
 - **Launch at login** on Windows and macOS, starting quietly in the tray/menu bar.
 - **Built-in verified updates** with automatic online checks, a manual Settings action, download progress, and a bottom-left action only when a newer stable release exists.
 - **Fine-grained collection controls** for window titles, anonymous active-second samples, browser-tab counts, and private-window filtering.
-- **Two-layer classification** that keeps the application type separate from the inferred purpose. Telegram can be work or personal; a browser can be work, learning, entertainment, or unknown.
-- **Adaptive local purpose analysis** for popular video, streaming, social, shopping, learning, developer, office, creative, and communication contexts, with confidence and the reason for every inference. Opaque contexts receive a low-confidence best estimate instead of a blanket unknown label.
+- **Fact and inference shown separately**: the observed app/title/domain stays factual, while purpose is explicitly marked as an estimate. Telegram can be work or personal; a browser can be work, learning, entertainment, or genuinely ambiguous.
+- **Visible confidence and evidence** for every inferred purpose, plus a low-confidence review journal. Ambiguous contexts remain **Ambiguous purpose** instead of silently becoming Personal.
+- **Adaptive local purpose analysis** for popular video, streaming, social, shopping, learning, developer, office, creative, and communication contexts in English and Russian.
 - **Scoped corrections**: changing a native application affects only that application; changing a browser page or chat affects only that exact app/title context and never recolors neighboring activities.
 - **Broader visible-context understanding** for popular games, packaged game executables, technical work, debugging, installation, infrastructure, searches, comparisons, and reference pages in English and Russian.
-- **One-click local corrections** on timeline entries plus reusable substring rules for chats, page titles, projects, and keywords. Rules never leave the device.
+- **Preview and Undo for corrections**: before a rule is applied, Daytrace shows the exact activity count, duration, days, and sample changes it will affect. The previous rule set remains locally recoverable.
+- **Optional smart local analysis**: a small SHA-256-verified RU/EN classifier pack downloads separately, runs in a short-lived worker only during idle time or on demand, and unloads from memory when the batch finishes. The base app remains fully usable without it.
+- **Optional Chromium browser companion** for Chrome, Edge, Brave, and Vivaldi. Native messaging adds only the active tab's title, domain, safe path, and explicit private flag; query strings, fragments, credentials, page content, and background tabs are discarded.
+- **JSON and CSV export**, plus streaming encrypted backup/restore using scrypt and AES-256-GCM. Restore is transactional, and the passphrase is never stored.
+- **Built-in self-diagnostics** for storage, collector health, title and idle signals, private filtering, Accessibility, autostart, browser companion, and the optional model.
 
 ![Daytrace day overview and latest activity in English](docs/assets/screenshots/timeline-en.png)
 
@@ -102,6 +113,12 @@ The v0.5.5 release also closes several less-visible failure modes found during a
 
 ![Daytrace update available in Settings and at the bottom left, English example](docs/assets/screenshots/updates-en.png)
 
+![Optional local smart analysis and foreground browser context in English](docs/assets/screenshots/browser-companion-en.png)
+
+![Self-diagnostics in English](docs/assets/screenshots/diagnostics-en.png)
+
+![JSON, CSV and encrypted backup controls in English](docs/assets/screenshots/data-portability-en.png)
+
 The same interface is also available in [Russian](README_RU.md), including localized summaries and system-tray controls.
 
 ## Purpose, not application stereotypes
@@ -111,11 +128,13 @@ Daytrace never treats “messenger” as a synonym for work or “browser” as 
 | Layer | Example | What it answers |
 | --- | --- | --- |
 | Activity type | Messaging, browser, development, audio | What kind of application was active? |
-| Inferred purpose | Work, learning, personal, entertainment, unknown | Why was that context most likely being used? |
+| Inferred purpose | Work, learning, personal, entertainment, ambiguous | Why was that context most likely being used? |
 
-Purpose is inferred in layers: a recognized foreground service, the meaning of the visible active title, specialized application category, repeated title context inside the configured local journal, nearby activity, the dominant purpose of a coherent work block, and user-authored local rules. Specific semantic evidence overrides broad service priors: a YouTube lecture is learning, YouTube Studio is work, and ordinary YouTube viewing is entertainment. Conflicting or genuinely opaque evidence remains **Unknown purpose**, with a low-confidence reason visible in the timeline. Use the purpose picker beside any item to correct it; Daytrace stores a local rule for that chat, title, project, or keyword and recalculates the timeline, charts, answers, and workflow suggestions.
+Purpose is inferred in layers: a recognized foreground service, the meaning of the visible active title, specialized application category, repeated title context inside the configured local journal, nearby activity, the dominant purpose of a coherent work block, and user-authored local rules. Specific semantic evidence overrides broad service priors: a YouTube lecture is learning, YouTube Studio is work, and ordinary YouTube viewing is entertainment. Conflicting or genuinely opaque evidence remains **Ambiguous purpose**, with a low-confidence reason and the exact evidence visible in the timeline and review journal. Daytrace never maps ambiguity to Personal. Use the purpose picker beside any item to propose a scoped rule; a preview shows its impact before the timeline, charts, answers, and workflow suggestions are recalculated, and the change can be undone.
 
 This is deliberately not message-content analysis. Daytrace can classify an active Telegram chat named “Project Atlas — client meeting” from its visible title and can reuse the same locally observed context later, but it cannot know what an opaque chat name means without surrounding evidence or your correction. The same boundary applies to browser pages, documents, editors, and every other application.
+
+Classifier changes are guarded by a versioned synthetic RU/EN accuracy set covering browsers, messengers, IDEs, games, video, documents, meetings, and learning. CI requires at least 90% coverage, at least 94% precision on covered cases, at least 90% correctness per language, and zero forced labels for explicitly ambiguous examples. This is a regression gate, not a claim that every real-world title can be understood.
 
 ![Correcting activity purpose and reviewing evidence in English](docs/assets/screenshots/purpose-en.png)
 
@@ -129,15 +148,16 @@ Daytrace is intentionally less invasive than screenshot-based activity recorders
 | --- | --- |
 | Active application name | Screenshots or screen video |
 | Active window title | Audio or microphone input |
-| Numeric count of visible browser tabs | URLs or titles of background tabs |
+| Numeric count of visible browser tabs | Full URLs, query strings, fragments, or titles of background tabs |
+| Optional foreground domain and safe path | Page contents, cookies, credentials, or form values |
 | Window-switch timestamp | Clipboard contents |
 | Anonymous active-second samples on Windows | Mouse coordinates |
 | Aggregate keypress/click counts on macOS | Key identities or typed text |
 | Session duration | Form values or passwords |
 
-Window titles can contain document names, page titles, or conversation names. They stay local, but you should exclude sensitive applications. Private-browser detection is title-based because browsers do not expose one universal private-mode signal; treat exclusions as the stronger control.
+Window titles can contain document names, page titles, or conversation names. They stay local, but you should exclude sensitive applications. Base private-browser detection uses title conventions because operating-system accessibility APIs do not expose one universal private-mode signal. The optional Chromium companion is declared with `incognito: not_allowed`, rejects private tabs in the extension, and the native host rejects them again. Exclusions remain the strongest control for a sensitive application.
 
-The updater is the only built-in network path. It normally requests `api.github.com/repos/CaspianG/daytrace/releases/latest` with `Daytrace/<installed version>` in the user agent. If that unauthenticated endpoint is rate-limited, it falls back to the public Releases feed and `SHA256SUMS.txt`. No journal events, titles, questions, rules, or settings are transmitted. Daytrace accepts only the exact expected artifact from the official repository and verifies its published SHA-256 digest before opening it.
+Daytrace has no telemetry or cloud-analysis endpoint. The updater requests the official GitHub Releases endpoint with only the installed version and verifies the selected artifact against `SHA256SUMS.txt`. If you explicitly download the optional classifier, Daytrace fetches the version-matched release asset and verifies it against both its release checksum and the SHA-256 embedded in that app version. No journal events, titles, domains, questions, rules, or settings are included in either request. Browser companion traffic stays on a per-user local pipe/socket protected by a random token.
 
 Default data location:
 
@@ -145,6 +165,7 @@ Default data location:
 %APPDATA%\daytrace-local\daytrace-data\
 ├── events\YYYY-MM-DD-HH.jsonl
 ├── settings.json
+├── smart-contexts.json
 └── skills\<workflow>\SKILL.md
 ```
 
@@ -155,24 +176,30 @@ Uninstalling the application preserves this folder so history is not destroyed u
 ```mermaid
 flowchart LR
     A["Windows foreground events or macOS Accessibility"] --> B["Privacy filter"]
+    H["Optional foreground Chromium companion"] --> B
     B -->|"allowed"| C["Hourly local JSONL files"]
     B -->|"private or excluded"| X["Discarded before disk write"]
-    C --> D["Local sessionizer and purpose classifier"]
+    C --> D["Local sessionizer and deterministic classifier"]
+    C -.->|"optional idle batch"| M["Short-lived local classifier worker"]
+    M --> D
     D --> E["Purpose charts, reverse timeline and local answers"]
     D --> F["Reviewable SKILL.md drafts"]
+    C --> K["JSON / CSV / encrypted backup"]
     U["Official GitHub Releases"] -->|"version metadata only"| V["Verified updater"]
     V -->|"SHA-256 verified installer"| G["Windows setup or macOS DMG"]
 ```
 
-The native tracker emits foreground-window changes, samples only the foreground title every few seconds, writes idle-aware heartbeats, checks a numeric browser-tab count once per minute on Windows, and records only anonymous activity aggregates. Both platforms detect five minutes without system input and emit local idle/resume boundaries. The Windows collector uses no global keyboard or mouse hook. Electron's local main process applies privacy rules, stores hourly JSONL segments, and exposes state to the sandboxed renderer over a sender-validated IPC bridge with navigation locked to the packaged local interface. It never reads message bodies, typed text, URLs, pointer coordinates, or background-tab titles. There is no cloud backend; only release metadata and verified installer downloads use the network.
+The native tracker emits foreground-window changes, samples only the foreground title every few seconds, writes idle-aware heartbeats, checks a numeric browser-tab count once per minute on Windows, and records only anonymous activity aggregates. Both platforms detect five minutes without system input and emit local idle/resume boundaries. The Windows collector uses no global keyboard or mouse hook. Electron's local main process applies privacy rules, stores hourly JSONL segments, and exposes state to the sandboxed renderer over a sender-validated IPC bridge with navigation locked to the packaged local interface. It never reads message bodies, typed text, pointer coordinates, or background-tab titles. When enabled, the browser companion strips credentials, query strings, and fragments before sending the foreground domain and safe path over local native messaging.
 
 Durations are observed foreground intervals, not the time an application merely remained open. Leaving a browser tab open overnight cannot reconnect the previous evening to the next morning: an explicit idle event closes it, and a six-minute signal-gap guard also protects legacy journals, sleep/wake cycles, and collector restarts. Minute heartbeats still preserve passive reading or video viewing while the computer remains in use. Repeated title events are collapsed, sub-second fragments and system windows are ignored, and overview totals are calculated per activity rather than inherited from the first application in a work block.
 
-Local answers do not use an LLM. A deterministic on-device parser recognizes the requested day/time range, application, purpose, and question type (summary, duration, latest activity, tabs, or context switches), then calculates the response from local sessions. Questions about work, learning, personal time, or entertainment include only activities supported by the classifier and local rules. The interpreted query is shown above each answer so mistakes are visible.
+Local answers do not use an LLM. A deterministic on-device parser recognizes exact and relative dates, comparison periods, time ranges, applications, purposes, and the question type (summary, duration, latest activity, tabs, or context switches), then calculates the response from local sessions. The optional model improves classification of ambiguous visible titles only; it does not generate prose, receive raw journals, stay resident, or make network inference calls. The interpreted query is shown above each answer so mistakes are visible.
 
 ## System load
 
 Daytrace uses native foreground events and coarse samples instead of screenshots or continuous screen polling. On the Windows verification machine, the packaged v0.4.0 background process measured **0.039% total CPU** over a 30-second sample and **199 MiB combined working memory** across Electron and the native collector with no renderer process. A clean packaged launch reached a validated non-empty window in **1.14 s**. The updater adds one small metadata request after startup and then at most once every six hours while online; it does not continuously poll. Measurements vary by hardware, antivirus, event volume, and operating system; macOS packaging is verified in CI, but equivalent physical-Mac load measurements are still being collected.
+
+The browser companion is event-driven and has no polling loop. Its native bridge is started only for one foreground-context delivery and exits immediately, so enabling the extension does not leave a second Electron process resident. Smart analysis is disabled by default; when enabled it waits for at least two minutes of idle time, processes a bounded batch in a separate worker, and terminates the worker afterward. Historical days and one-year retention are loaded lazily instead of being re-analyzed continuously.
 
 The v0.5.5 long-history path was also measured separately with a synthetic one-year archive of **8,760 hourly files** on the Windows verification machine. Opening the store took **63.3 ms**, building the bounded recent state took **106.2 ms**, and answering a today-only question took **28.7 ms** while reading just **48 recent events**. This is a storage/analysis benchmark, not a claim about total launch time; it demonstrates that selecting one-year retention does not turn the full archive into continuous background work.
 
@@ -181,11 +208,12 @@ The Windows native collector remains self-contained, so users do not install .NE
 ## Current limitations
 
 - Windows x64 is tested on Windows 10/11. The macOS universal build targets macOS 12+ and its packaging is checked by CI; broader real-device coverage is still needed.
-- Local Q&A is deterministic and heuristic — it is not a bundled language model.
-- Daytrace analyzes only the foreground app and visible active-window title. It does not read message bodies, page contents, URLs, or background-tab titles, so an opaque chat or page can still require a local correction.
-- Private-window detection depends on browser title conventions and cannot be guaranteed for every browser/version.
-- Local journals rely on operating-system account permissions and are not separately encrypted at rest; use BitLocker or FileVault when device-at-rest protection matters.
-- The Windows updater verifies the installer and requests an NSIS relaunch, but it does not yet have the macOS updater's post-launch readiness token and automatic rollback. The installed Start Menu shortcut remains the recovery path if NSIS cannot reopen the app.
+- Local Q&A is deterministic and heuristic — the optional classifier is not a conversational LLM.
+- Base tracking analyzes only the foreground app and visible active-window title. The optional companion adds foreground domain and safe path for Chrome, Edge, Brave, and Vivaldi; it does not read page contents or background tabs. Firefox and Safari do not use this companion.
+- Base private-window detection depends on browser title conventions and cannot be guaranteed for every browser/version. Companion-provided private flags are rejected, but exclusions remain the safest choice for sensitive apps.
+- Raw local journals rely on operating-system account permissions and are not separately encrypted at rest; use BitLocker or FileVault when device-at-rest protection matters. Exported `.daytrace` backups are encrypted with a user passphrase.
+- Chromium security does not allow Daytrace to silently install an unpacked extension. The app registers the local native host and opens the exact extension folder; the user must load it once in the browser's extension page. Incognito permission is intentionally unavailable.
+- A transactional Windows update temporarily needs enough free space for one staged application copy (at least 512 MiB; normally the installed size plus a 128 MiB margin). If the built-in Windows archive helper is unavailable, the install folder is protected, or this check fails, Daytrace leaves the current installation untouched and opens the verified Setup for manual confirmation.
 - The installer is not code-signed yet.
 
 These boundaries are documented because privacy software should be explicit about what it can and cannot prove.
@@ -201,15 +229,20 @@ npm ci
 npm run dev:desktop
 ```
 
+Optional foreground browser context is installed from **Settings → Browser companion**. Daytrace registers the per-user native host, then opens the bundled extension folder. In Chrome/Edge/Brave/Vivaldi, enable Developer mode, choose **Load unpacked**, and select that folder. Leave Incognito access disabled; the manifest also forbids it.
+
 Run verification and produce both installer and portable artifacts:
 
 ```powershell
 npm test
+npm run test:accuracy
+npm run test:desktop
 npm run test:sites
 npm run dist
 ```
 
 Use `npm run dist:win` on Windows or `npm run dist:mac` on macOS.
+Use `npm run screenshots` to regenerate every English and Russian README image. `npm run clean:check` previews the cleanup; `npm run clean` removes only allowlisted generated outputs (`dist`, `release`, coverage/test results, Vite cache, and native build folders) after validating that every target remains inside the repository.
 
 Artifacts are written to `release/`:
 

@@ -4,6 +4,7 @@ const { shouldRecord } = require("./privacy.cjs");
 const { sessionize } = require("./sessionizer.cjs");
 const { answerQuestion, questionWindow, suggestSkills } = require("./local-answer.cjs");
 const { normalizeIntentRules } = require("./intent-classifier.cjs");
+const { buildDayBrief, buildReviewQueue } = require("./activity-insights.cjs");
 
 const DEFAULT_SETTINGS = {
   trackingEnabled: true,
@@ -15,6 +16,10 @@ const DEFAULT_SETTINGS = {
   autoStartEnabled: false,
   excludedApps: ["1Password", "Bitwarden", "KeePass"],
   intentRules: [],
+  intentRulesUndo: [],
+  intentRulesChangedAt: null,
+  smartAnalysisEnabled: false,
+  browserCompanionEnabled: false,
   language: "en",
   onboardingComplete: false,
 };
@@ -63,6 +68,10 @@ function normalizeSettings(value, defaults = DEFAULT_SETTINGS) {
     autoStartEnabled: normalizeBoolean(merged.autoStartEnabled, defaults.autoStartEnabled),
     excludedApps: normalizeExcludedApps(merged.excludedApps, defaults.excludedApps),
     intentRules: normalizeIntentRules(merged.intentRules),
+    intentRulesUndo: normalizeIntentRules(merged.intentRulesUndo),
+    intentRulesChangedAt: Number.isFinite(Number(merged.intentRulesChangedAt)) ? Number(merged.intentRulesChangedAt) : null,
+    smartAnalysisEnabled: normalizeBoolean(merged.smartAnalysisEnabled, defaults.smartAnalysisEnabled),
+    browserCompanionEnabled: normalizeBoolean(merged.browserCompanionEnabled, defaults.browserCompanionEnabled),
     language: normalizeLanguage(merged.language),
     onboardingComplete: normalizeBoolean(merged.onboardingComplete, defaults.onboardingComplete),
   };
@@ -98,6 +107,7 @@ class EventStore {
     this.eventsDir = path.join(root, "events");
     this.skillsDir = path.join(root, "skills");
     this.settingsFile = path.join(root, "settings.json");
+    this.smartContextsFile = path.join(root, "smart-contexts.json");
     this.onChange = onChange;
     this.eventsCache = null;
     this.stateCache = null;
@@ -106,6 +116,7 @@ class EventStore {
     ensurePrivateDirectory(this.skillsDir);
     const defaults = { ...DEFAULT_SETTINGS, language: normalizeLanguage(options.defaultLanguage || DEFAULT_SETTINGS.language) };
     this.settings = normalizeSettings(readJson(this.settingsFile, {}), defaults);
+    this.smartRules = normalizeIntentRules(readJson(this.smartContextsFile, []), 2_000).filter((rule) => rule.source === "smart-model");
     this.saveSettings();
     this.prune();
   }
@@ -134,6 +145,43 @@ class EventStore {
     return this.settings;
   }
 
+  analysisRules(manualRules = this.settings.intentRules) {
+    return this.settings.smartAnalysisEnabled
+      ? [...this.smartRules, ...normalizeIntentRules(manualRules)]
+      : normalizeIntentRules(manualRules);
+  }
+
+  replaceSmartRules(value) {
+    this.smartRules = normalizeIntentRules(value, 2_000).filter((rule) => rule.source === "smart-model");
+    const temporary = `${this.smartContextsFile}.tmp`;
+    fs.writeFileSync(temporary, JSON.stringify(this.smartRules, null, 2), { encoding: "utf8", mode: 0o600 });
+    fs.renameSync(temporary, this.smartContextsFile);
+    secureMode(this.smartContextsFile, 0o600);
+    this.invalidate();
+    this.onChange();
+    return this.smartRules;
+  }
+
+  smartAnalysisCandidates(limit = 1_000, maxDays = 30) {
+    const safeLimit = Math.max(1, Math.min(5_000, Number(limit) || 1_000));
+    const safeDays = Math.max(1, Math.min(90, Number(maxDays) || 30));
+    const candidates = new Map();
+    for (const day of this.availableDays().slice(0, safeDays)) {
+      const start = new Date(`${day}T00:00:00`).getTime();
+      if (!Number.isFinite(start)) continue;
+      const end = new Date(start);
+      end.setDate(end.getDate() + 1);
+      const sessions = sessionize(this.loadEventsRange(start, end.getTime()), Math.min(Date.now(), end.getTime()), this.settings.language, this.analysisRules());
+      for (const activity of sessions.flatMap((session) => session.activities || [])) {
+        if (activity.intent !== "unknown" && Number(activity.intentConfidenceScore || 0) >= 0.55) continue;
+        const key = `${String(activity.app || "").toLowerCase()}|${String(activity.title || "").toLowerCase()}|${String(activity.domain || "").toLowerCase()}`;
+        if (!candidates.has(key)) candidates.set(key, { app: activity.app, title: activity.title, domain: activity.domain || "" });
+        if (candidates.size >= safeLimit) return [...candidates.values()];
+      }
+    }
+    return [...candidates.values()];
+  }
+
   eventFile(at) {
     const date = new Date(at);
     const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}-${String(date.getHours()).padStart(2, "0")}`;
@@ -143,6 +191,7 @@ class EventStore {
   append(event) {
     if (!event || typeof event !== "object" || !EVENT_KINDS.has(event.kind)) return false;
     if (!this.settings.collectInputCounts && (event.kind === "input" || event.kind === "click")) return false;
+    if (this.settings.excludePrivateWindows && shouldRecord({ ...event, kind: event.kind }, this.settings) === false) return false;
     const at = new Date(event.at || Date.now());
     if (!Number.isFinite(at.getTime())) return false;
     const rawCount = Number(event.count ?? 1);
@@ -156,8 +205,13 @@ class EventStore {
       count: Number.isFinite(rawCount) ? Math.max(1, Math.min(1_000_000, Math.round(rawCount))) : 1,
       context: ["browser", "messaging", "editor", "other"].includes(event.context) ? event.context : "other",
       tabCount: this.settings.collectBrowserTabCount && Number.isFinite(rawTabCount) ? Math.max(0, Math.min(200, Math.round(rawTabCount))) : 0,
+      domain: sanitizeMetadata(event.domain, 180).toLowerCase(),
+      urlPath: sanitizeMetadata(event.urlPath, 240),
+      source: event.source === "browser-companion" ? "browser-companion" : "native-collector",
+      private: event.private === true,
     };
     if (!shouldRecord(normalized, this.settings)) return false;
+    delete normalized.private;
     const eventFile = this.eventFile(normalized.at);
     fs.appendFileSync(eventFile, `${JSON.stringify(normalized)}\n`, { encoding: "utf8", mode: 0o600 });
     secureMode(eventFile, 0o600);
@@ -236,11 +290,83 @@ class EventStore {
     end.setDate(end.getDate() + 1);
     const now = Date.now();
     const events = this.loadEventsRange(start.getTime(), end.getTime());
+    const sessions = sessionize(events, Math.min(now, end.getTime()), this.settings.language, this.analysisRules());
     return {
       day: start.getTime(),
-      sessions: sessionize(events, Math.min(now, end.getTime()), this.settings.language, this.settings.intentRules),
+      sessions,
+      brief: buildDayBrief(sessions, this.settings.language),
+      reviewQueue: buildReviewQueue(sessions, this.settings.language),
       eventCount: events.length,
     };
+  }
+
+  async previewIntentRules(value) {
+    const nextRules = normalizeIntentRules(value);
+    const currentRules = this.settings.intentRules;
+    const samples = [];
+    const affectedDayKeys = new Set();
+    let affectedActivities = 0;
+    let affectedDurationMs = 0;
+    for (const day of this.availableDays().slice().reverse()) {
+      await new Promise((resolve) => setImmediate(resolve));
+      const start = new Date(`${day}T00:00:00`).getTime();
+      if (!Number.isFinite(start)) continue;
+      const end = new Date(start);
+      end.setDate(end.getDate() + 1);
+      const events = this.loadEventsRange(start, end.getTime());
+      const now = Math.min(Date.now(), end.getTime());
+      const before = sessionize(events, now, this.settings.language, this.analysisRules(currentRules)).flatMap((session) => session.activities);
+      const after = sessionize(events, now, this.settings.language, this.analysisRules(nextRules)).flatMap((session) => session.activities);
+      const previousByKey = new Map(before.map((activity) => [`${activity.start}|${activity.app}|${activity.title}`, activity]));
+      for (const activity of after) {
+        const previous = previousByKey.get(`${activity.start}|${activity.app}|${activity.title}`);
+        if (!previous || previous.intent === activity.intent) continue;
+        affectedActivities += 1;
+        affectedDurationMs += Math.max(0, Number(activity.durationMs || 0));
+        affectedDayKeys.add(day);
+        if (samples.length < 6) samples.push({
+          day,
+          start: activity.start,
+          app: activity.app,
+          title: activity.title,
+          before: previous.intent,
+          after: activity.intent,
+          durationMs: activity.durationMs,
+        });
+      }
+    }
+    return {
+      affectedActivities,
+      affectedDurationMs,
+      affectedDays: affectedDayKeys.size,
+      samples,
+      previousRuleCount: currentRules.length,
+      nextRuleCount: nextRules.length,
+      nextRules,
+    };
+  }
+
+  applyIntentRules(value) {
+    const nextRules = normalizeIntentRules(value);
+    const previous = this.settings.intentRules;
+    this.updateSettings({
+      intentRules: nextRules,
+      intentRulesUndo: previous,
+      intentRulesChangedAt: Date.now(),
+    });
+    return this.state();
+  }
+
+  undoIntentRules() {
+    const previous = this.settings.intentRulesUndo;
+    if (!Array.isArray(previous)) return this.state();
+    const current = this.settings.intentRules;
+    this.updateSettings({
+      intentRules: previous,
+      intentRulesUndo: current,
+      intentRulesChangedAt: Date.now(),
+    });
+    return this.state();
   }
 
   prune() {
@@ -302,12 +428,15 @@ class EventStore {
     const now = Date.now();
     const analysisStart = Math.max(now - 48 * 60 * 60_000, now - this.settings.retentionHours * 60 * 60_000);
     const events = this.loadEventsRange(analysisStart, now + 1);
+    const sessions = sessionize(events, now, this.settings.language, this.analysisRules());
     this.stateCache = {
       settings: this.settings,
-      sessions: sessionize(events, now, this.settings.language, this.settings.intentRules),
+      sessions,
+      brief: buildDayBrief(sessions, this.settings.language),
+      reviewQueue: buildReviewQueue(sessions, this.settings.language),
       eventCount: events.length,
       lastEventAt: events.length ? events.at(-1).at : null,
-      skills: suggestSkills(events, new Date(), this.settings.language, this.settings.intentRules),
+      skills: suggestSkills(events, new Date(), this.settings.language, this.analysisRules()),
       dataPath: this.root,
       retentionCutoff: now - this.settings.retentionHours * 60 * 60_000,
       availableDays: this.availableDays(),
@@ -320,7 +449,10 @@ class EventStore {
     const now = new Date();
     const selected = questionWindow(safeQuestion, now, this.settings.language);
     const events = this.loadEventsRange(selected.start, selected.end + 1);
-    return answerQuestion(safeQuestion, events, now, this.settings.language, this.settings.intentRules);
+    const comparisonEvents = selected.comparison
+      ? this.loadEventsRange(selected.comparison.start, selected.comparison.end + 1)
+      : [];
+    return answerQuestion(safeQuestion, events, now, this.settings.language, this.analysisRules(), { comparisonEvents });
   }
 
   exportSkill(skill) {

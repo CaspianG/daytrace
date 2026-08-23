@@ -2,6 +2,49 @@
 
 All notable changes to Daytrace are documented here.
 
+## [0.5.6] - 2026-08-23
+
+### Trustworthy purpose analysis
+
+- Removed the fallback that silently changed ambiguous activity into Personal. Observed app/title/domain metadata and inferred purpose are now separate fields, with visible evidence, numeric confidence, and a low-confidence review queue.
+- Purpose corrections show a preview with affected activities, duration, days, and samples before applying. The previous local rule set can be restored with Undo, and exact browser/chat corrections cannot recolor unrelated activity.
+- Safari Private Browsing and explicit private/incognito signals are rejected, while unsupported macOS-only controls such as numeric browser-tab counting are hidden instead of shown as non-working settings.
+- Added a versioned 52-case synthetic RU/EN accuracy set across browsers, messengers, IDEs, games, video, documents, meetings, and learning. CI separately gates coverage, precision, per-language correctness, and false certainty on ambiguous cases.
+
+### Daily intelligence and local questions
+
+- The selected-day brief now identifies observed themes, likely completed items, open loops, long interruptions, and returns after breaks without inventing message or page content.
+- Local question parsing now supports explicit dates, Russian and English month names, relative ranges, and period comparisons such as this week versus last week. The base answer engine remains deterministic and runs without an LLM.
+- Added an optional RU/EN classifier pack pinned to the installed release and verified against both the release checksum and an app-embedded SHA-256. It downloads separately, receives only already stored safe app/title/domain context, runs a bounded batch after two minutes of idle time or on demand, and exits afterward.
+
+### Browser context, portability, and diagnostics
+
+- Added an optional Chrome/Edge/Brave/Vivaldi companion using native messaging. It reports only the foreground tab title, domain, safe path, and private flag; credentials, query strings, fragments, page contents, background tabs, and Incognito contexts are rejected.
+- Added streaming JSON/CSV exports and password-protected `.daytrace` backup/restore using scrypt, gzip, and AES-256-GCM. CSV formula prefixes are neutralized, restore has decoded-size and record-count limits, and staged rollback preserves its private recovery directory instead of deleting the last good data if a filesystem rollback itself fails.
+- Added self-diagnostics for storage, native collector status and executable, macOS Accessibility, active titles, idle boundaries, private filtering, autostart, browser companion, and the optional model.
+- Added a safe allowlisted `npm run clean` command for generated build/test/native artifacts. It validates every resolved target remains inside the repository and never removes source, local journals, or arbitrary directories.
+
+### Performance and interface
+
+- The smart classifier is disabled by default, runs only in a short-lived idle worker, and never stays resident. Browser companion transport is event-driven and now uses a debounced one-shot native host instead of keeping a second Electron process alive; retained history remains lazy and smart-context batches are bounded.
+- Hardware acceleration is enabled by default to reduce renderer CPU, with `--disable-gpu` or `DAYTRACE_SOFTWARE_RENDERING=1` retained as a white-window compatibility fallback.
+- Added fully localized English and Russian controls and screenshots for evidence, review, smart analysis, browser context, diagnostics, export, encrypted backup, and restore. Embedded local fonts are now permitted by the renderer CSP while script, frame, object, media, and network restrictions remain unchanged.
+
+### Crash-safe Windows updates
+
+- Windows updates no longer assume that a successfully started installer or process means the new application works. The verified Setup payload is extracted and validated in an isolated sibling staging directory before Daytrace closes.
+- The helper checks archive paths, extracted size and file count, reparse points, available disk space, required packaged files, and the exact `Daytrace.exe` product version before accepting the transaction.
+- A parent/helper preparation handshake prevents the desktop process from quitting until the replacement is ready. The installed folder is then renamed to a unique backup, the staged application takes the original path, and the previous version is retained until the replacement proves readiness.
+- The replacement must render a non-empty visible window, reach the preload/IPC/local-state bridge, return a one-time 256-bit token from the private update directory, and remain alive before the backup is removed.
+- Extraction failures, locked folders, startup crashes, missing readiness, and immediate exits keep or restore the previous installation and reopen it automatically. Rollback also terminates exact-path Electron and native-tracker processes that could hold installation files open.
+- The existing Windows uninstaller and icon are preserved so Start Menu/Desktop shortcuts, uninstall behavior, the installation path, and local activity data remain intact.
+- Protected/custom installations, insufficient disk space, or unavailable Windows archive support fail safely to the already SHA-256-verified interactive Setup while the existing app remains available. The fallback now has correct English and Russian Windows-specific guidance instead of macOS DMG text.
+
+### Verification
+
+- Added real PowerShell integration tests for preflight failure without mutation, readiness timeout rollback, a successful ready/stable replacement, paths containing spaces, and preservation of installer-maintenance files.
+- The post-package Windows smoke now extracts `Daytrace.exe` and `resources/app.asar` from the actual NSIS Setup and compares their SHA-256 values with `win-unpacked`, proving that the published artifact contains the exact payload used by transactional updates.
+
 ## [0.5.5] - 2026-08-20
 
 ### Crash-safe macOS updates

@@ -64,6 +64,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with: { path: release, merge-multiple: true }
+      - name: Stage the optional version-pinned local classifier pack
+        run: cp models/daytrace-smart-v1.json models/daytrace-smart-v1.json.sha256 release/
       - name: Publish SHA-256 manifest for verified in-app updates
         run: cd release && sha256sum Daytrace-* > SHA256SUMS.txt
       - uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3

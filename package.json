@@ -1,6 +1,6 @@
 {
   "name": "daytrace-local",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "private": true,
   "description": "Private, fully local activity timeline and workday recall for Windows and macOS.",
   "author": "Daytrace contributors",
@@ -36,8 +36,12 @@
     "dist:mac:release": "node scripts/require-apple-signing.mjs && npm run test && npm run build:tracker:mac && npm run build:brand && npm run build && npm run test:desktop && electron-builder --mac dmg zip --universal --publish never -c.mac.forceCodeSigning=true && bash scripts/bundle-macos-install-guide.sh && bash scripts/verify-macos-release.sh",
     "build:brand": "node scripts/build-brand-assets.mjs",
     "screenshots": "npm run build && electron scripts/capture-screenshots.cjs",
+    "clean:check": "node scripts/clean-artifacts.cjs --dry-run",
+    "clean": "node scripts/clean-artifacts.cjs",
+    "model:verify": "node scripts/verify-smart-model.mjs",
     "preview": "vite preview",
-    "test": "node --test tests/privacy.test.mjs tests/sessionizer.test.mjs tests/intent-classifier.test.mjs tests/update-service.test.mjs tests/accessibility-service.test.mjs tests/mac-install-service.test.mjs tests/mac-update-service.test.mjs tests/event-store.test.mjs tests/localization.test.mjs tests/runtime-security.test.mjs tests/native-collector-contract.test.mjs tests/release-docs.test.mjs",
+    "test": "npm run model:verify && node --test tests/privacy.test.mjs tests/sessionizer.test.mjs tests/intent-classifier.test.mjs tests/intent-accuracy.test.mjs tests/activity-insights.test.mjs tests/rule-preview.test.mjs tests/local-answer-dates.test.mjs tests/browser-companion.test.mjs tests/smart-analysis.test.mjs tests/data-portability.test.mjs tests/diagnostics.test.mjs tests/update-service.test.mjs tests/accessibility-service.test.mjs tests/mac-install-service.test.mjs tests/mac-update-service.test.mjs tests/windows-update-service.test.mjs tests/event-store.test.mjs tests/localization.test.mjs tests/runtime-security.test.mjs tests/native-collector-contract.test.mjs tests/release-docs.test.mjs",
+    "test:accuracy": "node --test tests/intent-accuracy.test.mjs",
     "test:sites": "npm run build && node --test tests/sites-worker.test.mjs",
     "test:desktop": "node scripts/run-desktop-smoke.cjs",
     "test:packaged:win": "node scripts/run-packaged-windows-smoke.cjs"
@@ -94,6 +98,15 @@
       {
         "from": "LICENSE",
         "to": "LICENSE"
+      }
+    ],
+    "extraResources": [
+      {
+        "from": "browser-extension",
+        "to": "browser-extension",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "directories": {
@@ -185,12 +198,13 @@
       ]
     },
     "nsis": {
+      "include": "build/installer.nsh",
       "artifactName": "Daytrace-Setup-${version}-${arch}.${ext}",
       "oneClick": false,
       "perMachine": false,
       "allowElevation": true,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
+      "createDesktopShortcut": false,
       "createStartMenuShortcut": true,
       "shortcutName": "Daytrace",
       "runAfterFinish": true,

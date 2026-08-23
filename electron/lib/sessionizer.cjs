@@ -31,6 +31,7 @@ const FOCUS_LABELS = {
 
 const { isDaytraceEvent, isSystemNoise } = require("./privacy.cjs");
 const { INTENT_LABELS, contextKey, inferIntentDetails } = require("./intent-classifier.cjs");
+const { annotateSessions } = require("./activity-insights.cjs");
 
 const SIGNAL_TAIL_MS = 75_000;
 const MAX_CONTINUOUS_SIGNAL_GAP_MS = 6 * 60_000;
@@ -84,12 +85,13 @@ function safeTitle(title, app, language = "ru") {
     .slice(0, 140);
 }
 
-function setIntent(activity, intent, confidence, reason, evidence, intentLabels) {
+function setIntent(activity, intent, confidence, reason, evidence, intentLabels, score) {
   activity.intent = intent;
   activity.intentLabel = intentLabels[intent];
   activity.intentConfidence = confidence;
   activity.intentReason = reason;
   activity.intentEvidence = evidence;
+  if (Number.isFinite(Number(score))) activity.intentConfidenceScore = Number(score);
 }
 
 const AUTOMATIC_EVIDENCE_REASONS = new Set(["window-title", "service", "application-category"]);
@@ -168,27 +170,6 @@ function applyStableSessionContext(session, intentLabels) {
   return changed;
 }
 
-function applyBestEffortFallback(sessions, intentLabels) {
-  for (const activity of sessions.flatMap((session) => session.activities)) {
-    if (activity.intent !== "unknown" || activity.intentReason === "custom-rule") continue;
-    const app = `${activity.app || ""} ${activity.process || ""}`.toLowerCase();
-    let intent = "personal";
-    let reason = "best-effort-application";
-    if (/(?:chatgpt|claude|perplexity|copilot)/i.test(app) || ["development", "planning", "design", "audio", "remote", "files"].includes(activity.focus)) {
-      intent = "work";
-      reason = "best-effort-work-app";
-    } else if (activity.focus === "research") {
-      intent = "learning";
-      reason = "best-effort-research";
-    } else if (/(?:telegram|whatsapp|signal|discord|viber|messenger)/i.test(app) || activity.context === "messaging") {
-      reason = "best-effort-messaging";
-    } else if (/(?:chrome|edge|firefox|brave|opera|vivaldi|safari|browser)/i.test(app) || activity.context === "browser") {
-      reason = "best-effort-browser";
-    }
-    setIntent(activity, intent, "low", reason, activity.title || activity.app, intentLabels);
-  }
-}
-
 function sessionize(events, now = Date.now(), language = "ru", intentRules = []) {
   const lang = normalizeLanguage(language);
   const labels = FOCUS_LABELS[lang];
@@ -219,6 +200,9 @@ function sessionize(events, now = Date.now(), language = "ru", intentRules = [])
       process: event.process || "",
       title: safeTitle(event.title || "", app, lang),
       context: event.context || "other",
+      domain: event.domain || "",
+      urlPath: event.urlPath || "",
+      source: event.source || "native-collector",
       tabCount: Number(event.tabCount || 0),
       clicks: 0,
       inputs: 0,
@@ -246,6 +230,9 @@ function sessionize(events, now = Date.now(), language = "ru", intentRules = [])
       if (active && active.app === nextApp && nextTitle === active.title) {
         active.lastSignal = at;
         if (Number(event.tabCount || 0) > active.tabCount) active.tabCount = Number(event.tabCount);
+        if (event.domain) active.domain = event.domain;
+        if (event.urlPath) active.urlPath = event.urlPath;
+        if (event.source === "browser-companion") active.source = event.source;
         continue;
       }
       closeActive(at);
@@ -257,6 +244,9 @@ function sessionize(events, now = Date.now(), language = "ru", intentRules = [])
     if (event.app && canonicalApp(event, lang) !== active.app) continue;
     active.lastSignal = at;
     if (event.context) active.context = event.context;
+    if (event.domain) active.domain = event.domain;
+    if (event.urlPath) active.urlPath = event.urlPath;
+    if (event.source === "browser-companion") active.source = event.source;
     if (Number(event.tabCount || 0) > 0) active.tabCount = Number(event.tabCount);
     if (event.kind === "click") active.clicks += Number(event.count || 1);
     if (event.kind === "input") active.inputs += Number(event.count || 1);
@@ -285,7 +275,7 @@ function sessionize(events, now = Date.now(), language = "ru", intentRules = [])
     activity.focusConfidence = classification.confidence;
     activity.focusReason = classification.reason;
     const intentClassification = inferIntentDetails(activity, intentRules);
-    setIntent(activity, intentClassification.intent, intentClassification.confidence, intentClassification.reason, intentClassification.evidence, intentLabels);
+    setIntent(activity, intentClassification.intent, intentClassification.confidence, intentClassification.reason, intentClassification.evidence, intentLabels, intentClassification.score);
     const previous = sessions.at(-1);
     const gap = previous ? activity.start - previous.end : Infinity;
     if (previous && gap < 8 * 60_000 && activity.start - previous.start < 45 * 60_000) {
@@ -314,8 +304,6 @@ function sessionize(events, now = Date.now(), language = "ru", intentRules = [])
   for (const session of sessions) contextualizeSession(session, intentLabels);
   learnRepeatedContexts(sessions, intentLabels);
   for (const session of sessions) applyStableSessionContext(session, intentLabels);
-  applyBestEffortFallback(sessions, intentLabels);
-
   for (const session of sessions) {
     const totals = new Map();
     const intentTotals = new Map();
@@ -336,7 +324,7 @@ function sessionize(events, now = Date.now(), language = "ru", intentRules = [])
     session.intentBreakdown = rankedIntents.map(([intent, durationMs]) => ({ intent, label: intentLabels[intent], durationMs }));
     session.intentConfidence = session.activities.some((activity) => activity.intentConfidence === "low") ? "low" : "high";
   }
-  return sessions;
+  return annotateSessions(sessions, lang);
 }
 
 module.exports = { FOCUS_LABELS, inferFocus, inferFocusDetails, normalizeLanguage, sessionize };

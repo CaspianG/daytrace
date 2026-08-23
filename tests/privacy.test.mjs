@@ -4,6 +4,8 @@ import privacy from "../electron/lib/privacy.cjs";
 
 test("private browser windows are filtered", () => {
   assert.equal(privacy.shouldRecord({ app: "Google Chrome", title: "New Incognito Tab - Google Chrome" }, { trackingEnabled: true, excludePrivateWindows: true, excludedApps: [] }), false);
+  assert.equal(privacy.shouldRecord({ app: "Safari", title: "Private Browsing" }, { trackingEnabled: true, excludePrivateWindows: true, excludedApps: [] }), false);
+  assert.equal(privacy.shouldRecord({ app: "Microsoft Edge", title: "Ordinary title", private: true }, { trackingEnabled: true, excludePrivateWindows: true, excludedApps: [] }), false);
 });
 
 test("excluded applications are filtered before writes", () => {
