@@ -110,6 +110,17 @@ test("Windows update helper backs up, verifies readiness, and contains rollback 
   assert.ok(script.indexOf("new-version-ready") < script.indexOf("Remove-DirectoryBestEffort $backupDirectory"));
 });
 
+test("Windows updater waits for a slow helper to stop before cleanup", async () => {
+  const child = { exitCode: null, signalCode: null };
+  const finishing = setTimeout(() => { child.exitCode = 69; }, 150);
+  try {
+    assert.equal(await windowsUpdater.waitForChildExit(child, 2_000), true);
+    assert.equal(child.exitCode, 69);
+  } finally {
+    clearTimeout(finishing);
+  }
+});
+
 test("desktop confirms Windows update only after renderer, preload, IPC, and visible window", () => {
   const rendererCheck = mainSource.indexOf("Renderer loaded without visible content");
   const bridgeCheck = mainSource.indexOf("Renderer could not reach the local Daytrace service");

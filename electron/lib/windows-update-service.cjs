@@ -372,6 +372,16 @@ async function waitForExactToken(filePath, token, timeoutMs, fileSystem = fs, ch
   throw new Error("windows-update-helper-not-prepared");
 }
 
+async function waitForChildExit(childProcess, timeoutMs) {
+  if (!childProcess) return true;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (childProcess.exitCode !== null || childProcess.signalCode !== null) return true;
+    await delay(50);
+  }
+  return childProcess.exitCode !== null || childProcess.signalCode !== null;
+}
+
 function defaultPowerShellPath(environment = process.env, fileSystem = fs) {
   const systemRoot = String(environment.SystemRoot || environment.WINDIR || "");
   if (!systemRoot) return "";
@@ -416,6 +426,7 @@ async function prepareWindowsUpdate({
 
   let updateRoot;
   let realInstaller;
+  let helperProcess = null;
   try {
     updateRoot = fileSystem.realpathSync(tempDir);
     realInstaller = fileSystem.realpathSync(installerPath);
@@ -464,12 +475,20 @@ async function prepareWindowsUpdate({
       [WINDOWS_UPDATE_ENV.logFile]: path.resolve(logFile),
       [WINDOWS_UPDATE_ENV.readinessTimeout]: String(readinessTimeoutMs),
     };
-    const helperProcess = await detach(powershellPath, ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", helperPath], { env: helperEnvironment });
+    helperProcess = await detach(powershellPath, ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", helperPath], { env: helperEnvironment });
     await waitForExactToken(preparedFile, readyToken, preparationTimeoutMs, fileSystem, helperProcess);
     fileSystem.writeFileSync(proceedFile, readyToken, { encoding: "utf8", flag: "wx", mode: 0o600 });
     return { backupDirectory, preparedFile, proceedFile, readyFile, stagingDirectory, targetExecutable, workDirectory };
   } catch (error) {
-    fileSystem.rmSync(workDirectory, { recursive: true, force: true });
+    // A spawned PowerShell process may not have opened its -File script yet on
+    // a busy machine. Never remove that script from underneath a live helper.
+    // The helper cannot mutate the installation without the proceed token.
+    let helperStopped = await waitForChildExit(helperProcess, Math.min(Math.max(preparationTimeoutMs, 5_000), 15_000));
+    if (!helperStopped && typeof helperProcess?.kill === "function") {
+      try { helperProcess.kill(); } catch { }
+      helperStopped = await waitForChildExit(helperProcess, 2_000);
+    }
+    if (helperStopped) fileSystem.rmSync(workDirectory, { recursive: true, force: true });
     throw error;
   }
 }
@@ -483,5 +502,6 @@ module.exports = {
   defaultWindowsTarPath,
   getWindowsUpdateReadyRequest,
   prepareWindowsUpdate,
+  waitForChildExit,
   waitForExactToken,
 };
