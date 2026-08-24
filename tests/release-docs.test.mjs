@@ -150,6 +150,7 @@ test("macOS packages and checks a named Accessibility collector with its own exa
   assert.match(verifyMacPackageScript, /lipo -archs/);
   assert.match(verifyMacPackageScript, /ditto -x -k/);
   assert.match(verifyMacPackageScript, /hdiutil attach/);
+  assert.match(verifyMacPackageScript, /signature_details="\$\(codesign -dvvv/);
   assert.match(verifyMacPackageScript, /IF MAC BLOCKS DAYTRACE - OPEN THIS\.txt/);
   assert.match(verifyMacPackageScript, /mktemp -d "\$SMOKE_ROOT\/daytrace-desktop-smoke-packaged-XXXXXX"/);
   assert.match(verifyMacPackageScript, /--check-accessibility/);

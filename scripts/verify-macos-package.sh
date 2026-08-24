@@ -57,7 +57,9 @@ verify_collector() {
     test "$requirement" = "$COLLECTOR_REQUIREMENT"
   fi
   if [[ -n "${DAYTRACE_COMMUNITY_SIGNING_AUTHORITY:-}" ]]; then
-    codesign -dvvv "$collector_app" 2>&1 | grep -Fq "Authority=$DAYTRACE_COMMUNITY_SIGNING_AUTHORITY"
+    local signature_details
+    signature_details="$(codesign -dvvv "$collector_app" 2>&1)"
+    grep -Fq "Authority=$DAYTRACE_COMMUNITY_SIGNING_AUTHORITY" <<<"$signature_details"
   fi
 }
 
