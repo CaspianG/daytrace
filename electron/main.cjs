@@ -20,12 +20,14 @@ const { AnalysisQualityService } = require("./lib/analysis-quality-service.cjs")
 const { createEncryptedBackup, exportCsv, exportJson, restoreEncryptedBackup } = require("./lib/data-portability.cjs");
 const { platformCapabilities, runDiagnostics } = require("./lib/diagnostics.cjs");
 const { createRecoveryBackoff } = require("./lib/runtime-recovery.cjs");
+const { compactRendererState } = require("./lib/renderer-state.cjs");
 
 if (process.argv.includes("--disable-gpu") || process.env.DAYTRACE_SOFTWARE_RENDERING === "1") app.disableHardwareAcceleration();
 const BACKGROUND_PERFORMANCE_SMOKE = process.argv.includes("--daytrace-background-performance-smoke-test");
 const RUNTIME_RECOVERY_SMOKE = process.argv.includes("--daytrace-runtime-recovery-smoke-test");
 const SEMANTIC_SMOKE_TEST = process.argv.includes("--daytrace-semantic-smoke-test");
-const SMOKE_TEST = process.argv.includes("--daytrace-smoke-test") || SEMANTIC_SMOKE_TEST;
+const NAVIGATION_PERFORMANCE_SMOKE = process.argv.includes("--daytrace-navigation-performance-smoke-test");
+const SMOKE_TEST = process.argv.includes("--daytrace-smoke-test") || SEMANTIC_SMOKE_TEST || NAVIGATION_PERFORMANCE_SMOKE;
 const RESET_QUICK_TOUR = process.argv.includes("--daytrace-reset-quick-tour");
 const ISOLATED_TEST_RUNTIME = SMOKE_TEST || BACKGROUND_PERFORMANCE_SMOKE || RUNTIME_RECOVERY_SMOKE;
 const smokeTempRoot = fs.realpathSync(app.getPath("temp"));
@@ -223,8 +225,13 @@ function analysisRuntimeStatus() {
 function state() {
   const browserStatus = browserCompanion?.status() || { running: false };
   const smartStatus = analysisRuntimeStatus();
+  // Detailed sessions are loaded through daytrace:get-day. Sending the whole
+  // rolling 48-hour timeline on every heartbeat made the renderer parse and
+  // reconcile several megabytes of unchanged data, which caused periodic
+  // stalls and temporary overview substitutions.
+  const rendererStoreState = compactRendererState(store.state());
   return {
-    ...store.state(),
+    ...rendererStoreState,
     runtime: {
       platform: process.platform,
       packaged: app.isPackaged,
@@ -767,6 +774,65 @@ async function createWindow(showWindow = true) {
   setTimeout(startTracker, 400).unref();
   return window;
 }
+
+async function runNavigationPerformanceSmoke() {
+  const result = await mainWindow.webContents.executeJavaScript(`(async () => {
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const waitFor = async (selector, timeout = 10000) => {
+      const deadline = performance.now() + timeout;
+      while (!document.querySelector(selector) && performance.now() < deadline) await sleep(10);
+      return document.querySelector(selector);
+    };
+    await waitFor('.history-page:not(.history-page-loading)');
+    const initialDate = document.querySelector('.date-copy h1')?.textContent?.trim() || '';
+    document.querySelector('button[title="Previous day"], button[title="Предыдущий день"]')?.click();
+    const dayDeadline = performance.now() + 10000;
+    while (performance.now() < dayDeadline) {
+      const nextDate = document.querySelector('.date-copy h1')?.textContent?.trim() || '';
+      if (nextDate && nextDate !== initialDate && document.querySelector('.history-page:not(.history-page-loading)')) break;
+      await sleep(10);
+    }
+    const initialSummary = document.querySelector('.summary-answer')?.textContent?.trim() || '';
+    const initialActivities = document.querySelectorAll('.activity').length;
+    const initialSessions = document.querySelectorAll('.timeline-session').length;
+    document.querySelector('.main-nav button[aria-label="Settings"], .main-nav button[aria-label="Настройки"]')?.click();
+    await waitFor('.subpage.narrow-page');
+    await sleep(100);
+    const longTasks = [];
+    const observer = new PerformanceObserver((list) => longTasks.push(...list.getEntries().map((entry) => entry.duration)));
+    try { observer.observe({ entryTypes: ['longtask'] }); } catch { }
+    const startedAt = performance.now();
+    document.querySelector('.main-nav button[aria-label="Day overview"], .main-nav button[aria-label="Обзор дня"]')?.click();
+    const summaries = [];
+    let readyAt = null;
+    for (let index = 0; index < 90; index += 1) {
+      if (readyAt === null && document.querySelector('.history-page:not(.history-page-loading)')) readyAt = performance.now();
+      const summary = document.querySelector('.summary-answer')?.textContent?.trim() || '';
+      if (summary && summaries.at(-1) !== summary) summaries.push(summary);
+      await sleep(16);
+    }
+    observer.disconnect();
+    const rendererState = await window.daytrace.getState();
+    return {
+      navigationMs: Math.round((readyAt || performance.now()) - startedAt),
+      initialSummary,
+      summaries,
+      initialActivities,
+      initialSessions,
+      finalActivities: document.querySelectorAll('.activity').length,
+      finalSessions: document.querySelectorAll('.timeline-session').length,
+      maxLongTaskMs: Math.round(Math.max(0, ...longTasks)),
+      stateBytes: new TextEncoder().encode(JSON.stringify(rendererState)).length,
+      stateSessions: rendererState.sessions?.length || 0,
+    };
+  })()`);
+  const stableSummary = result.initialSummary && result.summaries.length === 1 && result.summaries[0] === result.initialSummary;
+  if (!stableSummary || result.navigationMs > 1_000 || result.maxLongTaskMs > 500 || result.initialActivities > 120 || result.finalActivities > 120 || result.stateBytes > 250_000 || result.stateSessions !== 0) {
+    throw new Error(`Navigation performance regression: ${JSON.stringify(result)}`);
+  }
+  startupLog(`navigation-performance-smoke-passed ${JSON.stringify(result)}`);
+  return result;
+}
 async function openWindow(showWindow = true) {
   clearTimeout(releaseTimer);
   if (showWindow) semanticBackgroundWindowOwned = false;
@@ -1075,8 +1141,8 @@ function registerIpc() {
   });
   handleIpc("daytrace:set-exclusions", (apps) => { store.updateSettings({ excludedApps: apps }); return state(); });
   handleIpc("daytrace:preview-intent-rules", (rules) => store.previewIntentRules(Array.isArray(rules) ? rules : []));
-  handleIpc("daytrace:set-intent-rules", (rules) => { const next = store.applyIntentRules(Array.isArray(rules) ? rules : []); analysisQuality?.schedule(50); return next; });
-  handleIpc("daytrace:undo-intent-rules", () => { const next = store.undoIntentRules(); analysisQuality?.schedule(50); return next; });
+  handleIpc("daytrace:set-intent-rules", (rules) => { store.applyIntentRules(Array.isArray(rules) ? rules : []); analysisQuality?.schedule(50); return state(); });
+  handleIpc("daytrace:undo-intent-rules", () => { store.undoIntentRules(); analysisQuality?.schedule(50); return state(); });
   handleIpc("daytrace:set-language", (language) => { store.updateSettings({ language: String(language || "").toLowerCase().startsWith("ru") ? "ru" : "en" }); if (tray) tray.setToolTip(mainText().tooltip); updateTrayMenu(); return state(); });
   handleIpc("daytrace:complete-onboarding", (selection) => {
     const input = selection && typeof selection === "object" ? selection : { language: selection };
@@ -1183,6 +1249,21 @@ if (nativeMessagingOrigin) {
     try {
       Menu.setApplicationMenu(null);
       store = new EventStore(DATA_ROOT, broadcastState, { defaultLanguage: app.getLocale() });
+      if (NAVIGATION_PERFORMANCE_SMOKE) {
+        store.updateSettings({ language: "en", onboardingComplete: true, onboardingVersion: CURRENT_ONBOARDING_VERSION, quickTourComplete: true, trackingEnabled: true, retentionHours: 48 });
+        const previousDay = new Date();
+        previousDay.setDate(previousDay.getDate() - 1);
+        previousDay.setHours(9, 0, 0, 0);
+        const base = previousDay.getTime();
+        for (let index = 0; index < 900; index += 1) {
+          const at = base + index * 6_000;
+          const appName = `Performance App ${index % 24}`;
+          const title = `Stable context ${index}`;
+          store.append({ at: new Date(at).toISOString(), kind: "foreground", app: appName, title });
+          store.append({ at: new Date(at + 3_000).toISOString(), kind: "heartbeat", app: appName, title });
+        }
+        store.updateSettings({ trackingEnabled: false });
+      }
       if (RESET_QUICK_TOUR && store.settings.onboardingComplete) {
         store.updateSettings({ quickTourComplete: false });
         startupLog("quick-tour-reset-for-this-launch");
@@ -1271,6 +1352,10 @@ if (nativeMessagingOrigin) {
         await new Promise((resolve) => setTimeout(resolve, 175));
         if (semanticWindow && !semanticWindow.isDestroyed()) throw new Error("Semantic background window remained resident after analysis");
         startupLog(`semantic-desktop-smoke-passed refined=${result.refined} changed=${result.changed} durationMs=${Date.now() - semanticStartedAt} baselinePrivateMiB=${baselinePrivateMiB.toFixed(1)} peakPrivateMiB=${peakPrivateMiB.toFixed(1)}`);
+        isQuitting = true; app.exit(0); return;
+      }
+      if (NAVIGATION_PERFORMANCE_SMOKE) {
+        await runNavigationPerformanceSmoke();
         isQuitting = true; app.exit(0); return;
       }
       if (SMOKE_TEST) { startupLog("desktop-smoke-passed"); isQuitting = true; app.exit(0); return; }

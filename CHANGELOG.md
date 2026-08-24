@@ -4,6 +4,15 @@ All notable changes to Daytrace are documented here.
 
 ## [Unreleased]
 
+## [0.5.11] - 2026-08-25
+
+- Fixed Overview navigation stalls on retained histories with thousands of activities. The renderer now receives a compact shell state and loads only the selected day instead of parsing the complete rolling 48-hour timeline after every heartbeat.
+- Removed the transient cross-day substitution that could briefly show unrelated metrics, contexts, and summary text before reverting. Selected-day results now use a revision-aware persistent cache and stale responses cannot overwrite a newer request.
+- Long sessions render activities in bounded 12-row batches with viewport-driven continuation, while off-screen sessions use browser containment. A loading surface is shown only when no correct cached day exists.
+- Added a desktop regression gate that seeds 900 foreground contexts, navigates away and back, and rejects summary flicker, more than 120 eager activity rows, renderer state over 250 KB, a navigation delay over one second, or a long task over 500 ms.
+- The final Windows package gate passed at 0.023% average sampled Electron CPU, 84.9 MiB peak private memory, and 0.1 MiB short-run growth; the packaged renderer/preload/IPC check opened in 1.664 seconds.
+- Fixed intent-rule and Undo IPC responses so they always return the complete runtime state shape before the selected day is refreshed.
+
 ## [0.5.10] - 2026-08-24
 
 - Repairs unsigned universal macOS packages by re-sealing the named collector after Electron's x64/arm64 merge and before both artifacts are created, while leaving the future Developer ID path untouched.

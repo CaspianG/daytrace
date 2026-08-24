@@ -1,6 +1,12 @@
 ## Downloads
 
-### What is new in v0.5.10
+### What is new in v0.5.11
+
+- Fixed the apparent freeze when returning from Settings to Overview on a large local history. Daytrace now sends a compact shell state to the renderer and requests only the selected day.
+- Fixed the split-second context, chart, and summary substitution. A revision-aware day cache keeps the last correct view visible, background refreshes never clear it, and stale IPC replies cannot win a race.
+- Large sessions now mount activity in 12-row batches and continue near the viewport. The new release gate seeds 900 contexts and rejects flicker, eager oversized DOM output, renderer payload regressions, slow navigation, and long tasks.
+- In a validated isolated release smoke, Overview reopened in 18 ms, the longest renderer task was 116 ms, only 24 activity rows were mounted, and the shell state was 16.9 KB. The retained verification profile dropped from about 2.3 MB to 57 KB. These are bounded regression measurements, not a hardware-independent promise.
+- The final Windows package gate passed at 0.023% average sampled Electron CPU, 84.9 MiB peak private memory, and 0.1 MiB short-run growth. The packaged renderer, preload, IPC, local-state, browser-host, and transactional-update payload checks all passed.
 
 - The unsigned universal macOS build now re-seals `Daytrace Collector.app` after Electron combines x64 and arm64. Release checks open the final ZIP and mount the final DMG to verify the helper signature and bilingual install guide before publication.
 

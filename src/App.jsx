@@ -4,6 +4,7 @@ import { SiFigma, SiGooglechrome, SiGmail, SiTelegram } from "react-icons/si";
 import { FaEdge } from "react-icons/fa6";
 import { VscVscode } from "react-icons/vsc";
 import sageBranch from "./assets/sage-branch.png";
+import { createDayViewCache, dayViewRevision, nextActivityLimit, normalizeDayTimestamp, selectedDayRefreshToken } from "./day-view-cache.js";
 import { formatDay, formatDuration, formatTime, normalizeLanguage, text, translations } from "./i18n.js";
 import { runSemanticAnalysis } from "./semantic-analysis-client.js";
 import { applyDocumentTheme, effectiveTheme, normalizeTheme, observeSystemTheme, transitionDocumentTheme } from "./theme.js";
@@ -37,6 +38,8 @@ const INTENT_LABELS = {
 const RETENTION_OPTIONS = [48, 7 * 24, 30 * 24, 90 * 24, 365 * 24];
 const CURRENT_ONBOARDING_VERSION = 2;
 const CONTEXT_SENSITIVE_APPS = /(?:chrome|edge|firefox|brave|opera|vivaldi|safari|browser|telegram|whatsapp|signal|discord|viber|messenger|chatgpt|claude|perplexity|copilot)/i;
+const dayViewCache = createDayViewCache(32);
+const ACTIVITY_BATCH_SIZE = 12;
 const DEMO_ANALYSIS_QUALITY = {
   benchmark: {
     dataset: "Daytrace semantic RU/EN visible-title set",
@@ -97,7 +100,7 @@ function demoState(language = demoLanguage(), onboardingComplete = new URLSearch
   })) : [];
   return {
     settings: { trackingEnabled: true, retentionHours: 48, excludePrivateWindows: true, collectWindowTitles: true, collectInputCounts: true, collectBrowserTabCount: true, analysisEngine: previewEngine, smartAnalysisEnabled: previewEngine !== "builtin", browserCompanionEnabled: false, autoStartEnabled: false, theme: normalizeTheme(params.get("theme")), excludedApps: ["1Password", "Bitwarden", "KeePass"], intentRules: [{ id: "demo-friends", match: lang === "ru" ? "Друзья" : "Friends", intent: "personal" }], intentRulesUndo: [], language: lang, onboardingComplete, onboardingVersion: onboardingComplete ? CURRENT_ONBOARDING_VERSION : Number(params.get("onboardingVersion") || 0), quickTourComplete: params.get("tour") !== "1", accessibilityOnboardingDismissed: false, reviewLearningExplained: false, reviewReminderSnoozedUntil: null, reviewReminderLastCount: 0 },
-    runtime: { platform: macPermissionPreview ? "darwin" : updatePreview || desktopPreview ? "win32" : "browser", trackerStatus: macPermissionPreview ? "permission-required" : "running", accessibilityTrusted: !macPermissionPreview, accessibilityMainTrusted: true, accessibilityTarget: "Daytrace Collector", autoStartSupported: desktopPreview, autoStartEnabled: false, capabilities: { browserTabCount: Boolean(updatePreview || desktopPreview), browserCompanion: Boolean(updatePreview || desktopPreview), smartAnalysis: true, encryptedBackup: true }, browserCompanion: { running: desktopPreview }, smartAnalysis: { engine: previewEngine, installed: true, running: false, version: "built-in", signal: { installed: false, running: false, sizeBytes: 6391, updateAvailable: false, lastResult: { status: "never", candidates: 0, refined: 0, changed: 0 } }, semantic: { installed: false, running: false, downloading: false, progress: 0, sizeBytes: 49821594, version: "1.0.0", languages: ["ru", "en"], quality: { benchmark: { labelable: 48, precision: 35 / 37, coverage: 37 / 48 }, holdout: { precision: 20 / 22, coverage: 22 / 32 } }, lastResult: { status: "never", candidates: 0, refined: 0, changed: 0 } }, quality: DEMO_ANALYSIS_QUALITY }, diagnostics: null, update: { status: updateStatus, currentVersion: "0.5.10", latestVersion: updatePreview ? "0.6.0" : "0.5.10", checkedAt: Date.now(), progress: updateStatus === "downloading" ? 64 : ["ready", "installing", "restarting"].includes(updateStatus) ? 100 : 0 } },
+    runtime: { platform: macPermissionPreview ? "darwin" : updatePreview || desktopPreview ? "win32" : "browser", trackerStatus: macPermissionPreview ? "permission-required" : "running", accessibilityTrusted: !macPermissionPreview, accessibilityMainTrusted: true, accessibilityTarget: "Daytrace Collector", autoStartSupported: desktopPreview, autoStartEnabled: false, capabilities: { browserTabCount: Boolean(updatePreview || desktopPreview), browserCompanion: Boolean(updatePreview || desktopPreview), smartAnalysis: true, encryptedBackup: true }, browserCompanion: { running: desktopPreview }, smartAnalysis: { engine: previewEngine, installed: true, running: false, version: "built-in", signal: { installed: false, running: false, sizeBytes: 6391, updateAvailable: false, lastResult: { status: "never", candidates: 0, refined: 0, changed: 0 } }, semantic: { installed: false, running: false, downloading: false, progress: 0, sizeBytes: 49821594, version: "1.0.0", languages: ["ru", "en"], quality: { benchmark: { labelable: 48, precision: 35 / 37, coverage: 37 / 48 }, holdout: { precision: 20 / 22, coverage: 22 / 32 } }, lastResult: { status: "never", candidates: 0, refined: 0, changed: 0 } }, quality: DEMO_ANALYSIS_QUALITY }, diagnostics: null, update: { status: updateStatus, currentVersion: "0.5.11", latestVersion: updatePreview ? "0.6.0" : "0.5.11", checkedAt: Date.now(), progress: updateStatus === "downloading" ? 64 : ["ready", "installing", "restarting"].includes(updateStatus) ? 100 : 0 } },
     sessions: [
       makeSession("demo-1", 0, 2, "mixed", "work"), makeSession("demo-2", 3, 6, "mixed", "work"), makeSession("demo-3", 7, 8, "communication", "mixed"),
       { id: "demo-break", start: startOfToday(12, 5), end: startOfToday(12, 20), durationMs: 15 * 60_000, focus: "break", label: FOCUS_LABELS[lang].break, intent: "unknown", intentLabel: INTENT_LABELS[lang].unknown, activities: [] },
@@ -254,11 +257,18 @@ function useDaytrace() {
   }, []);
   const language = normalizeLanguage(state.settings.language);
   const actions = {
-    async loadDay(day) {
-      if (window.daytrace) return window.daytrace.getDay(day);
-      const start = startOfLocalDay(day);
-      const end = addLocalDays(start, 1);
-      return { day: start, sessions: state.sessions.filter((session) => session.end > start && session.start < end), brief: state.brief, reviewQueue: state.reviewQueue || [] };
+    peekDay(day, revision = "") { return dayViewCache.get(day, revision); },
+    clearDayCache() { dayViewCache.clear(); },
+    async loadDay(day, revision = "") {
+      let loaded;
+      if (window.daytrace) loaded = await window.daytrace.getDay(day);
+      else {
+        const start = startOfLocalDay(day);
+        const end = addLocalDays(start, 1);
+        loaded = { day: start, sessions: state.sessions.filter((session) => session.end > start && session.start < end), brief: state.brief, reviewQueue: state.reviewQueue || [] };
+      }
+      dayViewCache.set(day, revision, loaded);
+      return loaded;
     },
     async setTracking(enabled) { if (window.daytrace) setState(await window.daytrace.setTracking(enabled)); else setState((current) => ({ ...current, settings: { ...current.settings, trackingEnabled: enabled } })); },
     async setSetting(key, enabled) { if (window.daytrace) setState(await window.daytrace.setSetting(key, enabled)); else setState((current) => ({ ...current, settings: { ...current.settings, [key]: enabled } })); },
@@ -276,6 +286,7 @@ function useDaytrace() {
       }
     },
     async setRetention(hours) {
+      dayViewCache.clear();
       if (window.daytrace) setState(await window.daytrace.setRetention(hours));
       else setState((current) => ({ ...current, settings: { ...current.settings, retentionHours: hours }, retentionCutoff: Date.now() - hours * 60 * 60_000 }));
     },
@@ -290,12 +301,16 @@ function useDaytrace() {
       return { affectedActivities: 1, affectedDurationMs: 20 * 60_000, affectedDays: 1, samples: [], nextRules: rules };
     },
     async setIntentRules(rules) {
-      if (window.daytrace) setState(await window.daytrace.setIntentRules(rules));
-      else setState((current) => ({ ...current, settings: { ...current.settings, intentRulesUndo: current.settings.intentRules, intentRules: rules, intentRulesChangedAt: Date.now() } }));
+      dayViewCache.clear();
+      if (window.daytrace) { const next = await window.daytrace.setIntentRules(rules); setState(next); return next; }
+      setState((current) => ({ ...current, settings: { ...current.settings, intentRulesUndo: current.settings.intentRules, intentRules: rules, intentRulesChangedAt: Date.now() } }));
+      return undefined;
     },
     async undoIntentRules() {
-      if (window.daytrace) setState(await window.daytrace.undoIntentRules());
-      else setState((current) => ({ ...current, settings: { ...current.settings, intentRules: current.settings.intentRulesUndo || [], intentRulesUndo: current.settings.intentRules || [] } }));
+      dayViewCache.clear();
+      if (window.daytrace) { const next = await window.daytrace.undoIntentRules(); setState(next); return next; }
+      setState((current) => ({ ...current, settings: { ...current.settings, intentRules: current.settings.intentRulesUndo || [], intentRulesUndo: current.settings.intentRules || [] } }));
+      return undefined;
     },
     async setLanguage(nextLanguage) { const next = normalizeLanguage(nextLanguage); if (window.daytrace) setState(await window.daytrace.setLanguage(next)); else setState((current) => { const nextState = demoState(next, true); return { ...nextState, settings: { ...nextState.settings, theme: current.settings.theme } }; }); },
     async completeOnboarding(nextLanguage, analysisEngine = "builtin") {
@@ -312,8 +327,8 @@ function useDaytrace() {
       if (window.daytrace) setState(await window.daytrace.acknowledgeReviewGuidance(action));
       else setState((current) => ({ ...current, settings: { ...current.settings, reviewLearningExplained: true, reviewReminderSnoozedUntil: Date.now() + (action === "later" ? 7 : 1) * 24 * 60 * 60_000, reviewReminderLastCount: current.reviewBacklog?.uniqueCount || 0 }, reviewBacklog: { ...current.reviewBacklog, notificationDue: false, firstExplanation: false } }));
     },
-    async deleteAll() { if (window.daytrace) setState(await window.daytrace.deleteAll()); else setState((current) => ({ ...current, sessions: [], eventCount: 0, historyStartedAt: null, availableDays: [] })); },
-    async deleteSession(session) { if (window.daytrace) setState(await window.daytrace.deleteSession(session.start, session.end)); else setState((current) => ({ ...current, sessions: current.sessions.filter((item) => item.id !== session.id) })); },
+    async deleteAll() { dayViewCache.clear(); if (window.daytrace) setState(await window.daytrace.deleteAll()); else setState((current) => ({ ...current, sessions: [], eventCount: 0, historyStartedAt: null, availableDays: [] })); },
+    async deleteSession(session) { dayViewCache.clear(); if (window.daytrace) setState(await window.daytrace.deleteSession(session.start, session.end)); else setState((current) => ({ ...current, sessions: current.sessions.filter((item) => item.id !== session.id) })); },
     async ask(question) {
       if (window.daytrace) return window.daytrace.ask(question);
       const t = translations[language];
@@ -323,7 +338,7 @@ function useDaytrace() {
     async exportSkill(skill) { if (window.daytrace) return window.daytrace.exportSkill(skill); return text(translations[language].skills.draft, { title: skill.title }); },
     async exportData(format) { if (window.daytrace) return window.daytrace.exportData(format); return `Daytrace-export.${format}`; },
     async createBackup(passphrase) { if (window.daytrace) return window.daytrace.createBackup(passphrase); return passphrase ? "Daytrace-backup.daytrace" : ""; },
-    async restoreBackup(passphrase) { if (window.daytrace) setState(await window.daytrace.restoreBackup(passphrase)); },
+    async restoreBackup(passphrase) { dayViewCache.clear(); if (window.daytrace) setState(await window.daytrace.restoreBackup(passphrase)); },
     async runDiagnostics() {
       if (window.daytrace) {
         const diagnostics = await window.daytrace.runDiagnostics();
@@ -778,9 +793,32 @@ function IntentPicker({ activity, onClassify, t }) {
   return <div className="intent-control"><label className={`intent-badge ${activity.intentConfidence || "low"}`} title={`${t.intent.classify}: ${reason}`}><Sparkle size={13} /><select value={activity.intent || "unknown"} onChange={(event) => onClassify(activity, event.target.value)} aria-label={t.intent.classify}>{Object.entries(t.intent.labels).filter(([key]) => key !== "mixed").map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label><details className="intent-evidence"><summary title={t.intent.why} aria-label={t.intent.why}><Info size={14} /></summary><div><strong>{text(t.intent.confidence, { percent: score })}</strong><p>{reason}</p>{evidence.map((item, index) => <span key={`${item.kind}-${index}`}><small>{t.intent.evidenceKinds[item.kind] || t.intent.evidenceKinds.activity}</small>{item.value}</span>)}<em>{t.intent.factPurposeNote}</em></div></details></div>;
 }
 
+function ActivityRow({ activity, index, sessionLabel, onClassify, language, t }) {
+  return <div className="activity" key={`${activity.start}-${index}`}><time>{formatTime(activity.start, language)} – {formatTime(activity.end, language)}</time><AppIcon app={activity.app} /><div className="activity-copy"><strong>{activity.app}</strong><div className="observed-fact"><Eye size={14} /><span><small>{t.intent.fact}</small>{activity.observedLabel || activity.title || t.common.activeWindow}</span></div><div className="activity-meta"><IntentPicker activity={activity} onClassify={onClassify} t={t} /><small>{activity.focusLabel || sessionLabel}</small>{activity.tabCount > 0 && <small><Browsers size={13} /> {text(t.overview.tabsCount, { count: activity.tabCount })}</small>}{Number(activity.inputs || 0) + Number(activity.clicks || 0) > 0 && <small><ArrowsLeftRight size={13} /> {text(t.overview.inputCount, { count: Number(activity.inputs || 0) + Number(activity.clicks || 0) })}</small>}</div></div></div>;
+}
+
+function ProgressiveActivityList({ activities, sessionLabel, onClassify, language, t }) {
+  const total = activities.length;
+  const [visibleCount, setVisibleCount] = useState(() => Math.min(ACTIVITY_BATCH_SIZE, total));
+  const sentinelRef = useRef(null);
+  useEffect(() => {
+    setVisibleCount((current) => Math.min(total, Math.max(Math.min(ACTIVITY_BATCH_SIZE, total), current)));
+  }, [total]);
+  useEffect(() => {
+    if (visibleCount >= total || !sentinelRef.current || typeof IntersectionObserver === "undefined") return undefined;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) setVisibleCount((current) => nextActivityLimit(current, total, ACTIVITY_BATCH_SIZE));
+    }, { rootMargin: "280px 0px" });
+    observer.observe(sentinelRef.current);
+    return () => observer.disconnect();
+  }, [total, visibleCount]);
+  const remaining = Math.max(0, total - visibleCount);
+  return <div className="activity-list">{activities.slice(0, visibleCount).map((activity, index) => <ActivityRow key={`${activity.start}-${index}`} activity={activity} index={index} sessionLabel={sessionLabel} onClassify={onClassify} language={language} t={t} />)}{remaining > 0 && <button ref={sentinelRef} className="activity-load-more" onClick={() => setVisibleCount((current) => nextActivityLimit(current, total, ACTIVITY_BATCH_SIZE))}>{text(t.history.showMore, { count: Math.min(ACTIVITY_BATCH_SIZE, remaining), remaining })}</button>}</div>;
+}
+
 function Session({ session, onDelete, onClassify, language, t }) {
   const isBreak = session.focus === "break";
-  return <section className={`timeline-session ${isBreak ? "break-session" : ""}`}><span className="timeline-node" /><header className="session-header"><div className="session-chip"><strong>{formatTime(session.start, language)} – {formatTime(session.end, language)}</strong><span>•</span><span>{isBreak ? session.label : `${t.session.intent}: ${(session.intentLabel || t.intent.unknown).toLocaleLowerCase(t.locale)}`}</span></div><span className="session-line" /><strong className="duration">{formatDuration(session.durationMs, language)}</strong>{!isBreak && <button className="icon-button delete-session" onClick={() => onDelete(session)} title={t.session.delete}><Trash size={17} /></button>}</header><div className="activity-list">{session.activities.map((activity, index) => <div className="activity" key={`${activity.start}-${index}`}><time>{formatTime(activity.start, language)} – {formatTime(activity.end, language)}</time><AppIcon app={activity.app} /><div className="activity-copy"><strong>{activity.app}</strong><div className="observed-fact"><Eye size={14} /><span><small>{t.intent.fact}</small>{activity.observedLabel || activity.title || t.common.activeWindow}</span></div><div className="activity-meta"><IntentPicker activity={activity} onClassify={onClassify} t={t} /><small>{activity.focusLabel || session.label}</small>{activity.tabCount > 0 && <small><Browsers size={13} /> {text(t.overview.tabsCount, { count: activity.tabCount })}</small>}{Number(activity.inputs || 0) + Number(activity.clicks || 0) > 0 && <small><ArrowsLeftRight size={13} /> {text(t.overview.inputCount, { count: Number(activity.inputs || 0) + Number(activity.clicks || 0) })}</small>}</div></div></div>)}</div></section>;
+  return <section className={`timeline-session ${isBreak ? "break-session" : ""}`}><span className="timeline-node" /><header className="session-header"><div className="session-chip"><strong>{formatTime(session.start, language)} – {formatTime(session.end, language)}</strong><span>•</span><span>{isBreak ? session.label : `${t.session.intent}: ${(session.intentLabel || t.intent.unknown).toLocaleLowerCase(t.locale)}`}</span></div><span className="session-line" /><strong className="duration">{formatDuration(session.durationMs, language)}</strong>{!isBreak && <button className="icon-button delete-session" onClick={() => onDelete(session)} title={t.session.delete}><Trash size={17} /></button>}</header>{!isBreak && <ProgressiveActivityList activities={session.activities} sessionLabel={session.label} onClassify={onClassify} language={language} t={t} />}</section>;
 }
 
 function Summary({ result, sessions, stats, brief, language, t }) {
@@ -796,21 +834,41 @@ function RulePreviewDialog({ preview, busy, onConfirm, onCancel, language, t }) 
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onCancel(); }}><section className="rule-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="rule-preview-title"><div className="dialog-icon"><Sparkle size={23} /></div><h2 id="rule-preview-title">{t.intent.previewTitle}</h2><p>{text(t.intent.previewText, { count: preview.affectedActivities, duration: formatDuration(preview.affectedDurationMs, language), days: preview.affectedDays })}</p>{preview.samples?.length > 0 && <div className="preview-samples">{preview.samples.slice(0, 4).map((sample) => <div key={`${sample.start}-${sample.app}`}><strong>{sample.app}</strong><span>{sample.title}</span><small>{t.intent.labels[sample.before]} → {t.intent.labels[sample.after]}</small></div>)}</div>}<div className="dialog-actions"><button className="secondary-button" onClick={onCancel} disabled={busy}>{t.common.cancel}</button><button className="primary-update-button" onClick={onConfirm} disabled={busy}>{busy ? t.intent.applying : t.intent.applyRule}</button></div></section></div>;
 }
 
+function HistoryPageLoading({ t }) {
+  return <div className="history-page history-page-loading" aria-busy="true" aria-live="polite"><div className="history-loading-search"><span /><span /></div><main className="timeline-column"><div className="history-loading-heading"><strong>{t.history.loadingTitle}</strong><small>{t.history.loadingText}</small></div><div className="history-loading-metrics">{Array.from({ length: 4 }, (_, index) => <span key={index} />)}</div><div className="history-loading-chart" /><div className="history-loading-lines">{Array.from({ length: 5 }, (_, index) => <span key={index} />)}</div></main><aside className="summary-panel history-loading-summary"><span /><span /><span /></aside></div>;
+}
+
 function HistoryPage({ state, actions, setPage, selectedDay, language, t }) {
   const [result, setResult] = useState(null);
-  const [loadedDay, setLoadedDay] = useState(null);
   const [rulePreview, setRulePreview] = useState(null);
   const [applyingRule, setApplyingRule] = useState(false);
   const [showUndo, setShowUndo] = useState(false);
+  const requestRef = useRef(0);
+  const viewRevision = dayViewRevision(state.settings, state.runtime);
+  const viewKey = `${normalizeDayTimestamp(selectedDay)}|${viewRevision}`;
+  const refreshToken = selectedDayRefreshToken(selectedDay, state.lastEventAt, state.eventCount);
+  const [loadedView, setLoadedView] = useState(() => ({ key: viewKey, data: actions.peekDay(selectedDay, viewRevision) }));
   useEffect(() => {
     let active = true;
-    setLoadedDay(null);
-    actions.loadDay(selectedDay).then((day) => { if (active) setLoadedDay(day); }).catch(() => { if (active) setLoadedDay({ day: selectedDay, sessions: [] }); });
+    const request = ++requestRef.current;
+    const cached = actions.peekDay(selectedDay, viewRevision);
+    setLoadedView((current) => current.key === viewKey && current.data ? current : { key: viewKey, data: cached });
+    actions.loadDay(selectedDay, viewRevision)
+      .then((day) => { if (active && request === requestRef.current) setLoadedView({ key: viewKey, data: day }); })
+      .catch(() => { if (active && request === requestRef.current && !cached) setLoadedView({ key: viewKey, data: { day: selectedDay, sessions: [], brief: null, reviewQueue: [] } }); });
     return () => { active = false; };
-  }, [selectedDay, state.eventCount, state.settings.intentRulesChangedAt]);
-  const sessions = useMemo(() => daySessions(loadedDay?.sessions || state.sessions, selectedDay, language), [loadedDay, state.sessions, selectedDay, language]);
+  }, [viewKey, refreshToken]);
+  const loadedDay = loadedView.key === viewKey ? loadedView.data : null;
+  const sessions = useMemo(() => daySessions(loadedDay?.sessions || [], selectedDay, language), [loadedDay, selectedDay, language]);
   const stats = useMemo(() => buildOverview(sessions, selectedDay), [sessions, selectedDay]);
   useEffect(() => { setResult(null); }, [language, selectedDay]);
+  const refreshSelectedDay = async (nextState = state) => {
+    const revision = dayViewRevision(nextState?.settings || state.settings, nextState?.runtime || state.runtime);
+    const key = `${normalizeDayTimestamp(selectedDay)}|${revision}`;
+    const day = await actions.loadDay(selectedDay, revision);
+    setLoadedView({ key, data: day });
+    return day;
+  };
   const classify = async (activity, intent) => {
     if (intent === activity.intent) return;
     const app = String(activity.app || activity.process || "").trim();
@@ -830,23 +888,24 @@ function HistoryPage({ state, actions, setPage, selectedDay, language, t }) {
     if (!rulePreview) return;
     setApplyingRule(true);
     try {
-      await actions.setIntentRules(rulePreview.nextRules);
-      setLoadedDay(await actions.loadDay(selectedDay));
+      const nextState = await actions.setIntentRules(rulePreview.nextRules);
+      await refreshSelectedDay(nextState || state);
       setShowUndo(true);
       setRulePreview(null);
     } finally { setApplyingRule(false); }
   };
   const undoRule = async () => {
-    await actions.undoIntentRules();
-    setLoadedDay(await actions.loadDay(selectedDay));
+    const nextState = await actions.undoIntentRules();
+    await refreshSelectedDay(nextState || state);
     setShowUndo(false);
   };
   const removeSession = async (session) => {
     await actions.deleteSession(session);
-    setLoadedDay(await actions.loadDay(selectedDay));
+    await refreshSelectedDay();
   };
   const reviewCount = loadedDay?.reviewQueue?.length || 0;
-  return <div className="history-page"><QuestionBar t={t} onAsk={async (question) => setResult(await actions.ask(question))} />{showUndo && <div className="undo-banner"><Check size={17} /><span>{t.intent.ruleApplied}</span><button onClick={undoRule}><ArrowCounterClockwise size={16} /> {t.intent.undo}</button><button className="icon-button" onClick={() => setShowUndo(false)} aria-label={t.common.cancel}><X size={15} /></button></div>}<div className="history-layout"><main className="timeline-column"><DayOverview stats={stats} language={language} t={t} capabilities={state.runtime?.capabilities} />{reviewCount > 0 && <button className="review-banner" onClick={() => setPage("settings", "review")}><WarningCircle size={18} /><span><strong>{text(t.intent.reviewCount, { count: reviewCount })}</strong><small>{t.intent.reviewHint}</small></span><ArrowRight size={17} /></button>}<div className="section-title timeline-title"><h2>{t.history.title}</h2><span>{t.history.newestFirst}</span></div>{sessions.length ? <div className="timeline reverse-timeline" data-tour="purpose">{sessions.map((session) => <Session key={session.id} session={session} onDelete={removeSession} onClassify={classify} language={language} t={t} />)}</div> : <div className="empty-state" data-tour="purpose"><Clock size={34} /><h3>{t.history.emptyTitle}</h3><p>{t.history.emptyText}</p><button onClick={() => setPage("settings")}>{t.history.checkSettings} <ArrowRight size={17} /></button></div>}</main><Summary result={result} sessions={sessions} stats={stats} brief={loadedDay?.brief || state.brief} language={language} t={t} /></div><RulePreviewDialog preview={rulePreview} busy={applyingRule} onConfirm={confirmRule} onCancel={() => setRulePreview(null)} language={language} t={t} /></div>;
+  if (!loadedDay) return <HistoryPageLoading t={t} />;
+  return <div className="history-page"><QuestionBar t={t} onAsk={async (question) => setResult(await actions.ask(question))} />{showUndo && <div className="undo-banner"><Check size={17} /><span>{t.intent.ruleApplied}</span><button onClick={undoRule}><ArrowCounterClockwise size={16} /> {t.intent.undo}</button><button className="icon-button" onClick={() => setShowUndo(false)} aria-label={t.common.cancel}><X size={15} /></button></div>}<div className="history-layout"><main className="timeline-column"><DayOverview stats={stats} language={language} t={t} capabilities={state.runtime?.capabilities} />{reviewCount > 0 && <button className="review-banner" onClick={() => setPage("settings", "review")}><WarningCircle size={18} /><span><strong>{text(t.intent.reviewCount, { count: reviewCount })}</strong><small>{t.intent.reviewHint}</small></span><ArrowRight size={17} /></button>}<div className="section-title timeline-title"><h2>{t.history.title}</h2><span>{t.history.newestFirst}</span></div>{sessions.length ? <div className="timeline reverse-timeline" data-tour="purpose">{sessions.map((session) => <Session key={session.id} session={session} onDelete={removeSession} onClassify={classify} language={language} t={t} />)}</div> : <div className="empty-state" data-tour="purpose"><Clock size={34} /><h3>{t.history.emptyTitle}</h3><p>{t.history.emptyText}</p><button onClick={() => setPage("settings")}>{t.history.checkSettings} <ArrowRight size={17} /></button></div>}</main><Summary result={result} sessions={sessions} stats={stats} brief={loadedDay.brief} language={language} t={t} /></div><RulePreviewDialog preview={rulePreview} busy={applyingRule} onConfirm={confirmRule} onCancel={() => setRulePreview(null)} language={language} t={t} /></div>;
 }
 
 function AskPage({ actions, setPage, language, retentionHours, t }) {
