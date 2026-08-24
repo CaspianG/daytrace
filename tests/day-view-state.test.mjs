@@ -8,8 +8,8 @@ const { compactRendererState } = require("../electron/lib/renderer-state.cjs");
 
 test("day view cache survives page remounts without crossing day or analysis revisions", () => {
   const cache = createDayViewCache(2);
-  const first = new Date("2026-08-24T08:00:00+03:00").getTime();
-  const second = new Date("2026-08-25T08:00:00+03:00").getTime();
+  const first = new Date(2026, 7, 24, 8).getTime();
+  const second = new Date(2026, 7, 25, 8).getTime();
   const revision = dayViewRevision({ language: "ru", analysisEngine: "semantic", intentRulesChangedAt: 4 }, { smartAnalysis: { semantic: { lastRunAt: 8 } } });
   const day = { day: normalizeDayTimestamp(first), sessions: [{ id: "one", activities: [] }] };
 
@@ -19,9 +19,9 @@ test("day view cache survives page remounts without crossing day or analysis rev
   assert.equal(cache.get(first, `${revision}:new`), null);
 });
 test("only a selected day containing the newest event receives live refreshes", () => {
-  const selected = new Date("2026-08-24T00:00:00+03:00").getTime();
-  const sameDay = new Date("2026-08-24T18:30:00+03:00").toISOString();
-  const nextDay = new Date("2026-08-25T00:01:00+03:00").toISOString();
+  const selected = new Date(2026, 7, 24, 0, 0).getTime();
+  const sameDay = new Date(2026, 7, 24, 18, 30).toISOString();
+  const nextDay = new Date(2026, 7, 25, 0, 1).toISOString();
   assert.match(selectedDayRefreshToken(selected, sameDay, 42), /:42$/);
   assert.equal(selectedDayRefreshToken(selected, nextDay, 43), "historical");
 });
