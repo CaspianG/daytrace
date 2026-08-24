@@ -1,6 +1,6 @@
 # Install Daytrace on macOS without Apple notarization
 
-Daytrace supports macOS 12 and newer on both Apple Silicon and Intel Macs. The current universal build is distributed without an Apple Developer ID signature and without Apple notarization because the project does not currently have those Apple credentials.
+Daytrace supports macOS 12 and newer on both Apple Silicon and Intel Macs. The current universal build is distributed without an Apple Developer ID signature and without Apple notarization because the project does not currently have those Apple credentials. Starting with v0.5.12, it has a stable self-signed community code identity only so macOS can recognize the same local collector across Daytrace updates; this is not an Apple-trusted signature.
 
 This means Gatekeeper can display a message such as **“Apple could not verify Daytrace is free of malware”** or **“Daytrace cannot be opened because the developer cannot be verified.”** The message is a trust warning about the missing Apple signature. It does not mean macOS detected malware.
 
@@ -33,16 +33,16 @@ You normally need this exception only for the first launch of that downloaded bu
 
 After the app itself opens, Daytrace presents a separate Accessibility setup. This permission lets the native local collector observe the active application and visible active-window metadata. It does not grant cloud access and is unrelated to the Gatekeeper warning.
 
-Choose **Register collector**. Daytrace launches the embedded helper so macOS adds **Daytrace Collector** under **System Settings → Privacy & Security → Accessibility**, then opens that pane. Enable that exact entry and return to Daytrace. The app verifies the grant with a real collector launch; use **Check again** if needed. The permission window is dismissible, so settings and existing history remain available even while collection is disabled. Keep one installed `/Applications/Daytrace.app`; when updating, choose **Replace**, not **Keep Both**.
+Choose **Register collector**. Daytrace launches the embedded helper so macOS adds **Daytrace Activity Collector** under **System Settings → Privacy & Security → Accessibility**, then opens that pane. Enable that exact entry and return to Daytrace. The app verifies the grant with a real collector launch; use **Check again** if needed. The permission window is dismissible, so settings and existing history remain available even while collection is disabled. Keep one installed `/Applications/Daytrace.app`; when updating, choose **Replace**, not **Keep Both**.
 
 If the switch is already on but Daytrace still shows the permission screen:
 
-1. If only **Daytrace** or **Daytrace 2** is enabled, that is the old UI identity, not the process that reads windows.
-2. Return to Daytrace and click **Register collector** so macOS adds **Daytrace Collector** automatically. Do not add `/Applications/Daytrace.app` manually for this permission.
-3. If several **Daytrace Collector** entries exist, remove the stale ones, register the collector again, enable the new entry, and click **Check again**.
+1. If only **Daytrace**, **Daytrace 2**, or the old **Daytrace Collector** is enabled, that is not the v0.5.12 collector identity.
+2. Return to Daytrace and click **Register collector** so macOS adds **Daytrace Activity Collector** automatically. Do not add `/Applications/Daytrace.app` manually for this permission.
+3. If several **Daytrace Activity Collector** entries exist, remove the stale ones, register the collector again, enable the new entry, and click **Check again**.
 4. A close button and **Open Daytrace without tracking** always keep the interface available. Collection starts as soon as the real helper succeeds.
 
-The collector is a named nested helper at `Daytrace.app/Contents/Helpers/Daytrace Collector.app` with bundle ID `local.daytrace.desktop.collector`. This removes the previous mismatch where the interface asked for permission for `Daytrace.app` while a different executable performed and checked the protected operation.
+The collector is a named nested helper at `Daytrace.app/Contents/Helpers/Daytrace Activity Collector.app` with bundle ID `io.github.caspiang.daytrace.collector`. This removes the previous mismatch where the interface asked for permission for `Daytrace.app` while a different executable performed and checked the protected operation.
 
 ## Updates after installation
 
@@ -52,10 +52,10 @@ Starting with v0.5.5, “launches successfully” means that the new application
 
 The transition from v0.5.3 or older is a one-time exception: those installed binaries only know how to open the DMG, so perform the replacement described above once. Updates from v0.5.4 onward use the automatic path, while v0.5.5 adds readiness-confirmed rollback safety.
 
-Because the current public build has no stable Developer ID signature, macOS can still ask you to enable **Daytrace Collector** again after an update that changes the collector binary. Daytrace registers the correct helper, detects the result, and never blocks the interface, but no application is allowed to grant this protected permission to itself. A Developer ID signature is still required to guarantee identity continuity across changed binaries.
+v0.5.12 is a one-time permission migration from the former **Daytrace Collector** to the newly named **Daytrace Activity Collector**. Click **Register collector** and enable the new entry once; the old entry can be removed. The helper now has a fixed bundle version, no longer inherits the changing parent `app.asar` hash, launches through macOS LaunchServices, and is signed by the same protected community key on every public build. This is designed to preserve its Accessibility identity across later community updates. Daytrace still verifies the exact helper after every check and shows a real result instead of treating a button press as success.
 
 ## Why the warning cannot be removed in code
 
-Apple removes this first-launch warning for software distributed outside the App Store only after the app is signed with a paid **Developer ID Application** certificate and accepted by Apple's notarization service. A self-signed or ad-hoc signature cannot create that trust. The project keeps a strict signed-release path ready for the future, but current public macOS artifacts deliberately identify themselves as unsigned and include this guide.
+Apple removes this first-launch warning for software distributed outside the App Store only after the app is signed with a paid **Developer ID Application** certificate and accepted by Apple's notarization service. A self-signed or ad-hoc signature cannot create that trust. The community identity used from v0.5.12 stabilizes local permission identity only; it does not bypass Gatekeeper, and users must not install it as a trusted root. The project keeps a strict Apple-signed release path ready for the future, and every current package includes this guide.
 
 See [macOS signing and notarization](MACOS_SIGNING.md) for the maintainer-side details.

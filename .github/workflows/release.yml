@@ -38,8 +38,14 @@ jobs:
         with: { node-version: 22, cache: npm }
       - name: Verify tag matches package version
         run: node -e "const expected='v'+require('./package.json').version;if(process.env.GITHUB_REF_NAME!==expected)throw new Error('Expected tag '+expected+', received '+process.env.GITHUB_REF_NAME)"
+      - name: Import required stable community macOS identity
+        env:
+          DAYTRACE_COMMUNITY_MAC_CERT_P12: ${{ secrets.DAYTRACE_COMMUNITY_MAC_CERT_P12 }}
+          DAYTRACE_COMMUNITY_MAC_CERT_PASSWORD: ${{ secrets.DAYTRACE_COMMUNITY_MAC_CERT_PASSWORD }}
+          DAYTRACE_REQUIRE_COMMUNITY_SIGNING: "1"
+        run: bash scripts/import-community-macos-certificate.sh
       - run: npm ci
-      - name: Build unsigned universal macOS artifacts with install guide
+      - name: Build stable-identity non-notarized universal macOS artifacts
         run: |
           for attempt in 1 2 3; do
             npm run dist:mac && exit 0

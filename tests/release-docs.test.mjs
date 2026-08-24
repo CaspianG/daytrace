@@ -20,6 +20,7 @@ const bundledMacGuide = fs.readFileSync(path.join(root, "MACOS_INSTALL.txt"), "u
 const bundleMacGuideScript = fs.readFileSync(path.join(root, "scripts", "bundle-macos-install-guide.sh"), "utf8");
 const macTrackerBuild = fs.readFileSync(path.join(root, "scripts", "build-macos-tracker.sh"), "utf8");
 const prepareMacArtifact = fs.readFileSync(path.join(root, "scripts", "prepare-macos-artifact.cjs"), "utf8");
+const importMacCommunityIdentity = fs.readFileSync(path.join(root, "scripts", "import-community-macos-certificate.sh"), "utf8");
 const verifyMacPackageScript = fs.readFileSync(path.join(root, "scripts", "verify-macos-package.sh"), "utf8");
 const verifyMacReleaseScript = fs.readFileSync(path.join(root, "scripts", "verify-macos-release.sh"), "utf8");
 const electronMain = fs.readFileSync(path.join(root, "electron", "main.cjs"), "utf8");
@@ -97,9 +98,13 @@ test("Windows releases document and verify readiness-confirmed transactional rol
   assert.match(pkg.scripts.test, /windows-update-service\.test\.mjs/);
 });
 
-test("macOS tagged releases remain publishable without unavailable Apple credentials", () => {
+test("macOS tagged releases use a stable community identity without pretending it is Apple notarization", () => {
   assert.match(releaseWorkflow, /npm run dist:mac/);
   assert.doesNotMatch(releaseWorkflow, /secrets\.MAC_CSC_LINK/);
+  assert.match(releaseWorkflow, /secrets\.DAYTRACE_COMMUNITY_MAC_CERT_P12/);
+  assert.match(releaseWorkflow, /DAYTRACE_REQUIRE_COMMUNITY_SIGNING/);
+  assert.match(importMacCommunityIdentity, /Daytrace Community Release/);
+  assert.match(importMacCommunityIdentity, /Stable Daytrace community signing secrets are required/);
   assert.match(releaseWorkflow, /cp MACOS_INSTALL\.txt release\/MACOS_INSTALL\.txt/);
   assert.match(releaseWorkflow, /release\/MACOS_INSTALL\.txt/);
   assert.match(releaseWorkflow, /body_path: \.github\/RELEASE_BODY\.md/);
@@ -120,15 +125,18 @@ test("macOS tagged releases remain publishable without unavailable Apple credent
 });
 
 test("macOS packages and checks a named Accessibility collector with its own exact TCC identity", () => {
-  assert.deepEqual(pkg.build.mac.binaries, ["Contents/Helpers/Daytrace Collector.app/Contents/MacOS/Daytrace Collector"]);
-  assert.equal(pkg.build.mac.extraFiles.some((item) => item.to === "Helpers/Daytrace Collector.app"), true);
-  assert.match(macTrackerBuild, /CFBundleIdentifier<\/key><string>local\.daytrace\.desktop\.collector/);
-  assert.match(macTrackerBuild, /codesign --force --sign - --options runtime --identifier local\.daytrace\.desktop\.collector/);
+  assert.deepEqual(pkg.build.mac.binaries, ["Contents/Helpers/Daytrace Activity Collector.app/Contents/MacOS/Daytrace Activity Collector"]);
+  assert.equal(pkg.build.mac.extraFiles.some((item) => item.to === "Helpers/Daytrace Activity Collector.app"), true);
+  assert.match(macTrackerBuild, /COLLECTOR_ID="io\.github\.caspiang\.daytrace\.collector"/);
+  assert.match(macTrackerBuild, /COLLECTOR_VERSION="1\.0\.0"/);
+  assert.match(macTrackerBuild, /codesign --force --sign - --options runtime --identifier "\$COLLECTOR_ID"/);
   assert.match(prepareMacArtifact, /DAYTRACE_COMMUNITY_MAC_BUILD/);
   assert.match(prepareMacArtifact, /mac-universal/);
-  assert.match(prepareMacArtifact, /--identifier", "local\.daytrace\.desktop\.collector/);
+  assert.match(prepareMacArtifact, /--identifier", "io\.github\.caspiang\.daytrace\.collector/);
+  assert.match(prepareMacArtifact, /ElectronAsarIntegrity/);
+  assert.match(prepareMacArtifact, /DAYTRACE_COMMUNITY_SIGNING_IDENTITY/);
   assert.match(prepareMacArtifact, /--verify", "--deep", "--strict/);
-  assert.match(verifyMacReleaseScript, /Contents\/Helpers\/Daytrace Collector\.app/);
+  assert.match(verifyMacReleaseScript, /Contents\/Helpers\/Daytrace Activity Collector\.app/);
   assert.match(verifyMacPackageScript, /CFBundleIdentifier/);
   assert.match(verifyMacPackageScript, /lipo -archs/);
   assert.match(verifyMacPackageScript, /ditto -x -k/);
@@ -137,8 +145,8 @@ test("macOS packages and checks a named Accessibility collector with its own exa
   assert.match(verifyMacPackageScript, /mktemp -d "\$SMOKE_ROOT\/daytrace-desktop-smoke-packaged-XXXXXX"/);
   assert.match(verifyMacPackageScript, /--check-accessibility/);
   assert.match(verifyMacPackageScript, /--daytrace-smoke-test/);
-  assert.match(electronMain, /"Helpers", "Daytrace Collector\.app", "Contents", "MacOS", "Daytrace Collector"/);
-  assert.match(electronMain, /--check-accessibility/);
+  assert.match(electronMain, /MAC_COLLECTOR_NAME = "Daytrace Activity Collector"/);
+  assert.match(verifyMacPackageScript, /\/usr\/bin\/open -n -W "\$COLLECTOR_APP"/);
   assert.match(electronMain, /probeTrusted: process\.platform === "darwin" \? probeTrackerAccessibility : null/);
 });
 

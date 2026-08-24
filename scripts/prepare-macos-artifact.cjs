@@ -9,25 +9,47 @@ let preparation;
 async function prepareUnsignedUniversalCollector(event) {
   const outputRoot = path.resolve(path.dirname(event.file));
   const appPath = path.resolve(outputRoot, "mac-universal", "Daytrace.app");
-  const collectorApp = path.resolve(appPath, "Contents", "Helpers", "Daytrace Collector.app");
+  const collectorApp = path.resolve(appPath, "Contents", "Helpers", "Daytrace Activity Collector.app");
+  const collectorInfo = path.resolve(collectorApp, "Contents", "Info.plist");
+  const entitlements = path.resolve(__dirname, "..", "build", "entitlements.mac.plist");
+  const signingIdentity = String(process.env.DAYTRACE_COMMUNITY_SIGNING_IDENTITY || "-").trim() || "-";
   const expectedPrefix = `${outputRoot}${path.sep}`;
   if (!collectorApp.startsWith(expectedPrefix) || !fs.existsSync(collectorApp)) {
-    throw new Error(`Merged Daytrace Collector was not found under the release output: ${collectorApp}`);
+    throw new Error(`Merged Daytrace Activity Collector was not found under the release output: ${collectorApp}`);
   }
 
-  // @electron/universal rewrites the merged helper bundle after the source
-  // helper was ad-hoc signed. Re-seal that exact final helper before either the
-  // ZIP or DMG starts reading Daytrace.app. Developer-ID builds deliberately do
-  // not set DAYTRACE_COMMUNITY_MAC_BUILD and keep electron-builder's signature.
+  // @electron/universal injects the parent ElectronAsarIntegrity value into
+  // nested app plists. That value changes on every Daytrace release and made
+  // the collector's TCC identity change even when its code did not. The helper
+  // has its own fixed ABI version and never contains the parent ASAR.
+  await run("plutil", ["-remove", "ElectronAsarIntegrity", collectorInfo]).catch((error) => {
+    if (!String(error?.stderr || error?.message || error).includes("Could not modify plist")) throw error;
+  });
+  await run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleShortVersionString 1.0.0", collectorInfo]);
+  await run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleVersion 1.0.0", collectorInfo]);
+
+  // Re-seal the exact final helper, then the parent app that contains it. The
+  // optional community identity is a stable non-Apple code-signing identity:
+  // it does not bypass Gatekeeper, but it prevents TCC from seeing a new
+  // collector after every update. Developer-ID builds use the strict path and
+  // deliberately skip this community hook.
   await run("codesign", [
     "--force",
-    "--sign", "-",
+    "--sign", signingIdentity,
     "--options", "runtime",
-    "--identifier", "local.daytrace.desktop.collector",
+    "--identifier", "io.github.caspiang.daytrace.collector",
     collectorApp,
   ]);
+  await run("codesign", [
+    "--force",
+    "--sign", signingIdentity,
+    "--options", "runtime",
+    "--entitlements", entitlements,
+    appPath,
+  ]);
   await run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", collectorApp]);
-  process.stdout.write("Prepared final universal Daytrace Collector ad-hoc signature before artifact creation.\n");
+  await run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", appPath]);
+  process.stdout.write(`Prepared final universal Daytrace Activity Collector and parent app with ${signingIdentity === "-" ? "ad-hoc" : "stable community"} signatures.\n`);
 }
 
 module.exports = async function artifactBuildStarted(event) {

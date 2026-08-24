@@ -19,6 +19,7 @@ const { AUTO_ANALYSIS_INTERVAL_MS, SemanticModelService } = require("./lib/seman
 const { AnalysisQualityService } = require("./lib/analysis-quality-service.cjs");
 const { createEncryptedBackup, exportCsv, exportJson, restoreEncryptedBackup } = require("./lib/data-portability.cjs");
 const { platformCapabilities, runDiagnostics } = require("./lib/diagnostics.cjs");
+const { createMacAccessibilityProbe } = require("./lib/mac-accessibility-probe.cjs");
 const { createRecoveryBackoff } = require("./lib/runtime-recovery.cjs");
 const { compactRendererState } = require("./lib/renderer-state.cjs");
 
@@ -71,6 +72,8 @@ let updateAbortController = null;
 let isQuitting = false;
 let availableRelease = null;
 let accessibilityService = null;
+let macAccessibilityProbe = null;
+let accessibilityRuntime = { phase: "idle", checkedAt: null, code: null, signal: null, error: "" };
 let trackerStarting = false;
 let browserCompanion = null;
 let smartAnalysis = null;
@@ -85,7 +88,6 @@ let systemResumeTimer = null;
 let trackerStderrWindowAt = 0;
 let trackerStderrSuppressed = 0;
 let rendererRecoveryShowWindow = true;
-const accessibilityProbeChildren = new Set();
 const UPDATE_DIR = path.join(app.getPath("temp"), "daytrace-updates");
 const DATA_ROOT = path.join(app.getPath("userData"), "daytrace-data");
 const macUpdateReadyRequest = process.platform === "darwin" ? getMacUpdateReadyRequest({
@@ -112,7 +114,8 @@ const UPDATE_INTERVAL_MS = 6 * 60 * 60_000;
 const OFFLINE_RETRY_MS = 30 * 60_000;
 const REVIEW_ACTION_SNOOZE_MS = 24 * 60 * 60_000;
 const REVIEW_LATER_SNOOZE_MS = 7 * 24 * 60 * 60_000;
-const MAC_ACCESSIBILITY_TARGET = "Daytrace Collector";
+const MAC_COLLECTOR_NAME = "Daytrace Activity Collector";
+const MAC_ACCESSIBILITY_TARGET = MAC_COLLECTOR_NAME;
 const TRACKER_READY_TIMEOUT_MS = 10_000;
 const RENDERER_FILE = path.join(__dirname, "..", "dist", "client", "index.html");
 const DEV_RENDERER_ORIGIN = "http://127.0.0.1:5173";
@@ -200,6 +203,7 @@ function mainAccessibilityTrusted() {
 }
 function accessibilityChanged(trusted) {
   if (!store || process.platform !== "darwin") return;
+  accessibilityRuntime = { ...accessibilityRuntime, phase: trusted ? "trusted" : accessibilityRuntime.phase === "trusted" ? "denied" : accessibilityRuntime.phase, trusted, checkedAt: Date.now() };
   if (trusted) {
     if (store.settings.trackingEnabled && !tracker) startTracker();
   } else if (store.settings.trackingEnabled) {
@@ -239,6 +243,7 @@ function state() {
       accessibilityTrusted: accessibilityTrusted(),
       accessibilityMainTrusted: mainAccessibilityTrusted(),
       accessibilityTarget: process.platform === "darwin" ? MAC_ACCESSIBILITY_TARGET : "",
+      accessibilityProbe: process.platform === "darwin" ? { ...accessibilityRuntime } : null,
       macInstall: getMacInstallInfo({ platform: process.platform, packaged: app.isPackaged, execPath: process.execPath }),
       autoStartSupported: app.isPackaged && ["win32", "darwin"].includes(process.platform),
       autoStartEnabled: currentAutoStart(),
@@ -460,8 +465,8 @@ function trackerPath() {
   if (process.platform === "win32") return app.isPackaged ? path.join(process.resourcesPath, "tracker", "windows", "Daytrace.Tracker.exe") : path.join(__dirname, "..", "native", "windows-tracker", "bin", "Release", "daytrace-win-x64", "Daytrace.Tracker.exe");
   if (process.platform === "darwin") {
     const preferred = app.isPackaged
-      ? path.join(path.dirname(path.dirname(process.execPath)), "Helpers", "Daytrace Collector.app", "Contents", "MacOS", "Daytrace Collector")
-      : path.join(__dirname, "..", "native", "macos-tracker", "build", "Daytrace Collector.app", "Contents", "MacOS", "Daytrace Collector");
+      ? path.join(path.dirname(path.dirname(process.execPath)), "Helpers", `${MAC_COLLECTOR_NAME}.app`, "Contents", "MacOS", MAC_COLLECTOR_NAME)
+      : path.join(__dirname, "..", "native", "macos-tracker", "build", `${MAC_COLLECTOR_NAME}.app`, "Contents", "MacOS", MAC_COLLECTOR_NAME);
     const legacy = app.isPackaged ? path.join(path.dirname(process.execPath), "daytrace-tracker") : path.join(__dirname, "..", "native", "macos-tracker", "build", "daytrace-tracker");
     return fs.existsSync(preferred) ? preferred : legacy;
   }
@@ -469,38 +474,7 @@ function trackerPath() {
 }
 function probeTrackerAccessibility(prompt = false) {
   if (process.platform !== "darwin") return Promise.resolve(true);
-  const executable = trackerPath();
-  if (!executable || !fs.existsSync(executable)) {
-    startupLog(`accessibility-probe-unavailable path=${executable || "none"}`);
-    return Promise.resolve(Boolean(systemPreferences.isTrustedAccessibilityClient(Boolean(prompt))));
-  }
-  return new Promise((resolve) => {
-    let settled = false;
-    let timeout = null;
-    const finish = (trusted) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      resolve(Boolean(trusted));
-    };
-    let child;
-    try {
-      child = spawn(executable, [prompt ? "--request-accessibility" : "--check-accessibility"], { windowsHide: true, stdio: "ignore" });
-      accessibilityProbeChildren.add(child);
-    } catch (error) {
-      startupLog("accessibility-probe-spawn-failed", error);
-      finish(false);
-      return;
-    }
-    timeout = setTimeout(() => {
-      child.kill();
-      startupLog("accessibility-probe-timeout");
-      finish(false);
-    }, prompt ? 65_000 : 5_000);
-    timeout.unref?.();
-    child.once("error", (error) => { accessibilityProbeChildren.delete(child); startupLog("accessibility-probe-error", error); finish(false); });
-    child.once("exit", (code) => { accessibilityProbeChildren.delete(child); finish(code === 0); });
-  });
+  return macAccessibilityProbe?.probe(Boolean(prompt)) ?? Promise.resolve(false);
 }
 function clearTrackerReadyTimer() {
   clearTimeout(trackerReadyTimer);
@@ -1118,16 +1092,22 @@ function registerIpc() {
   handleIpc("daytrace:request-accessibility", async () => {
     store.updateSettings({ accessibilityOnboardingDismissed: true });
     sendState();
-    if (process.platform === "darwin") await accessibilityService.request();
-    startTracker();
-    if (!accessibilityTrusted()) accessibilityService?.watch();
+    const trusted = process.platform === "darwin" ? await accessibilityService.request() : true;
+    if (trusted) startTracker();
+    else {
+      trackerStatus = "permission-required";
+      accessibilityService?.watch();
+    }
     sendState();
     return state();
   });
   handleIpc("daytrace:refresh-accessibility", async () => {
-    if (process.platform === "darwin") await accessibilityService.refresh(false);
-    startTracker();
-    if (!accessibilityTrusted()) accessibilityService?.watch();
+    const trusted = process.platform === "darwin" ? await accessibilityService.refresh(false) : true;
+    if (trusted) startTracker();
+    else {
+      trackerStatus = "permission-required";
+      accessibilityService?.watch();
+    }
     sendState();
     return state();
   });
@@ -1295,6 +1275,16 @@ if (nativeMessagingOrigin) {
           if (store?.settings?.browserCompanionEnabled) browserCompanionRecovery.schedule("runtime-failed");
         } },
       );
+      macAccessibilityProbe = createMacAccessibilityProbe({
+        platform: process.platform,
+        executablePath: trackerPath,
+        onDiagnostic: (diagnostic) => {
+          accessibilityRuntime = { ...accessibilityRuntime, ...diagnostic };
+          startupLog(`accessibility-probe phase=${diagnostic.phase} trusted=${Boolean(diagnostic.trusted)} code=${diagnostic.code ?? "none"} signal=${diagnostic.signal || "none"} error=${diagnostic.error || "none"} bundle=${diagnostic.bundle || "none"}`);
+          sendState();
+        },
+        log: startupLog,
+      });
       accessibilityService = createAccessibilityService({
         platform: process.platform,
         isTrusted: (prompt) => systemPreferences.isTrustedAccessibilityClient(prompt),
@@ -1388,8 +1378,7 @@ if (nativeMessagingOrigin) {
     rendererRecovery.cancel();
     browserCompanionRecovery.cancel();
     accessibilityService?.stop();
-    for (const child of accessibilityProbeChildren) { try { child.kill(); } catch { } }
-    accessibilityProbeChildren.clear();
+    macAccessibilityProbe?.stop();
     browserCompanion?.stop();
     semanticAnalysis?.cancel();
     analysisQuality?.stop();

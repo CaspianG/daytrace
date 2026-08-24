@@ -332,6 +332,15 @@ button:focus-visible, input:focus-visible { outline: 2px solid #748e6c; outline-
 .permission-card > svg { margin-top: 2px; }
 .permission-card > .permission-copy { display: grid; min-width: 0; gap: 4px; }
 .permission-card > .permission-copy span { line-height: 1.5; }
+.permission-probe-result { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 10px 12px; border: 1px solid #d8e1d3; border-radius: 9px; color: #577052; background: #f8faf6; }
+.permission-probe-result > .status-dot { flex: 0 0 auto; }
+.permission-probe-result > div { display: grid; min-width: 0; gap: 2px; }
+.permission-probe-result strong { font-size: 11px; line-height: 1.35; }
+.permission-probe-result small { color: #7e887a; font-size: 9px; }
+.permission-probe-result.registering .status-dot { animation: status-pulse 1.2s ease-in-out infinite; background: #c69b50; }
+.permission-probe-result.denied, .permission-probe-result.error, .permission-probe-result.unavailable { border-color: #ead1c8; color: #925844; background: #fff9f6; }
+.permission-probe-result.denied .status-dot, .permission-probe-result.error .status-dot, .permission-probe-result.unavailable .status-dot { background: #c96f55; }
+.permission-card > .permission-probe-result { grid-column: 2; }
 .permission-card button { width: 100%; min-width: 0; min-height: 40px; padding: 8px 10px; border: 1px solid #9fb297; border-radius: 8px; color: #526e4d; background: white; cursor: pointer; font-weight: 650; line-height: 1.3; white-space: normal; }
 .permission-card .permission-actions { display: grid; grid-column: 2; grid-template-columns: minmax(0, 1.45fr) minmax(0, .95fr) minmax(0, 1.65fr); width: 100%; min-width: 0; gap: 7px; }
 .permission-copy-warning { display: grid; gap: 5px; margin: 16px 0 0; padding: 14px 16px; border: 1px solid #e2b7a9; border-radius: 10px; color: #955a47; background: #fff8f5; }
@@ -635,6 +644,9 @@ button:focus-visible, input:focus-visible { outline: 2px solid #748e6c; outline-
 .permission-steps li > span { display: grid; flex: 0 0 30px; width: 30px; height: 30px; place-items: center; border-radius: 50%; color: #587052; background: #e8efe3; font-size: 12px; font-weight: 800; }
 .permission-repair { display: grid; gap: 5px; margin-top: 14px; padding: 14px 16px; border: 1px solid #e4d5b5; border-radius: 10px; color: #745f35; background: #fffaf0; }
 .permission-repair span { font-size: 12px; line-height: 1.55; }
+.permission-migration { display: flex; align-items: flex-start; gap: 9px; margin-top: 10px; padding: 12px 14px; border-radius: 10px; color: #5f685b; background: #f2f4ef; font-size: 11px; line-height: 1.5; }
+.permission-migration svg { flex: 0 0 auto; margin-top: 1px; color: #70856a; }
+.permission-onboarding-card > .permission-probe-result { margin-top: 10px; }
 .permission-check { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 43px; margin-top: 9px; border: 1px solid #9fb297; border-radius: 10px; color: #526e4d; background: #fff; cursor: pointer; font-weight: 700; }
 .permission-check:disabled { cursor: wait; opacity: .68; }
 .permission-later { display: block; width: 100%; min-height: 41px; margin: 9px auto 0; padding: 7px 12px; border: 1px solid #d8d5ce; border-radius: 10px; color: #66645e; background: #f8f7f3; cursor: pointer; font-size: 12px; font-weight: 700; }
@@ -1079,6 +1091,13 @@ html[data-theme="dark"] .onboarding-back:hover { color: #c9d8c5; background: #25
 html[data-theme="dark"] .permission-steps li { color: #c5cbc1; }
 html[data-theme="dark"] .permission-steps li > span { color: #bad0b4; background: #2b3828; }
 html[data-theme="dark"] .permission-repair { border-color: #645538; color: #d1b576; background: #30291d; }
+html[data-theme="dark"] .permission-migration { color: #aeb8a9; background: #222820; }
+html[data-theme="dark"] .permission-migration svg { color: #9eb298; }
+html[data-theme="dark"] .permission-probe-result { border-color: #40503b; color: #bad0b4; background: #222b1f; }
+html[data-theme="dark"] .permission-probe-result small { color: #8f998a; }
+html[data-theme="dark"] .permission-probe-result.denied,
+html[data-theme="dark"] .permission-probe-result.error,
+html[data-theme="dark"] .permission-probe-result.unavailable { border-color: #754d40; color: #e2a18b; background: #2e211d; }
 html[data-theme="dark"] .permission-later { border-color: #3e463a; color: #abb2a6; background: #1d221a; }
 html[data-theme="dark"] .permission-later:hover { color: #c9d8c5; border-color: #5b6c55; background: #242c21; }
 html[data-theme="dark"] .app-loading { background: radial-gradient(circle at 50% 42%, rgba(77, 103, 70, .2) 0, transparent 29%), #10130e; }

@@ -14,6 +14,7 @@ function createAccessibilityService({
   let timer = null;
   let lastTrusted;
   let refreshPromise = null;
+  let promptPromise = null;
   let nextIntervalMs = intervalMs;
 
   function stopWatching() {
@@ -41,14 +42,19 @@ function createAccessibilityService({
 
   async function refresh(prompt = false) {
     if (platform !== "darwin") return publish(true);
+    if (prompt && promptPromise) return promptPromise;
     if (refreshPromise && !prompt) return refreshPromise;
     const pending = Promise.resolve()
       .then(() => probeTrusted ? probeTrusted(Boolean(prompt)) : isTrusted?.(Boolean(prompt)))
       .catch(() => isTrusted?.(Boolean(prompt)))
       .then(publish);
-    if (!prompt) refreshPromise = pending;
+    if (prompt) promptPromise = pending;
+    else refreshPromise = pending;
     try { return await pending; }
-    finally { if (refreshPromise === pending) refreshPromise = null; }
+    finally {
+      if (refreshPromise === pending) refreshPromise = null;
+      if (promptPromise === pending) promptPromise = null;
+    }
   }
 
   function watch() {
