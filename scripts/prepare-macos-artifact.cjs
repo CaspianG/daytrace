@@ -34,7 +34,12 @@ async function prepareUnsignedUniversalCollector(event) {
   // that explicit before signing the final bundle.
   for (const fileName of ["LICENSE", "README.md", "README_RU.md"]) {
     const dataFile = path.resolve(appPath, "Contents", fileName);
-    if (fs.existsSync(dataFile)) await fs.promises.chmod(dataFile, 0o644);
+    if (!fs.existsSync(dataFile)) continue;
+    await run("codesign", ["--remove-signature", dataFile]).catch((error) => {
+      const detail = String(error?.stderr || error?.message || error);
+      if (!detail.includes("code object is not signed at all")) throw error;
+    });
+    await fs.promises.chmod(dataFile, 0o644);
   }
 
   // Re-seal the exact final helper, then the parent app that contains it. The

@@ -139,6 +139,7 @@ test("macOS packages and checks a named Accessibility collector with its own exa
   assert.match(prepareMacArtifact, /ElectronAsarIntegrity/);
   assert.match(prepareMacArtifact, /DAYTRACE_COMMUNITY_SIGNING_IDENTITY/);
   assert.match(prepareMacArtifact, /README_RU\.md/);
+  assert.match(prepareMacArtifact, /--remove-signature/);
   assert.match(prepareMacArtifact, /fs\.promises\.chmod\(dataFile, 0o644\)/);
   assert.match(prepareMacArtifact, /--timestamp=none/);
   assert.match(prepareMacArtifact, /--verify", "--deep", "--strict/);
