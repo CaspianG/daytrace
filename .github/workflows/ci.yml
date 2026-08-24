@@ -37,3 +37,5 @@ jobs:
       - run: npm run build:tracker:mac
       - run: npm run test:stability
       - run: npm run test:performance
+      - name: Package and inspect the final unsigned universal ZIP and DMG
+        run: npm run package:mac:community

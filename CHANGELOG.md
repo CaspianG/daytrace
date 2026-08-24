@@ -4,6 +4,11 @@ All notable changes to Daytrace are documented here.
 
 ## [Unreleased]
 
+## [0.5.10] - 2026-08-24
+
+- Repairs unsigned universal macOS packages by re-sealing the named collector after Electron's x64/arm64 merge and before both artifacts are created, while leaving the future Developer ID path untouched.
+- Verifies the collector signature and bundled bilingual install guide inside the final ZIP and mounted DMG, not only in the intermediate application directory.
+
 ## [0.5.9] - 2026-08-24
 
 - Added a side-by-side Built-in / Signal pack / Semantic quality comparison to first-run onboarding and Settings. All three modes are measured on the same versioned 48-label RU/EN set, with decision precision kept separate from coverage.

@@ -119,7 +119,7 @@ class SemanticModelService {
     this.receiptPath = path.join(this.modelRoot, "receipt.json");
     this.analysisStatePath = path.join(root, "semantic-analysis-state.json");
     this.fetch = options.fetch || globalThis.fetch;
-    this.baseUrl = options.baseUrl || releaseBase(options.version || "0.5.9");
+    this.baseUrl = options.baseUrl || releaseBase(options.version || "0.5.10");
     this.developmentAssetRoot = options.developmentAssetRoot || "";
     this.onChange = typeof options.onChange === "function" ? options.onChange : () => {};
     this.downloading = false;

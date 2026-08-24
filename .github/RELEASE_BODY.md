@@ -1,6 +1,8 @@
 ## Downloads
 
-### What is new in v0.5.9
+### What is new in v0.5.10
+
+- The unsigned universal macOS build now re-seals `Daytrace Collector.app` after Electron combines x64 and arm64. Release checks open the final ZIP and mount the final DMG to verify the helper signature and bilingual install guide before publication.
 
 - Fixed the recurring startup-training loop. First-run setup now belongs to the local profile, not the app version: completed users are migrated silently and updates never reopen it.
 - New profiles receive one five-step animated guide over the real Daytrace interface after setup. It is marked shown as soon as it opens so a crash cannot make it persistent, and it remains replayable from the sidebar and Settings without resetting language, model choice, history, or permissions.

@@ -19,6 +19,7 @@ const macGuideRu = fs.readFileSync(path.join(root, "docs", "MACOS_INSTALL_RU.md"
 const bundledMacGuide = fs.readFileSync(path.join(root, "MACOS_INSTALL.txt"), "utf8");
 const bundleMacGuideScript = fs.readFileSync(path.join(root, "scripts", "bundle-macos-install-guide.sh"), "utf8");
 const macTrackerBuild = fs.readFileSync(path.join(root, "scripts", "build-macos-tracker.sh"), "utf8");
+const prepareMacArtifact = fs.readFileSync(path.join(root, "scripts", "prepare-macos-artifact.cjs"), "utf8");
 const verifyMacPackageScript = fs.readFileSync(path.join(root, "scripts", "verify-macos-package.sh"), "utf8");
 const verifyMacReleaseScript = fs.readFileSync(path.join(root, "scripts", "verify-macos-release.sh"), "utf8");
 const electronMain = fs.readFileSync(path.join(root, "electron", "main.cjs"), "utf8");
@@ -37,6 +38,7 @@ test("release metadata and both READMEs name the same current version", () => {
   assert.match(readmeRu, new RegExp(`Текущий релиз: v${version.replaceAll(".", "\\.")}`));
   assert.match(readmeRu, new RegExp(`current-v${version.replaceAll(".", "\\.")}`));
   assert.match(changelog, new RegExp(`## \\[${version.replaceAll(".", "\\.")}\\]`));
+  assert.match(releaseBody, new RegExp(`What is new in v${version.replaceAll(".", "\\.")}`));
 });
 
 test("both READMEs document Windows, macOS, and measured system load", () => {
@@ -101,10 +103,16 @@ test("macOS tagged releases remain publishable without unavailable Apple credent
   assert.match(releaseWorkflow, /cp MACOS_INSTALL\.txt release\/MACOS_INSTALL\.txt/);
   assert.match(releaseWorkflow, /release\/MACOS_INSTALL\.txt/);
   assert.match(releaseWorkflow, /body_path: \.github\/RELEASE_BODY\.md/);
-  assert.match(pkg.scripts["dist:mac"], /mac\.identity=null/);
-  assert.match(pkg.scripts["dist:mac"], /mac\.notarize=false/);
-  assert.match(pkg.scripts["dist:mac"], /verify-macos-package\.sh/);
-  assert.match(pkg.scripts["dist:mac"], /bundle-macos-install-guide\.sh/);
+  assert.match(pkg.scripts["dist:mac"], /npm run package:mac:community/);
+  assert.match(pkg.scripts["package:mac:community"], /mac\.identity=null/);
+  assert.match(pkg.scripts["package:mac:community"], /mac\.notarize=false/);
+  assert.match(pkg.scripts["package:mac:community"], /DAYTRACE_COMMUNITY_MAC_BUILD=1/);
+  assert.ok(pkg.scripts["package:mac:community"].indexOf("bundle-macos-install-guide.sh") < pkg.scripts["package:mac:community"].indexOf("verify-macos-package.sh"));
+  assert.ok(pkg.scripts["dist:mac:release"].indexOf("bundle-macos-install-guide.sh") < pkg.scripts["dist:mac:release"].indexOf("verify-macos-package.sh"));
+  assert.equal(pkg.build.artifactBuildStarted, "scripts/prepare-macos-artifact.cjs");
+  assert.match(pkg.scripts["package:mac:community"], /verify-macos-package\.sh/);
+  assert.match(pkg.scripts["package:mac:community"], /bundle-macos-install-guide\.sh/);
+  assert.match(ciWorkflow, /npm run package:mac:community/);
   assert.equal(pkg.build.dmg.contents.some((item) => item.path === "MACOS_INSTALL.txt"), true);
   assert.equal(pkg.build.dmg.contents.some((item) => item.name === "IF MAC BLOCKS DAYTRACE - OPEN THIS.txt"), true);
   assert.match(bundleMacGuideScript, /IF MAC BLOCKS DAYTRACE - OPEN THIS\.txt/);
@@ -116,9 +124,17 @@ test("macOS packages and checks a named Accessibility collector with its own exa
   assert.equal(pkg.build.mac.extraFiles.some((item) => item.to === "Helpers/Daytrace Collector.app"), true);
   assert.match(macTrackerBuild, /CFBundleIdentifier<\/key><string>local\.daytrace\.desktop\.collector/);
   assert.match(macTrackerBuild, /codesign --force --sign - --options runtime --identifier local\.daytrace\.desktop\.collector/);
+  assert.match(prepareMacArtifact, /DAYTRACE_COMMUNITY_MAC_BUILD/);
+  assert.match(prepareMacArtifact, /mac-universal/);
+  assert.match(prepareMacArtifact, /--identifier", "local\.daytrace\.desktop\.collector/);
+  assert.match(prepareMacArtifact, /--verify", "--deep", "--strict/);
   assert.match(verifyMacReleaseScript, /Contents\/Helpers\/Daytrace Collector\.app/);
   assert.match(verifyMacPackageScript, /CFBundleIdentifier/);
   assert.match(verifyMacPackageScript, /lipo -archs/);
+  assert.match(verifyMacPackageScript, /ditto -x -k/);
+  assert.match(verifyMacPackageScript, /hdiutil attach/);
+  assert.match(verifyMacPackageScript, /IF MAC BLOCKS DAYTRACE - OPEN THIS\.txt/);
+  assert.match(verifyMacPackageScript, /mktemp -d "\$SMOKE_ROOT\/daytrace-desktop-smoke-packaged-XXXXXX"/);
   assert.match(verifyMacPackageScript, /--check-accessibility/);
   assert.match(verifyMacPackageScript, /--daytrace-smoke-test/);
   assert.match(electronMain, /"Helpers", "Daytrace Collector\.app", "Contents", "MacOS", "Daytrace Collector"/);
