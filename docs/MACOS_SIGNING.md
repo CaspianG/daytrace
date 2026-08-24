@@ -20,7 +20,8 @@ That strict path passes the certificate to electron-builder as `CSC_LINK`, enabl
 codesign --verify --deep --strict --verbose=2 Daytrace.app
 spctl --assess --verbose=2 --type exec Daytrace.app
 xcrun stapler validate Daytrace.app
-codesign --verify --strict --verbose=2 Daytrace.app/Contents/Resources/tracker/macos/daytrace-tracker
+codesign --verify --deep --strict --verbose=2 "Daytrace.app/Contents/Helpers/Daytrace Collector.app"
+codesign --verify --strict --verbose=2 "Daytrace.app/Contents/Helpers/Daytrace Collector.app/Contents/MacOS/Daytrace Collector"
 ```
 
 An Apple Developer Program membership is required to remove the warning. A self-signed or ad-hoc certificate cannot remove it and must not be presented as a production fix. Until the real credentials exist, releases must remain explicit about their unsigned status in the release body, both README languages, the companion text asset, and the DMG itself.

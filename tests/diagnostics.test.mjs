@@ -28,3 +28,15 @@ test("self-diagnostics verifies local storage, collector, and Safari private fil
   assert.equal(result.checks.find((item) => item.id === "private").status, "pass");
   assert.equal(result.checks.find((item) => item.id === "accessibility").status, "pass");
 });
+
+test("temporary collector recovery and device suspension are warnings, not permanent failures", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "daytrace-diagnostics-recovery-"));
+  const tracker = path.join(root, "tracker");
+  fs.writeFileSync(tracker, "stub");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const store = new storeModule.EventStore(path.join(root, "data"));
+  for (const trackerStatus of ["recovering", "suspended"]) {
+    const result = diagnostics.runDiagnostics({ store, platform: "win32", packaged: true, trackerStatus, trackerExecutable: tracker });
+    assert.equal(result.checks.find((item) => item.id === "tracker").status, "warn");
+  }
+});

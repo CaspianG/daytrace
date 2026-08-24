@@ -175,6 +175,7 @@ class BrowserCompanionService {
     this.root = root;
     this.onContext = onContext;
     this.platform = options.platform || process.platform;
+    this.onFailure = typeof options.onFailure === "function" ? options.onFailure : () => {};
     this.address = socketAddress(root, this.platform);
     this.configFile = path.join(root, "browser-host.json");
     this.server = null;
@@ -187,7 +188,7 @@ class BrowserCompanionService {
     if (this.server) return Promise.resolve(this.status());
     if (this.platform !== "win32") try { fs.rmSync(this.address, { force: true }); } catch { }
     const token = crypto.randomBytes(32).toString("hex");
-    this.server = nodeNet.createServer((socket) => {
+    const server = nodeNet.createServer((socket) => {
       socket.setEncoding("utf8");
       let input = "";
       socket.on("data", (chunk) => {
@@ -210,9 +211,19 @@ class BrowserCompanionService {
         }
       });
     });
+    this.server = server;
     return new Promise((resolve, reject) => {
-      this.server.once("error", (error) => { this.server = null; this.lastError = String(error?.message || error); reject(error); });
-      this.server.listen(this.address, () => {
+      let listening = false;
+      server.on("error", (error) => {
+        if (this.server === server) this.server = null;
+        this.lastError = String(error?.message || error);
+        try { fs.rmSync(this.configFile, { force: true }); } catch { }
+        try { server.close(); } catch { }
+        if (listening) this.onFailure(error);
+        else reject(error);
+      });
+      server.listen(this.address, () => {
+        listening = true;
         fs.writeFileSync(this.configFile, `${JSON.stringify({ address: this.address, token })}\n`, { encoding: "utf8", mode: 0o600 });
         secureMode(this.configFile, 0o600);
         if (this.platform !== "win32") secureMode(this.address, 0o600);

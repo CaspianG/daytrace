@@ -48,6 +48,18 @@ test("desktop runtime blocks navigation, webviews, and tracker restart races", (
   assert.match(mainSource, /Semantic analysis process exited/);
   assert.match(mainSource, /assertTrustedIpcSender/);
   assert.match(mainSource, /trackerStarting/);
+  assert.match(mainSource, /tracker-recovery-scheduled/);
+  assert.match(mainSource, /TRACKER_READY_TIMEOUT_MS/);
+  assert.match(mainSource, /renderer-recovery-scheduled/);
+  assert.match(mainSource, /powerMonitor\.on\("suspend"/);
+  assert.match(mainSource, /powerMonitor\.on\("resume"/);
+  assert.match(mainSource, /powerMonitor\.on\("lock-screen"/);
+  assert.match(mainSource, /powerMonitor\.on\("unlock-screen"/);
+  assert.match(mainSource, /change\?\.kind === "input" \|\| change\?\.kind === "click"/);
+  assert.match(mainSource, /broadcastDeadline <= deadline/);
+  assert.match(mainSource, /broadcastTimer = null; broadcastDeadline = 0; sendState\(\)/);
+  assert.match(mainSource, /powerMonitor\.getSystemIdleTime\(\) >= 5 \* 60 && !powerMonitor\.isOnBatteryPower\(\)/);
+  assert.match(mainSource, /analysisQuality\.schedule\(60_000\)/);
   assert.match(mainSource, /if \(tracker !== child\) return/);
   assert.match(mainSource, /const shouldRun = Boolean\(store\?\.settings\.trackingEnabled\)/);
   assert.match(mainSource, /\["collectWindowTitles", "collectInputCounts", "collectBrowserTabCount"\]\.includes\(key\)\) restartTracker\(\)/);
@@ -63,12 +75,37 @@ test("collection settings remain configurable while tracking is paused and surfa
   assert.match(rendererSource, /catch \{\s*setActionError\(t\.settings\.actionFailed\)/);
 });
 
-test("onboarding and review guidance use versioned local IPC instead of browser storage", () => {
+test("onboarding is profile-scoped and the replayable quick guide never relies on browser storage", () => {
   assert.match(mainSource, /CURRENT_ONBOARDING_VERSION/);
+  assert.match(mainSource, /daytrace:complete-quick-tour/);
+  assert.match(mainSource, /--daytrace-reset-quick-tour/);
+  assert.match(mainSource, /RESET_QUICK_TOUR && store\.settings\.onboardingComplete/);
   assert.match(mainSource, /daytrace:acknowledge-review-guidance/);
-  assert.match(preloadSource, /restartOnboarding/);
+  assert.match(preloadSource, /completeQuickTour/);
   assert.match(preloadSource, /acknowledgeReviewGuidance/);
-  assert.match(rendererSource, /onboardingVersion/);
+  assert.match(rendererSource, /quickTourComplete/);
+  assert.doesNotMatch(rendererSource, /!state\.settings\.onboardingComplete \|\| Number\(state\.settings\.onboardingVersion/);
   assert.match(rendererSource, /review-coach/);
   assert.doesNotMatch(rendererSource, /localStorage/);
+});
+
+test("theme choice stays in the local settings bridge and respects the operating system", () => {
+  const themeSource = fs.readFileSync(path.join(root, "src", "theme.js"), "utf8");
+  assert.match(mainSource, /daytrace:set-theme/);
+  assert.match(mainSource, /nativeTheme\.themeSource/);
+  assert.match(mainSource, /setTitleBarOverlay/);
+  assert.match(preloadSource, /setTheme/);
+  assert.match(themeSource, /prefers-color-scheme: dark/);
+  assert.match(themeSource, /prefers-reduced-motion: reduce/);
+  assert.match(themeSource, /startViewTransition/);
+  assert.doesNotMatch(themeSource, /localStorage|sessionStorage/);
+});
+
+test("macOS Accessibility uses the collector identity and never blocks the application shell", () => {
+  assert.match(mainSource, /MAC_ACCESSIBILITY_TARGET = "Daytrace Collector"/);
+  assert.match(mainSource, /accessibilityMainTrusted: mainAccessibilityTrusted\(\)/);
+  assert.doesNotMatch(mainSource, /process\.platform === "darwin" && !accessibilityTrusted\(\).*permission-required/);
+  assert.match(rendererSource, /const showMacPermission =/);
+  assert.match(rendererSource, /className="permission-close"/);
+  assert.doesNotMatch(rendererSource, /return <MacPermissionOnboarding/);
 });

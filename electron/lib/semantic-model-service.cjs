@@ -1,11 +1,14 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { SEMANTIC_MODEL_QUALITY } = require("./semantic-model-quality.cjs");
 
 const MODEL_VERSION = "1.0.0";
 const MAX_ACTIVITY_COUNT = 160;
+const MAX_REVIEWED_CONTEXTS = 5_000;
 const MAX_ASSET_BYTES = 35 * 1024 * 1024;
 const ANALYSIS_TIMEOUT_MS = 3 * 60_000;
+const AUTO_ANALYSIS_INTERVAL_MS = 30 * 60_000;
 const ALLOWED_INTENTS = new Set(["work", "learning", "personal", "entertainment"]);
 
 const MODEL_ASSETS = [
@@ -72,11 +75,41 @@ function contextKey(activity) {
   return `${safeRuleText(activity?.app, 120).toLowerCase()}|${safeRuleText(activity?.title, 140).toLowerCase()}|${safeRuleText(activity?.domain, 180).toLowerCase()}`;
 }
 
+function contextHash(activity) {
+  const key = contextKey(activity);
+  return key ? crypto.createHash("sha256").update(key).digest("hex") : "";
+}
+
+function readAnalysisState(file) {
+  try {
+    const value = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (value?.schemaVersion !== 1 || value?.modelVersion !== MODEL_VERSION) return null;
+    const reviewed = Array.isArray(value.reviewedContextHashes)
+      ? value.reviewedContextHashes.filter((item) => /^[0-9a-f]{64}$/.test(String(item))).slice(-MAX_REVIEWED_CONTEXTS)
+      : [];
+    return {
+      reviewed,
+      lastObservedEventAt: Math.max(0, Number(value.lastObservedEventAt) || 0),
+      lastRunAt: Math.max(0, Number(value.lastRunAt) || 0),
+      lastResult: value.lastResult && typeof value.lastResult === "object" ? value.lastResult : null,
+    };
+  } catch { return null; }
+}
+
 function shouldRejectActivity(activity) {
   const title = safeRuleText(activity?.title, 140);
-  return !title
-    || /^(?:active window|активное окно|home|new tab|новая вкладка|general chat|общий чат)$/i.test(title)
-    || activity?.intentReason === "conflicting-title-signals";
+  const app = safeRuleText(activity?.app, 120);
+  const domain = safeRuleText(activity?.domain, 180);
+  if (!title || /^(?:active window|активное окно|home|new tab|новая вкладка|general chat|общий чат|notifications?|уведомления|setup|установка|program manager|plugin manager|open workspace|pricing|цены|вход|login|sign in|почта|mail|inbox|входящие|sent|отправленные|extensions?|расширения|translation|перевод|opening|открытие|contacts?(?: and)? addresses|контакты и адреса)$/i.test(title)) return true;
+  if (/(?:^|\s)@\s*[\p{L}\p{N}_+.-]+$/u.test(title) || /(?:^|\s)@[\p{L}\p{N}_+.-]+$/u.test(title)) return true;
+  if (/^[▲▼]?\s*[\d.,]+\s*\|.*\b(?:trade|trading|contracts?|perpetual)\b/i.test(title) || /^[▲▼]?\s*[\d.,]+\s*\|.*(?:трейдинг|контракт)/i.test(title)) return true;
+  if (/(?:file explorer|проводник|finder)/i.test(app) && /(?:[0-9a-f]{8}-[0-9a-f-]{20,}|\s[—-]\s*(?:проводник|file explorer|finder)$)/i.test(title)) return true;
+  if (/^(?:chatgpt(?::.*)?|daytrace|bybit)$/i.test(title) || /(?:gmail|почта mail)$/i.test(title) || /(?:landing page|целевая страница|internet speed test|интернетометр)/i.test(title)) return true;
+  if (/(?:\.\.\.|…)$/.test(title)) return true;
+  const searchMatch = title.match(/^(.*?)\s*[—-]\s*(?:поиск в google|google search|search results?)$/i);
+  const meaningfulTitle = (searchMatch?.[1] || title).replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const words = meaningfulTitle.match(/[\p{L}\p{N}]{2,}/gu) || [];
+  return (!domain && words.length < 3) || activity?.intentReason === "conflicting-title-signals";
 }
 
 class SemanticModelService {
@@ -84,31 +117,58 @@ class SemanticModelService {
     this.root = root;
     this.modelRoot = path.join(root, "models", "daytrace-semantic-v1");
     this.receiptPath = path.join(this.modelRoot, "receipt.json");
+    this.analysisStatePath = path.join(root, "semantic-analysis-state.json");
     this.fetch = options.fetch || globalThis.fetch;
-    this.baseUrl = options.baseUrl || releaseBase(options.version || "0.5.8");
+    this.baseUrl = options.baseUrl || releaseBase(options.version || "0.5.9");
     this.developmentAssetRoot = options.developmentAssetRoot || "";
     this.onChange = typeof options.onChange === "function" ? options.onChange : () => {};
     this.downloading = false;
     this.progress = 0;
     this.stage = "idle";
     this.running = false;
-    this.lastRunAt = null;
+    const analysisState = readAnalysisState(this.analysisStatePath);
+    this.lastRunAt = analysisState?.lastRunAt || null;
     this.lastError = "";
-    this.lastResult = { status: "never", candidates: 0, refined: 0, changed: 0, totalRules: 0 };
+    this.lastResult = analysisState?.lastResult || { status: "never", candidates: 0, refined: 0, changed: 0, totalRules: 0 };
+    this.lastObservedEventAt = analysisState?.lastObservedEventAt || 0;
+    this.reviewedContextHashes = new Set(analysisState?.reviewed || []);
+    this.prepared = null;
     this.active = null;
     this.analysisTimer = null;
+    this.installedCache = { checkedAt: 0, value: false };
     fs.mkdirSync(path.dirname(this.modelRoot), { recursive: true, mode: 0o700 });
     secureMode(path.dirname(this.modelRoot), 0o700);
   }
 
   notify() { try { this.onChange(); } catch { } }
 
-  installed() {
+  persistAnalysisState() {
+    const temporary = `${this.analysisStatePath}.tmp`;
+    const body = {
+      schemaVersion: 1,
+      modelVersion: MODEL_VERSION,
+      lastObservedEventAt: this.lastObservedEventAt,
+      lastRunAt: this.lastRunAt,
+      lastResult: this.lastResult,
+      // Only irreversible hashes are retained. Window titles and domains are
+      // never copied into this scheduler ledger.
+      reviewedContextHashes: [...this.reviewedContextHashes].slice(-MAX_REVIEWED_CONTEXTS),
+    };
+    fs.writeFileSync(temporary, JSON.stringify(body, null, 2), { encoding: "utf8", mode: 0o600 });
+    fs.renameSync(temporary, this.analysisStatePath);
+    secureMode(this.analysisStatePath, 0o600);
+  }
+
+  installed(force = false) {
+    if (!force && Date.now() - this.installedCache.checkedAt < 60_000) return this.installedCache.value;
+    let value = false;
     try {
       const receipt = JSON.parse(fs.readFileSync(this.receiptPath, "utf8"));
-      if (receipt.version !== MODEL_VERSION) return false;
-      return MODEL_ASSETS.every((asset) => fs.statSync(path.join(this.modelRoot, asset.bundlePath)).size === asset.size);
-    } catch { return false; }
+      value = receipt.version === MODEL_VERSION
+        && MODEL_ASSETS.every((asset) => fs.statSync(path.join(this.modelRoot, asset.bundlePath)).size === asset.size);
+    } catch { value = false; }
+    this.installedCache = { checkedAt: Date.now(), value };
+    return value;
   }
 
   status() {
@@ -126,6 +186,9 @@ class SemanticModelService {
       dataPolicy: "safe-window-metadata-only",
       languages: ["ru", "en"],
       runtimePolicy: "one-thread-short-lived-worker",
+      automaticPolicy: "idle-charging-new-contexts-only",
+      reviewedContexts: this.reviewedContextHashes.size,
+      quality: SEMANTIC_MODEL_QUALITY,
     };
   }
 
@@ -149,6 +212,7 @@ class SemanticModelService {
       fs.rmSync(this.modelRoot, { recursive: true, force: true });
       fs.renameSync(staging, this.modelRoot);
       secureMode(this.modelRoot, 0o700);
+      this.installedCache = { checkedAt: 0, value: false };
       this.lastError = "";
       return this.status();
     } catch (error) {
@@ -214,6 +278,13 @@ class SemanticModelService {
   remove() {
     this.cancel("removed");
     fs.rmSync(this.modelRoot, { recursive: true, force: true });
+    fs.rmSync(this.analysisStatePath, { force: true });
+    this.installedCache = { checkedAt: 0, value: false };
+    this.reviewedContextHashes.clear();
+    this.lastObservedEventAt = 0;
+    this.lastRunAt = null;
+    this.lastResult = { status: "never", candidates: 0, refined: 0, changed: 0, totalRules: 0 };
+    this.prepared = null;
     this.progress = 0;
     this.stage = "idle";
     this.lastError = "";
@@ -222,7 +293,7 @@ class SemanticModelService {
   }
 
   readBundle(languages = ["ru", "en"]) {
-    if (!this.installed()) throw new Error("Semantic model is not installed");
+    if (!this.installed(true)) throw new Error("Semantic model is not installed");
     const selected = new Set(Array.isArray(languages) ? languages : [languages]);
     const files = {};
     for (const asset of MODEL_ASSETS) {
@@ -235,14 +306,45 @@ class SemanticModelService {
     return files;
   }
 
-  begin(store) {
-    if (this.running) return { status: "busy" };
-    const activities = typeof store.smartAnalysisCandidates === "function" ? store.smartAnalysisCandidates(MAX_ACTIVITY_COUNT, 30) : [];
+  prepare(store, force = false) {
+    if (!this.installed()) return { status: "model-required", candidates: 0 };
+    if (this.running) return { status: "busy", candidates: 0 };
+    const now = Date.now();
+    const latestEventAt = Math.max(0, Number(typeof store?.latestEventAt === "function" ? store.latestEventAt() : 0) || 0);
+    if (!force && this.lastRunAt && now - this.lastRunAt < AUTO_ANALYSIS_INTERVAL_MS) return { status: "cooldown", candidates: 0 };
+    if (!force && latestEventAt && latestEventAt <= this.lastObservedEventAt) return { status: "unchanged", candidates: 0 };
+    const source = typeof store?.smartAnalysisCandidates === "function"
+      ? store.smartAnalysisCandidates(MAX_ACTIVITY_COUNT * 2, 30)
+      : [];
+    const activities = [];
+    const batchHashes = new Set();
+    for (const activity of source) {
+      const hash = contextHash(activity);
+      if (!hash || this.reviewedContextHashes.has(hash) || batchHashes.has(hash)) continue;
+      batchHashes.add(hash);
+      activities.push(activity);
+      if (activities.length >= MAX_ACTIVITY_COUNT) break;
+    }
     if (!activities.length) {
-      this.lastRunAt = Date.now();
-      this.lastResult = { status: "nothing-to-review", candidates: 0, refined: 0, changed: 0, totalRules: Array.isArray(store.smartRules) ? store.smartRules.length : 0 };
+      this.lastObservedEventAt = Math.max(this.lastObservedEventAt, latestEventAt);
+      this.lastRunAt = now;
+      this.lastResult = { status: "nothing-to-review", candidates: 0, refined: 0, changed: 0, totalRules: Array.isArray(store?.smartRules) ? store.smartRules.length : 0 };
+      this.prepared = null;
+      this.persistAnalysisState();
       return { ...this.lastResult };
     }
+    this.prepared = { activities, latestEventAt, preparedAt: now };
+    return { status: "ready", candidates: activities.length };
+  }
+
+  begin(store) {
+    if (this.running) return { status: "busy" };
+    const prepared = this.prepared && Date.now() - this.prepared.preparedAt < 5 * 60_000
+      ? { status: "ready", candidates: this.prepared.activities.length }
+      : this.prepare(store, true);
+    if (prepared.status !== "ready") return prepared;
+    const activities = this.prepared.activities;
+    const observedEventAt = this.prepared.latestEventAt;
     // Verify every asset before marking the service as running. If a model file
     // was changed or truncated, the UI must receive a normal error instead of a
     // permanently stuck "analyzing" state.
@@ -253,7 +355,8 @@ class SemanticModelService {
     this.progress = 1;
     this.stage = "preparing";
     this.lastError = "";
-    this.active = { token, activities, startedAt: Date.now() };
+    this.active = { token, activities, observedEventAt, startedAt: Date.now() };
+    this.prepared = null;
     clearTimeout(this.analysisTimer);
     this.analysisTimer = setTimeout(() => {
       if (this.active?.token === token) this.cancel("Semantic analysis timed out");
@@ -274,6 +377,7 @@ class SemanticModelService {
   complete(token, decisions, store) {
     if (!this.active || token !== this.active.token || Date.now() - this.active.startedAt > ANALYSIS_TIMEOUT_MS) throw new Error("Semantic analysis session expired");
     const activities = this.active.activities;
+    const observedEventAt = this.active.observedEventAt;
     const previousRules = Array.isArray(store.smartRules) ? store.smartRules : [];
     const merged = new Map(previousRules.map((rule) => [rule.id, rule]));
     let refined = 0;
@@ -315,7 +419,14 @@ class SemanticModelService {
     this.stage = "complete";
     this.lastRunAt = Date.now();
     this.lastResult = { status: "complete", candidates: activities.length, refined, changed, totalRules: persisted.length };
+    for (const activity of activities) {
+      const hash = contextHash(activity);
+      if (hash) this.reviewedContextHashes.add(hash);
+    }
+    while (this.reviewedContextHashes.size > MAX_REVIEWED_CONTEXTS) this.reviewedContextHashes.delete(this.reviewedContextHashes.values().next().value);
+    this.lastObservedEventAt = Math.max(this.lastObservedEventAt, Number(observedEventAt) || 0);
     this.active = null;
+    this.persistAnalysisState();
     this.notify();
     return { ...this.lastResult };
   }
@@ -325,6 +436,7 @@ class SemanticModelService {
     this.analysisTimer = null;
     this.running = false;
     this.active = null;
+    this.prepared = null;
     this.progress = 0;
     this.stage = error ? "error" : "idle";
     this.lastError = safeRuleText(error, 240);
@@ -337,8 +449,11 @@ module.exports = {
   MODEL_ASSETS,
   MODEL_VERSION,
   TOTAL_MODEL_BYTES,
+  AUTO_ANALYSIS_INTERVAL_MS,
   SemanticModelService,
   checksum,
+  contextHash,
   releaseBase,
   shouldRejectActivity,
+  SEMANTIC_MODEL_QUALITY,
 };

@@ -33,16 +33,16 @@ You normally need this exception only for the first launch of that downloaded bu
 
 After the app itself opens, Daytrace presents a separate Accessibility setup. This permission lets the native local collector observe the active application and visible active-window metadata. It does not grant cloud access and is unrelated to the Gatekeeper warning.
 
-Choose **Open Accessibility Settings**, enable Daytrace under **System Settings → Privacy & Security → Accessibility**, then return to Daytrace. Daytrace checks the native collector automatically; use **Check again** if needed. Keep exactly one installed copy named `/Applications/Daytrace.app`; when updating, choose **Replace**, not **Keep Both**, so macOS does not create `Daytrace 2.app` with a separate permission record. You can continue without permission, but the timeline remains empty until it is granted.
+Choose **Register collector**. Daytrace launches the embedded helper so macOS adds **Daytrace Collector** under **System Settings → Privacy & Security → Accessibility**, then opens that pane. Enable that exact entry and return to Daytrace. The app verifies the grant with a real collector launch; use **Check again** if needed. The permission window is dismissible, so settings and existing history remain available even while collection is disabled. Keep one installed `/Applications/Daytrace.app`; when updating, choose **Replace**, not **Keep Both**.
 
 If the switch is already on but Daytrace still shows the permission screen:
 
-1. In Accessibility, select every old **Daytrace** and **Daytrace 2** entry and remove it with the **minus** button.
-2. Click **plus**, choose exactly `/Applications/Daytrace.app`, and enable the newly added entry.
-3. Return to the app and click **Check again**. Daytrace checks access through the same native collector that records events, so a normal restart should no longer be required.
-4. To enter the interface immediately and repair access later, choose **Open Daytrace without tracking**. Settings and existing local data remain available; collection begins after permission is granted.
+1. If only **Daytrace** or **Daytrace 2** is enabled, that is the old UI identity, not the process that reads windows.
+2. Return to Daytrace and click **Register collector** so macOS adds **Daytrace Collector** automatically. Do not add `/Applications/Daytrace.app` manually for this permission.
+3. If several **Daytrace Collector** entries exist, remove the stale ones, register the collector again, enable the new entry, and click **Check again**.
+4. A close button and **Open Daytrace without tracking** always keep the interface available. Collection starts as soon as the real helper succeeds.
 
-In the current build the native collector lives inside `Daytrace.app/Contents/MacOS` and is associated with the installed application. Do not grant access to a copy running from the DMG, Downloads, or a `Daytrace 2.app` duplicate because macOS stores separate records for those copies.
+The collector is a named nested helper at `Daytrace.app/Contents/Helpers/Daytrace Collector.app` with bundle ID `local.daytrace.desktop.collector`. This removes the previous mismatch where the interface asked for permission for `Daytrace.app` while a different executable performed and checked the protected operation.
 
 ## Updates after installation
 
@@ -52,7 +52,7 @@ Starting with v0.5.5, “launches successfully” means that the new application
 
 The transition from v0.5.3 or older is a one-time exception: those installed binaries only know how to open the DMG, so perform the replacement described above once. Updates from v0.5.4 onward use the automatic path, while v0.5.5 adds readiness-confirmed rollback safety.
 
-Because the current public build has no stable Developer ID signature, macOS can still ask you to enable Daytrace in Accessibility again after an update. Daytrace detects this and opens the correct settings pane, but no application is allowed to grant this protected permission to itself.
+Because the current public build has no stable Developer ID signature, macOS can still ask you to enable **Daytrace Collector** again after an update that changes the collector binary. Daytrace registers the correct helper, detects the result, and never blocks the interface, but no application is allowed to grant this protected permission to itself. A Developer ID signature is still required to guarantee identity continuity across changed binaries.
 
 ## Why the warning cannot be removed in code
 

@@ -17,12 +17,12 @@
   · <a href="SECURITY.md">Security</a>
 </p>
 
-<p align="center"><strong>Current release: v0.5.8</strong> — Windows and macOS artifacts are built from the same tag and published together.</p>
+<p align="center"><strong>Current release: v0.5.9</strong> — Windows and macOS artifacts are built from the same tag and published together.</p>
 
 > **macOS first-launch notice:** the current Mac build is free and fully local, but it is not signed or notarized because the project does not have Apple Developer ID credentials. Gatekeeper will therefore warn on first launch. Read the [safe macOS installation guide](docs/MACOS_INSTALL.md) before downloading; it uses Finder's supported **Open** / **Open Anyway** flow and does not disable Gatekeeper.
 
 <p align="center">
-  <img alt="Current version v0.5.8" src="https://img.shields.io/badge/current-v0.5.8-6f8f67?style=flat-square">
+  <img alt="Current version v0.5.9" src="https://img.shields.io/badge/current-v0.5.9-6f8f67?style=flat-square">
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-6f8f67?style=flat-square">
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-c5684b?style=flat-square">
   <img alt="macOS 12 or newer" src="https://img.shields.io/badge/macOS-12%2B-c5684b?style=flat-square">
@@ -57,7 +57,9 @@ Prefer a portable build? Download `Daytrace-Portable-…-x64.zip`, extract it, a
 
 On macOS 12 or newer, first read the [macOS installation guide](docs/MACOS_INSTALL.md), then download the universal `Daytrace-…-macOS-universal.dmg`. The release page and mounted DMG both contain the same warning and instructions. Drag Daytrace to Applications, then use **Control-click/right-click → Open** for the first launch. If it is still blocked, use **System Settings → Privacy & Security → Open Anyway**. This Gatekeeper message is expected because the project does not currently have the paid Apple Developer ID certificate required for signing and notarization; it is not a malware detection result. Do not disable Gatekeeper globally.
 
-After the app opens, Daytrace separately explains why Accessibility access is needed and opens the exact Privacy & Security pane. Keep only one installed copy named `/Applications/Daytrace.app`. Daytrace now verifies access through the actual native collector rather than the Electron window and rechecks automatically when you return. If an old grant is stuck, remove every Daytrace/Daytrace 2 entry with the minus button, add exactly `/Applications/Daytrace.app` with plus, enable it, and choose **Check again**. **Open Daytrace without tracking** keeps the interface accessible while permission is repaired. Starting with v0.5.4, the built-in updater replaces the installed app and automatically repairs a numbered duplicate back to the canonical name. Verify the DMG against the release's `SHA256SUMS.txt` before opening it.
+After the app opens, Daytrace separately explains why Accessibility access is needed and registers the exact **Daytrace Collector** helper that reads active-window metadata. In Accessibility, enable **Daytrace Collector** — an old Daytrace or Daytrace 2 switch belongs to the UI app and does not authorize the collector. Daytrace verifies the grant by launching that same helper and starts tracking without a normal restart. The permission dialog is dismissible and can never lock access to settings or existing local history. Keep one installed `/Applications/Daytrace.app`; the built-in updater repairs numbered duplicates automatically. Verify the DMG against the release's `SHA256SUMS.txt` before opening it.
+
+![Dismissible Daytrace Collector permission setup in English](docs/assets/screenshots/mac-permission-en.png)
 
 Minimizing or closing the window releases the heavy renderer while the lightweight native tracker continues from the system tray. Double-click the tray icon or launch Daytrace again to reopen the same instance.
 
@@ -85,6 +87,7 @@ The v0.5.5 release also closes several less-visible failure modes found during a
 - **Pause, session deletion, and delete-all controls** inside the app.
 - **Local workflow detection** that can export a reviewable `SKILL.md` draft from repeated application sequences.
 - **Complete English and Russian localization** for the interface, timeline labels, local answers, tray menu, installer, and exported skills.
+- **System, Light, and Dark appearance modes** stored locally, with a native title-bar match, a quick sidebar switch, a complete Settings selector, and a reduced-motion-safe animated transition across every application surface.
 - **First-run language choice** with an instant language switch available later in Settings.
 - **Guided macOS permission setup** with the native Accessibility prompt, a direct System Settings link, and automatic detection when access is granted.
 - **Launch at login** on Windows and macOS, starting quietly in the tray/menu bar.
@@ -97,13 +100,16 @@ The v0.5.5 release also closes several less-visible failure modes found during a
 - **Scoped corrections**: changing a native application affects only that application; changing a browser page or chat affects only that exact app/title context and never recolors neighboring activities.
 - **Broader visible-context understanding** for popular games, packaged game executables, technical work, debugging, installation, infrastructure, searches, comparisons, and reference pages in English and Russian.
 - **Preview and Undo for corrections**: before a rule is applied, Daytrace shows the exact activity count, duration, days, and sample changes it will affect. The previous rule set remains locally recoverable.
-- **Three local analysis modes**: Built-in uses no downloaded model; Signal pack 1.1 is a transparent SHA-256-verified RU/EN word-and-phrase weight file of about 6 KB; Semantic model 1.0 is an optional ~48 MB RU+EN sentence-encoder bundle that compares meaning instead of only exact keywords. The selected optional engine runs in a bounded, short-lived worker after two minutes of system idle or on demand. Semantic inference uses one CPU thread, loads only the language needed for the current batch, and unloads each language worker before starting the next. It is not a chat or generative LLM, and Daytrace remains fully usable without it.
-- **A three-step first-run guide for every new and existing user** explains local privacy, how observe → infer → remember works, and lets the user explicitly choose Built-in, Signal pack, or Semantic model. Nothing downloads silently, and the tour can be replayed from Settings.
+- **Three local analysis modes**: Built-in uses no downloaded model; Signal pack 1.1 is a transparent SHA-256-verified RU/EN word-and-phrase weight file of about 6 KB; Semantic model 1.0 is an optional ~48 MB RU+EN sentence-encoder bundle that compares meaning instead of only exact keywords. The selected optional engine runs in a bounded, short-lived worker after five minutes of system idle on external power or on demand. Semantic inference uses one CPU thread, loads only the language needed for the current batch, and unloads each language worker before starting the next. It is not a chat or generative LLM, and Daytrace remains fully usable without it.
+- **An honest side-by-side quality check** on the first-run screen and in Settings. Every mode shows decision precision and coverage from the same versioned RU/EN set. A separate local pass reports how much of this device's retained history each installed mode can classify and compares pre-correction predictions only with the contexts the user explicitly corrected. Titles never enter the aggregate quality cache, and a small personal sample is labelled as preliminary instead of being presented as reliable accuracy.
+- **First-run setup that truly runs once per local profile** explains privacy and lets a new user explicitly choose Built-in, Signal pack, or Semantic model. Updates never reopen it. A separate five-step animated guide runs over the real interface once after setup and stays replayable from the sidebar or Settings without changing any preference.
 - **Optional Chromium browser companion** for Chrome, Edge, Brave, and Vivaldi. Native messaging adds only the focused browser window's active tab title, domain, safe path, and explicit private flag; query strings, fragments, credentials, page content, background windows/tabs, and private contexts are discarded.
 - **JSON and CSV export**, plus streaming encrypted backup/restore using scrypt and AES-256-GCM. Restore is transactional, and the passphrase is never stored.
 - **Built-in self-diagnostics** for storage, collector health, title and idle signals, private filtering, Accessibility, autostart, browser companion, and the selected optional analysis engine.
 
 ![Daytrace day overview and latest activity in English](docs/assets/screenshots/timeline-en.png)
+
+![Daytrace dark appearance settings in English](docs/assets/screenshots/appearance-dark-en.png)
 
 ![Daytrace calendar with the selected date in English](docs/assets/screenshots/calendar-en.png)
 
@@ -121,15 +127,29 @@ The v0.5.5 release also closes several less-visible failure modes found during a
 
 ![JSON, CSV and encrypted backup controls in English](docs/assets/screenshots/data-portability-en.png)
 
-## One short setup, then Daytrace learns locally
+## One short setup, one in-app guide, then Daytrace learns locally
 
-Version 0.5.8 shows the improved guide once to both fresh installs and existing users. It explains exactly what is and is not captured, and offers three honest analysis levels. The recommended semantic model is optional, downloaded only after an explicit click, checksum-verified, and unloaded after a bounded pass. A full generative LLM is deliberately not presented as if it were included.
+Version 0.5.9 separates mandatory setup from product help. Setup opens only for a local profile that has never completed it; changing the app version can no longer reopen the screen. A new profile then receives one short animated guide over the actual overview, question bar, purpose correction, model settings, and local-status controls. Opening or finishing the guide immediately records that it was shown, so a crash or forced shutdown cannot create a startup loop. The same guide remains available on demand from the sidebar and Settings without resetting setup.
+
+Built-in remains the selected default for zero download and minimum load. Semantic is the quality-oriented option because it covers more of the shared control set, but it is still optional, checksum-verified, one-threaded, idle-only for automatic passes, and unloaded after a bounded batch. Two larger multilingual candidates were evaluated reproducibly and rejected because they were roughly 2.7× larger while producing materially lower held-out decision precision. Daytrace does not add a heavier model merely to advertise one.
 
 When enough low-confidence activity accumulates, Daytrace shows one in-app reminder instead of repeatedly interrupting the user. Repeated appearances of the same application, page, or chat are grouped into one review item. A confirmed correction is stored as a local rule and reused for that same scope in later activity; the preview and Undo remain available before any timeline is changed.
 
 ![Daytrace first-run local analysis choice in English](docs/assets/screenshots/onboarding-en.png)
 
+![Replayable five-step quick guide over the real Daytrace interface in English](docs/assets/screenshots/quick-tour-en.png)
+
 ![Daytrace low-confidence review reminder in English](docs/assets/screenshots/review-coach-en.png)
+
+![Side-by-side engine benchmark and local personal-history quality check in English](docs/assets/screenshots/analysis-quality-en.png)
+
+| Mode | Decision precision | Coverage | Download / trade-off |
+| --- | ---: | ---: | --- |
+| Built-in | about 93% (25/27) | 56% (27/48) | 0 MB, instant and deterministic |
+| Signal pack 1.1 | about 93% (26/28) | 58% (28/48) | about 6 KB, transparent phrase weights |
+| Semantic model 1.0 | about 95% (35/37) | 77% (37/48) | about 48 MB, short one-thread batches |
+
+These figures use the same 48 labelable RU/EN cases. “Decision precision” excludes abstentions; “coverage” shows how often the mode had enough evidence to answer. They are not universal personal-history accuracy. Settings therefore shows a second, device-local comparison: coverage across retained unique contexts and agreement only against explicit user corrections, including the exact sample size and a small-sample warning below 15 corrected contexts. An installed optional mode is not given a copied or estimated personal score before its first real local pass; the UI asks the user to run it once instead.
 
 The same interface is also available in [Russian](README_RU.md), including localized summaries and system-tray controls.
 
@@ -146,7 +166,7 @@ Purpose is inferred in layers: a recognized foreground service, the meaning of t
 
 This is deliberately not message-content analysis. Daytrace can classify an active Telegram chat named “Project Atlas — client meeting” from its visible title and can reuse the same locally observed context later, but it cannot know what an opaque chat name means without surrounding evidence or your correction. The same boundary applies to browser pages, documents, editors, and every other application.
 
-Classifier changes are guarded by a versioned synthetic RU/EN accuracy set covering browsers, messengers, IDEs, games, video, documents, meetings, and learning. CI requires at least 90% coverage, at least 94% precision on covered cases, at least 90% correctness per language, and zero forced labels for explicitly ambiguous examples. The optional semantic bundle has an additional bilingual meaning-based regression set and a real Electron/WASM smoke test. These are regression gates, not a claim that every real-world title can be understood.
+Classifier changes are guarded by versioned synthetic RU/EN sets covering browsers, messengers, IDEs, games, video, documents, meetings, and learning. The shared comparison above is recomputed from source by `npm run model:verify:semantic`; CI fails if its checked-in counts drift. On its held-out part, Built-in and Signal pack each currently give about 91% decision precision and 72% coverage, while Semantic gives about 91% precision and 69% coverage. Real-history metadata can be much shorter and noisier, so weak titles, chat handles, price tickers, generic mail/search windows, and truncated UI text are rejected before inference. The per-device checker streams retained JSONL in a background worker and persists only counts and ratios. These are regression diagnostics, not a promise that every real-world title can be understood.
 
 ![Correcting activity purpose and reviewing evidence in English](docs/assets/screenshots/purpose-en.png)
 
@@ -212,9 +232,11 @@ Local answers do not use an LLM. A deterministic on-device parser recognizes exa
 
 ## System load
 
-Daytrace uses native foreground events and coarse samples instead of screenshots or continuous screen polling. On the Windows verification machine, the packaged v0.4.0 background process measured **0.039% total CPU** over a 30-second sample and **199 MiB combined working memory** across Electron and the native collector with no renderer process. A clean packaged launch reached a validated non-empty window in **1.14 s**. The updater adds one small metadata request after startup and then at most once every six hours while online; it does not continuously poll. Measurements vary by hardware, antivirus, event volume, and operating system; macOS packaging is verified in CI, but equivalent physical-Mac load measurements are still being collected.
+Daytrace uses native foreground events and coarse samples instead of screenshots or continuous screen polling. In the current v0.5.9 Windows verification run, the renderer-free Electron background runtime averaged **0.032% CPU** across sampled Electron processes over 12 seconds; the main process measured **0.392% CPU** over the same interval. It peaked at **125.6 MiB private memory / 193.9 MiB working set**, grew by only **0.1 MiB** across the sample, and kept three Electron service processes. The final native Windows collector was measured separately over 20.10 seconds: it consumed no measurable CPU tick in that sample, peaked at **28.6 MiB working set / 7.0 MiB private memory**, and stayed at 13 threads. These are development-runtime measurements rather than a hardware-independent guarantee. The automated release gate rejects an Electron background average above **5% CPU** or **180 MiB private memory**. On the retained local history used for this release check, a cold 48-hour dashboard state took about **499 ms**, a cached selected day about **0.01 ms**, and a state refresh after a new event about **220 ms**; no titles left the device. The updater adds one small metadata request after startup and then at most once every six hours while online; it does not continuously poll. Equivalent physical-Mac measurements are still being collected and are not inferred from the Windows result.
 
-The browser companion is event-driven and has no polling loop. Its native bridge is started only for one foreground-context delivery and exits immediately, so enabling the extension does not leave a second Electron process resident. The zero-download built-in classifier is the default. An optional signal or semantic pass waits for at least two minutes of idle time, processes a bounded batch, and terminates its worker afterward. In a Windows Electron/WASM smoke test, a bilingual semantic pass reviewed two ambiguous contexts in **2.87 s**: the complete background process tree rose from **150.0 MiB to a transient 569.8 MiB of private memory**, then the hidden analysis host was destroyed. This is a deliberately conservative worst-case RU+EN test, not a continuous background footprint; a one-language pass can be smaller, and results vary by machine. Historical days and one-year retention are loaded lazily instead of being re-analyzed continuously.
+Stability is tested separately from ordinary unit tests. The desktop smoke deliberately terminates the Windows collector and force-crashes the Electron renderer, then requires Daytrace to restore both. Runtime recovery uses bounded exponential backoff, a ten-second collector readiness watchdog, and a three-attempt renderer ceiling so a broken component cannot become a tight restart loop. Suspending or locking the computer stops the collector; resume or unlock starts a fresh collector and restores the operating-system hooks. On macOS, denied Accessibility checks back off from two seconds to thirty seconds instead of spawning a helper continuously, foreground Accessibility reads stop while the user is idle, and a disabled event tap is re-enabled automatically. The optional browser companion has the same bounded recovery path.
+
+The browser companion is event-driven and has no polling loop. Its native bridge is started only for one foreground-context delivery and exits immediately, so enabling the extension does not leave a second Electron process resident. The zero-download built-in classifier is the default. An automatic optional signal or semantic pass waits for at least five minutes of idle time, external power, and new contexts, processes a bounded batch, and terminates its worker afterward; manual analysis remains available at any time. In the current Windows Electron/WASM smoke test, a bilingual semantic pass reviewed two ambiguous contexts in **2.19 s**: the complete background process tree rose from **149.2 MiB to a transient 561.1 MiB of private memory**, then the hidden analysis host was destroyed. This is a deliberately conservative worst-case RU+EN test, not a continuous background footprint; a one-language pass can be smaller, and results vary by machine. Historical days and one-year retention are loaded lazily instead of being re-analyzed continuously.
 
 The v0.5.5 long-history path was also measured separately with a synthetic one-year archive of **8,760 hourly files** on the Windows verification machine. Opening the store took **63.3 ms**, building the bounded recent state took **106.2 ms**, and answering a today-only question took **28.7 ms** while reading just **48 recent events**. This is a storage/analysis benchmark, not a claim about total launch time; it demonstrates that selecting one-year retention does not turn the full archive into continuous background work.
 
@@ -252,6 +274,8 @@ Run verification and produce both installer and portable artifacts:
 npm test
 npm run test:accuracy
 npm run test:desktop
+npm run test:stability
+npm run test:performance
 npm run test:sites
 npm run dist
 ```

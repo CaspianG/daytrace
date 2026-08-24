@@ -58,7 +58,7 @@ class SmartAnalysisService {
     this.modelPath = path.join(this.modelDir, MODEL_NAME);
     this.workerPath = options.workerPath || path.join(__dirname, "smart-analysis-worker.cjs");
     this.fetch = options.fetch || globalThis.fetch;
-    const urls = modelUrlsForVersion(options.version || "0.5.8");
+    const urls = modelUrlsForVersion(options.version || "0.5.9");
     this.modelUrl = options.modelUrl || urls.modelUrl;
     this.checksumUrl = options.checksumUrl || urls.checksumUrl;
     this.expectedChecksum = String(options.expectedChecksum || MODEL_SHA256).toLowerCase();
@@ -66,6 +66,7 @@ class SmartAnalysisService {
     this.lastRunAt = null;
     this.lastError = "";
     this.lastResult = { status: "never", candidates: 0, refined: 0, changed: 0, totalRules: 0 };
+    this.modelCache = null;
     fs.mkdirSync(this.modelDir, { recursive: true, mode: 0o700 });
     secureMode(this.modelDir, 0o700);
   }
@@ -73,7 +74,20 @@ class SmartAnalysisService {
   status() {
     let model = null;
     let sizeBytes = 0;
-    try { if (fs.existsSync(this.modelPath)) model = loadModel(this.modelPath); } catch (error) { this.lastError = String(error?.message || error); }
+    try {
+      if (fs.existsSync(this.modelPath)) {
+        const stat = fs.statSync(this.modelPath);
+        const key = `${stat.size}:${stat.mtimeMs}`;
+        if (this.modelCache?.key === key) model = this.modelCache.model;
+        else {
+          model = loadModel(this.modelPath);
+          this.modelCache = { key, model };
+        }
+      } else this.modelCache = null;
+    } catch (error) {
+      this.modelCache = null;
+      this.lastError = String(error?.message || error);
+    }
     try { if (model) sizeBytes = fs.statSync(this.modelPath).size; } catch { sizeBytes = 0; }
     return {
       installed: Boolean(model),
@@ -100,6 +114,7 @@ class SmartAnalysisService {
       const model = loadModel(temporary);
       fs.renameSync(temporary, this.modelPath);
       secureMode(this.modelPath, 0o600);
+      this.modelCache = null;
       this.lastError = "";
       return { installed: true, version: model.version, sha256: actual };
     } catch (error) {
@@ -131,6 +146,7 @@ class SmartAnalysisService {
 
   remove() {
     fs.rmSync(this.modelPath, { force: true });
+    this.modelCache = null;
     this.lastError = "";
     return this.status();
   }

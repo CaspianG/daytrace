@@ -4,8 +4,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import semanticModule from "../electron/lib/semantic-model-service.cjs";
+import { shouldSkipSemantic } from "../src/semantic-analysis-core.js";
 
-const { MODEL_ASSETS, MODEL_VERSION, TOTAL_MODEL_BYTES, SemanticModelService, checksum, releaseBase, shouldRejectActivity } = semanticModule;
+const { MODEL_ASSETS, MODEL_VERSION, TOTAL_MODEL_BYTES, SEMANTIC_MODEL_QUALITY, SemanticModelService, checksum, releaseBase, shouldRejectActivity } = semanticModule;
 const sourceRoot = path.resolve("models");
 
 test("the optional RU/EN bundle is pinned by exact size and SHA-256", () => {
@@ -32,6 +33,12 @@ test("semantic model installation is local, verified, and exposes no activity da
   assert.equal(status.sizeBytes, TOTAL_MODEL_BYTES);
   assert.deepEqual(status.languages, ["ru", "en"]);
   assert.equal(status.runtimePolicy, "one-thread-short-lived-worker");
+  assert.equal(status.quality.modelVersion, MODEL_VERSION);
+  assert.equal(status.quality.benchmark.correct, 35);
+  assert.equal(status.quality.benchmark.covered, 37);
+  assert.equal(status.quality.benchmark.labelable, 48);
+  assert.equal(status.quality.holdout.correct, 20);
+  assert.deepEqual(status.quality, SEMANTIC_MODEL_QUALITY);
   const bundle = service.readBundle();
   assert.deepEqual(Object.keys(bundle).sort(), MODEL_ASSETS.map((asset) => asset.bundlePath).sort());
   assert.equal(JSON.stringify(bundle).includes("Telegram"), false);
@@ -74,12 +81,44 @@ test("semantic decisions become exact local context rules and preserve other eng
   assert.equal(rule.intent, "work");
   assert.equal(service.status().running, false);
   assert.equal(service.analysisTimer, null);
+  const schedulerState = fs.readFileSync(service.analysisStatePath, "utf8");
+  assert.doesNotMatch(schedulerState, /Quarterly plan|General chat|Project movie night|docs\.google/i);
+  assert.match(schedulerState, /reviewedContextHashes/);
+
+  const reopened = new SemanticModelService(root);
+  reopened.lastRunAt = Date.now() - semanticModule.AUTO_ANALYSIS_INTERVAL_MS - 1;
+  const repeated = reopened.prepare({ ...store, latestEventAt: () => 100 }, false);
+  assert.equal(repeated.status, "nothing-to-review");
+  assert.equal(reopened.status().reviewedContexts, 3);
 });
 
 test("generic and conflicting contexts are rejected and corrupt models never leave a stuck run", (t) => {
   assert.equal(shouldRejectActivity({ title: "General chat" }), true);
   assert.equal(shouldRejectActivity({ title: "Project movie night", intentReason: "conflicting-title-signals" }), true);
-  assert.equal(shouldRejectActivity({ title: "Specific project planning" }), false);
+  assert.equal(shouldRejectActivity({ title: "Specific project planning document" }), false);
+  const weakContexts = [
+    { app: "Google Chrome", title: "Notifications" },
+    { app: "Telegram Desktop", title: "Alex @ Kandy" },
+    { app: "Google Chrome", title: "▼ 77170 | Трейдинг BTCUSDT | Bybit Бессрочные контракты" },
+    { app: "File Explorer", title: "019f4dea-c9c5-72e1-a1c9-9ea09a4fc050 — проводник" },
+    { app: "Google Chrome", title: "gemini - Поиск в Google" },
+    { app: "Google Chrome", title: "Входящие - Почта Mail" },
+    { app: "Google Chrome", title: "ChatGPT: Chat, Work, Create & Code with AI" },
+    { app: "Antigravity", title: "проаудируй сайт полностью..." },
+  ];
+  for (const activity of weakContexts) {
+    assert.equal(shouldSkipSemantic(activity), true, activity.title);
+    assert.equal(shouldRejectActivity(activity), true, activity.title);
+  }
+  const descriptiveContexts = [
+    { app: "Google Chrome", title: "Как устроен сборщик мусора" },
+    { app: "Telegram Desktop", title: "Согласуем структуру кабинета с командой" },
+    { app: "Google Chrome", title: "Order groceries for home delivery" },
+  ];
+  for (const activity of descriptiveContexts) {
+    assert.equal(shouldSkipSemantic(activity), false, activity.title);
+    assert.equal(shouldRejectActivity(activity), false, activity.title);
+  }
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "daytrace-semantic-corrupt-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const service = new SemanticModelService(root);

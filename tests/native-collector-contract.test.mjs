@@ -25,5 +25,17 @@ test("macOS collector exposes a permission probe for its own TCC identity", () =
   assert.match(macCollector, /--check-accessibility/);
   assert.match(macCollector, /--request-accessibility/);
   assert.match(macCollector, /AXIsProcessTrustedWithOptions/);
-  assert.match(macCollector, /exit\(\(trusted \|\| AXIsProcessTrusted\(\)\) \? 0 : 77\)/);
+  assert.match(macCollector, /Date\(\)\.addingTimeInterval\(60\)/);
+  assert.match(macCollector, /if AXIsProcessTrusted\(\) \{ exit\(0\) \}/);
+  assert.match(macCollector, /exit\(77\)/);
+});
+
+test("native collectors avoid expensive overlapping or idle window scans", () => {
+  assert.match(windowsCollector, /Interlocked\.Exchange\(ref _titleSampleBusy, 1\)/);
+  assert.match(windowsCollector, /Interlocked\.Exchange\(ref _activeSampleBusy, 1\)/);
+  assert.match(windowsCollector, /lock \(Sync\) \{ if \(_isIdle\) return; \}/);
+  assert.match(macCollector, /if idleBeforeSample && !force \{ return \}/);
+  assert.match(macCollector, /tapDisabledByTimeout/);
+  assert.match(macCollector, /CGEvent\.tapEnable/);
+  assert.match(macCollector, /if !AXIsProcessTrusted\(\) \{ flush\(\); exit\(77\) \}/);
 });

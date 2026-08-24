@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowClockwise, ArrowCounterClockwise, ArrowRight, ArrowsLeftRight, Brain, Browsers, CalendarBlank, CaretLeft, CaretRight, ChartBar, Check, CheckCircle, Clock, Compass, Database, DownloadSimple, Eye, EyeSlash, FileCsv, FolderOpen, Gear, Globe, Info, Key, LockKey, MagnifyingGlass, Pause, Play, Plus, PuzzlePiece, Robot, ShieldCheck, Sparkle, Timer, Trash, UploadSimple, WarningCircle, X, XCircle } from "@phosphor-icons/react";
+import { ArrowClockwise, ArrowCounterClockwise, ArrowRight, ArrowsLeftRight, Brain, Browsers, CalendarBlank, CaretLeft, CaretRight, ChartBar, Check, CheckCircle, Clock, Compass, Database, Desktop, DownloadSimple, Eye, EyeSlash, FileCsv, FolderOpen, Gear, Globe, Info, Key, LockKey, MagnifyingGlass, Moon, Pause, Play, Plus, PuzzlePiece, Robot, ShieldCheck, Sparkle, Sun, Timer, Trash, UploadSimple, WarningCircle, X, XCircle } from "@phosphor-icons/react";
 import { SiFigma, SiGooglechrome, SiGmail, SiTelegram } from "react-icons/si";
 import { FaEdge } from "react-icons/fa6";
 import { VscVscode } from "react-icons/vsc";
 import sageBranch from "./assets/sage-branch.png";
 import { formatDay, formatDuration, formatTime, normalizeLanguage, text, translations } from "./i18n.js";
 import { runSemanticAnalysis } from "./semantic-analysis-client.js";
+import { applyDocumentTheme, effectiveTheme, normalizeTheme, observeSystemTheme, transitionDocumentTheme } from "./theme.js";
 
 const NAVIGATION = [
   { id: "history", icon: Clock },
@@ -36,6 +37,27 @@ const INTENT_LABELS = {
 const RETENTION_OPTIONS = [48, 7 * 24, 30 * 24, 90 * 24, 365 * 24];
 const CURRENT_ONBOARDING_VERSION = 2;
 const CONTEXT_SENSITIVE_APPS = /(?:chrome|edge|firefox|brave|opera|vivaldi|safari|browser|telegram|whatsapp|signal|discord|viber|messenger|chatgpt|claude|perplexity|copilot)/i;
+const DEMO_ANALYSIS_QUALITY = {
+  benchmark: {
+    dataset: "Daytrace semantic RU/EN visible-title set",
+    datasetVersion: "2026-08-24",
+    engines: {
+      builtin: { benchmark: { labelable: 48, covered: 27, correct: 25, precision: 25 / 27, coverage: 27 / 48, accuracy: 25 / 48 } },
+      signals: { benchmark: { labelable: 48, covered: 28, correct: 26, precision: 26 / 28, coverage: 28 / 48, accuracy: 26 / 48 } },
+      semantic: { benchmark: { labelable: 48, covered: 37, correct: 35, precision: 35 / 37, coverage: 37 / 48, accuracy: 35 / 48 } },
+    },
+  },
+  personal: {
+    generatedAt: Date.now(), contextCount: 42, labelledContextCount: 8, labelledOccurrences: 27,
+    engines: {
+      builtin: { ruleCount: 0, history: { contexts: 42, covered: 19, coverage: 19 / 42 }, personal: { labelled: 8, covered: 5, correct: 4, precision: .8, coverage: .625, accuracy: .5 } },
+      signals: { ruleCount: 4, history: { contexts: 42, covered: 23, coverage: 23 / 42 }, personal: { labelled: 8, covered: 6, correct: 5, precision: 5 / 6, coverage: .75, accuracy: .625 } },
+      semantic: { ruleCount: 9, history: { contexts: 42, covered: 29, coverage: 29 / 42 }, personal: { labelled: 8, covered: 7, correct: 6, precision: 6 / 7, coverage: .875, accuracy: .75 } },
+    },
+  },
+  running: false,
+  error: "",
+};
 
 function startOfToday(hour, minute) {
   const date = new Date();
@@ -53,7 +75,9 @@ function demoState(language = demoLanguage(), onboardingComplete = new URLSearch
   const t = translations[lang];
   const params = new URLSearchParams(window.location.search);
   const updatePreview = params.get("update");
-  const desktopPreview = params.get("capture") === "desktop";
+  const macPermissionPreview = params.get("capture") === "mac-permission";
+  const desktopPreview = params.get("capture") === "desktop" || macPermissionPreview;
+  const previewEngine = desktopPreview && ["builtin", "signals", "semantic"].includes(params.get("analysisEngine")) ? params.get("analysisEngine") : "builtin";
   const reviewPreview = params.get("review") === "1";
   const updateStatus = ["available", "downloading", "ready", "installing", "restarting", "installer-opened", "windows-installer-opened", "error"].includes(updatePreview) ? updatePreview : "up-to-date";
   const apps = ["Visual Studio Code", "Google Chrome", "Telegram Desktop", "Visual Studio Code", "Visual Studio Code", "Google Chrome", "Figma", "Telegram Desktop", "Gmail"];
@@ -72,8 +96,8 @@ function demoState(language = demoLanguage(), onboardingComplete = new URLSearch
     app: activity.app, title: activity.title, observedLabel: activity.observedLabel, intent: "unknown", confidence: "low", confidenceScore: .28 + index * .03,
   })) : [];
   return {
-    settings: { trackingEnabled: true, retentionHours: 48, excludePrivateWindows: true, collectWindowTitles: true, collectInputCounts: true, collectBrowserTabCount: true, analysisEngine: "builtin", smartAnalysisEnabled: false, browserCompanionEnabled: false, autoStartEnabled: false, excludedApps: ["1Password", "Bitwarden", "KeePass"], intentRules: [{ id: "demo-friends", match: lang === "ru" ? "Друзья" : "Friends", intent: "personal" }], intentRulesUndo: [], language: lang, onboardingComplete, onboardingVersion: onboardingComplete ? CURRENT_ONBOARDING_VERSION : Number(params.get("onboardingVersion") || 0), accessibilityOnboardingDismissed: false, reviewLearningExplained: false, reviewReminderSnoozedUntil: null, reviewReminderLastCount: 0 },
-    runtime: { platform: updatePreview || desktopPreview ? "win32" : "browser", trackerStatus: "running", accessibilityTrusted: true, autoStartSupported: desktopPreview, autoStartEnabled: false, capabilities: { browserTabCount: Boolean(updatePreview || desktopPreview), browserCompanion: Boolean(updatePreview || desktopPreview), smartAnalysis: true, encryptedBackup: true }, browserCompanion: { running: desktopPreview }, smartAnalysis: { engine: "builtin", installed: true, running: false, version: "built-in", signal: { installed: false, running: false, sizeBytes: 6391, updateAvailable: false, lastResult: { status: "never", candidates: 0, refined: 0, changed: 0 } }, semantic: { installed: false, running: false, downloading: false, progress: 0, sizeBytes: 49821594, version: "1.0.0", languages: ["ru", "en"], lastResult: { status: "never", candidates: 0, refined: 0, changed: 0 } } }, diagnostics: null, update: { status: updateStatus, currentVersion: "0.5.8", latestVersion: updatePreview ? "0.5.9" : "0.5.8", checkedAt: Date.now(), progress: updateStatus === "downloading" ? 64 : ["ready", "installing", "restarting"].includes(updateStatus) ? 100 : 0 } },
+    settings: { trackingEnabled: true, retentionHours: 48, excludePrivateWindows: true, collectWindowTitles: true, collectInputCounts: true, collectBrowserTabCount: true, analysisEngine: previewEngine, smartAnalysisEnabled: previewEngine !== "builtin", browserCompanionEnabled: false, autoStartEnabled: false, theme: normalizeTheme(params.get("theme")), excludedApps: ["1Password", "Bitwarden", "KeePass"], intentRules: [{ id: "demo-friends", match: lang === "ru" ? "Друзья" : "Friends", intent: "personal" }], intentRulesUndo: [], language: lang, onboardingComplete, onboardingVersion: onboardingComplete ? CURRENT_ONBOARDING_VERSION : Number(params.get("onboardingVersion") || 0), quickTourComplete: params.get("tour") !== "1", accessibilityOnboardingDismissed: false, reviewLearningExplained: false, reviewReminderSnoozedUntil: null, reviewReminderLastCount: 0 },
+    runtime: { platform: macPermissionPreview ? "darwin" : updatePreview || desktopPreview ? "win32" : "browser", trackerStatus: macPermissionPreview ? "permission-required" : "running", accessibilityTrusted: !macPermissionPreview, accessibilityMainTrusted: true, accessibilityTarget: "Daytrace Collector", autoStartSupported: desktopPreview, autoStartEnabled: false, capabilities: { browserTabCount: Boolean(updatePreview || desktopPreview), browserCompanion: Boolean(updatePreview || desktopPreview), smartAnalysis: true, encryptedBackup: true }, browserCompanion: { running: desktopPreview }, smartAnalysis: { engine: previewEngine, installed: true, running: false, version: "built-in", signal: { installed: false, running: false, sizeBytes: 6391, updateAvailable: false, lastResult: { status: "never", candidates: 0, refined: 0, changed: 0 } }, semantic: { installed: false, running: false, downloading: false, progress: 0, sizeBytes: 49821594, version: "1.0.0", languages: ["ru", "en"], quality: { benchmark: { labelable: 48, precision: 35 / 37, coverage: 37 / 48 }, holdout: { precision: 20 / 22, coverage: 22 / 32 } }, lastResult: { status: "never", candidates: 0, refined: 0, changed: 0 } }, quality: DEMO_ANALYSIS_QUALITY }, diagnostics: null, update: { status: updateStatus, currentVersion: "0.5.9", latestVersion: updatePreview ? "0.6.0" : "0.5.9", checkedAt: Date.now(), progress: updateStatus === "downloading" ? 64 : ["ready", "installing", "restarting"].includes(updateStatus) ? 100 : 0 } },
     sessions: [
       makeSession("demo-1", 0, 2, "mixed", "work"), makeSession("demo-2", 3, 6, "mixed", "work"), makeSession("demo-3", 7, 8, "communication", "mixed"),
       { id: "demo-break", start: startOfToday(12, 5), end: startOfToday(12, 20), durationMs: 15 * 60_000, focus: "break", label: FOCUS_LABELS[lang].break, intent: "unknown", intentLabel: INTENT_LABELS[lang].unknown, activities: [] },
@@ -214,12 +238,13 @@ function AppIcon({ app, size = 31 }) {
 
 function useDaytrace() {
   const [state, setState] = useState(() => demoState());
-  const [isDesktop, setIsDesktop] = useState(() => new URLSearchParams(window.location.search).get("capture") === "desktop");
+  const [isDesktop, setIsDesktop] = useState(() => ["desktop", "mac-permission"].includes(new URLSearchParams(window.location.search).get("capture")));
+  const [hydrated, setHydrated] = useState(() => !window.daytrace);
   useEffect(() => {
     if (!window.daytrace) return undefined;
     setIsDesktop(true);
-    window.daytrace.getState().then(setState);
-    const removeStateListener = window.daytrace.onStateChanged(setState);
+    window.daytrace.getState().then(setState).catch(() => {}).finally(() => setHydrated(true));
+    const removeStateListener = window.daytrace.onStateChanged((nextState) => { setState(nextState); setHydrated(true); });
     const removeSemanticListener = window.daytrace.onSemanticAnalysisRequested?.(() => {
       runSemanticAnalysis(window.daytrace)
         .then((nextState) => { if (nextState?.settings) setState(nextState); })
@@ -237,6 +262,19 @@ function useDaytrace() {
     },
     async setTracking(enabled) { if (window.daytrace) setState(await window.daytrace.setTracking(enabled)); else setState((current) => ({ ...current, settings: { ...current.settings, trackingEnabled: enabled } })); },
     async setSetting(key, enabled) { if (window.daytrace) setState(await window.daytrace.setSetting(key, enabled)); else setState((current) => ({ ...current, settings: { ...current.settings, [key]: enabled } })); },
+    async setTheme(theme) {
+      const next = normalizeTheme(theme);
+      setState((current) => ({ ...current, settings: { ...current.settings, theme: next } }));
+      if (!window.daytrace) return undefined;
+      try {
+        const nextState = await window.daytrace.setTheme(next);
+        setState(nextState);
+        return nextState;
+      } catch (error) {
+        window.daytrace.getState().then(setState).catch(() => {});
+        throw error;
+      }
+    },
     async setRetention(hours) {
       if (window.daytrace) setState(await window.daytrace.setRetention(hours));
       else setState((current) => ({ ...current, settings: { ...current.settings, retentionHours: hours }, retentionCutoff: Date.now() - hours * 60 * 60_000 }));
@@ -259,16 +297,17 @@ function useDaytrace() {
       if (window.daytrace) setState(await window.daytrace.undoIntentRules());
       else setState((current) => ({ ...current, settings: { ...current.settings, intentRules: current.settings.intentRulesUndo || [], intentRulesUndo: current.settings.intentRules || [] } }));
     },
-    async setLanguage(nextLanguage) { const next = normalizeLanguage(nextLanguage); if (window.daytrace) setState(await window.daytrace.setLanguage(next)); else setState(demoState(next, true)); },
+    async setLanguage(nextLanguage) { const next = normalizeLanguage(nextLanguage); if (window.daytrace) setState(await window.daytrace.setLanguage(next)); else setState((current) => { const nextState = demoState(next, true); return { ...nextState, settings: { ...nextState.settings, theme: current.settings.theme } }; }); },
     async completeOnboarding(nextLanguage, analysisEngine = "builtin") {
       const selection = { language: normalizeLanguage(nextLanguage), analysisEngine };
       if (window.daytrace) setState(await window.daytrace.completeOnboarding(selection));
       else setState((current) => {
         const completed = demoState(selection.language, true);
-        return { ...completed, settings: { ...completed.settings, analysisEngine, smartAnalysisEnabled: analysisEngine !== "builtin" }, runtime: { ...current.runtime, smartAnalysis: { ...current.runtime.smartAnalysis, engine: analysisEngine } } };
+        return { ...completed, settings: { ...completed.settings, theme: current.settings.theme, analysisEngine, smartAnalysisEnabled: analysisEngine !== "builtin", quickTourComplete: false }, runtime: { ...current.runtime, smartAnalysis: { ...current.runtime.smartAnalysis, engine: analysisEngine } } };
       });
     },
     async restartOnboarding() { if (window.daytrace) setState(await window.daytrace.restartOnboarding()); else setState((current) => ({ ...current, settings: { ...current.settings, onboardingVersion: CURRENT_ONBOARDING_VERSION - 1 } })); },
+    async completeQuickTour() { if (window.daytrace) setState(await window.daytrace.completeQuickTour()); else setState((current) => ({ ...current, settings: { ...current.settings, quickTourComplete: true } })); },
     async acknowledgeReviewGuidance(action) {
       if (window.daytrace) setState(await window.daytrace.acknowledgeReviewGuidance(action));
       else setState((current) => ({ ...current, settings: { ...current.settings, reviewLearningExplained: true, reviewReminderSnoozedUntil: Date.now() + (action === "later" ? 7 : 1) * 24 * 60 * 60_000, reviewReminderLastCount: current.reviewBacklog?.uniqueCount || 0 }, reviewBacklog: { ...current.reviewBacklog, notificationDue: false, firstExplanation: false } }));
@@ -297,6 +336,10 @@ function useDaytrace() {
       ].map(([id, status]) => ({ id, status, detail: "" })) };
       setState((current) => ({ ...current, runtime: { ...current.runtime, diagnostics } }));
       return diagnostics;
+    },
+    async refreshAnalysisQuality() {
+      if (window.daytrace) setState(await window.daytrace.refreshAnalysisQuality());
+      else setState((current) => ({ ...current, runtime: { ...current.runtime, smartAnalysis: { ...current.runtime.smartAnalysis, quality: { ...DEMO_ANALYSIS_QUALITY, personal: { ...DEMO_ANALYSIS_QUALITY.personal, generatedAt: Date.now() } } } } }));
     },
     async installBrowserHost() { if (window.daytrace) setState(await window.daytrace.installBrowserHost()); else setState((current) => ({ ...current, settings: { ...current.settings, browserCompanionEnabled: true }, runtime: { ...current.runtime, browserCompanion: { running: true } } })); },
     revealBrowserExtension() { return window.daytrace?.revealBrowserExtension(); },
@@ -327,7 +370,7 @@ function useDaytrace() {
     async checkUpdates() { if (window.daytrace) setState(await window.daytrace.checkUpdates()); else setState((current) => ({ ...current, runtime: { ...current.runtime, update: { ...current.runtime.update, status: "up-to-date", checkedAt: Date.now() } } })); },
     async installUpdate() { if (window.daytrace) setState(await window.daytrace.installUpdate()); },
   };
-  return { state, actions, isDesktop, language };
+  return { state, actions, isDesktop, language, hydrated };
 }
 
 function Onboarding({ state, actions, language }) {
@@ -411,8 +454,9 @@ function Onboarding({ state, actions, language }) {
           <h1>{t.onboarding.modelTitle}</h1>
           <p className="onboarding-subtitle">{t.onboarding.modelSubtitle}</p>
           <div className="onboarding-model-grid" role="radiogroup" aria-label={t.settings.analysisMode}>
-            {modes.map((mode) => { const Icon = mode.icon; return <button type="button" className={`onboarding-model-card ${engine === mode.id ? "selected" : ""}`} key={mode.id} onClick={() => setEngine(mode.id)} role="radio" aria-checked={engine === mode.id} disabled={busy}><span className="analysis-mode-icon"><Icon size={20} /></span><span><strong>{mode.title}</strong>{mode.recommended && <em>{t.onboarding.recommended}</em>}<small>{mode.description}</small><b>{mode.size}</b></span>{mode.installed && <CheckCircle size={19} />}</button>; })}
+            {modes.map((mode) => { const Icon = mode.icon; return <button type="button" className={`onboarding-model-card ${engine === mode.id ? "selected" : ""}`} key={mode.id} onClick={() => setEngine(mode.id)} role="radio" aria-checked={engine === mode.id} disabled={busy}><span className="analysis-mode-icon"><Icon size={20} /></span><span><strong>{mode.title}</strong>{mode.recommended && <em>{t.onboarding.recommended}</em>}<small>{mode.description}</small><b>{mode.size}</b><EngineQualityInline engine={mode.id} quality={runtime.quality} t={t} compact /></span>{mode.installed && <CheckCircle size={19} />}</button>; })}
           </div>
+          <QualityLegend quality={runtime.quality} t={t} personal />
           <div className="onboarding-llm-note"><Info size={20} /><div><strong>{t.onboarding.llmTitle}</strong><span>{t.onboarding.llmText}</span></div></div>
           {(busy && (semantic.downloading || engine === "semantic")) && <div className="onboarding-download"><span><strong>{t.onboarding.downloading}</strong><small>{text(t.onboarding.downloadProgress, { progress: Math.round(Number(semantic.progress || 0)) })}</small></span><div><i style={{ width: `${Math.max(3, Number(semantic.progress || 0))}%` }} /></div></div>}
           {error && <div className="onboarding-error" role="alert"><WarningCircle size={19} /><span>{error}</span><button onClick={() => finish("builtin", false)}>{t.onboarding.continueBuiltin}</button></div>}
@@ -443,11 +487,12 @@ function MacPermissionOnboarding({ actions, onContinue, runtime, t }) {
     try { await actions.refreshAccessibility(); }
     finally { setChecking(false); }
   };
-  return <main className="onboarding-shell">
-    <section className="onboarding-card permission-onboarding-card">
+  return <main className="onboarding-shell permission-onboarding-shell">
+    <section className="onboarding-card permission-onboarding-card" role="dialog" aria-modal="true" aria-labelledby="mac-permission-title">
+      <button className="permission-close" onClick={onContinue} title={t.onboarding.permissionLater} aria-label={t.onboarding.permissionLater}><X size={21} /></button>
       <div className="onboarding-logo"><ShieldCheck size={34} weight="fill" /></div>
       <span className="eyebrow">{t.onboarding.permissionEyebrow}</span>
-      <h1>{t.onboarding.permissionTitle}</h1>
+      <h1 id="mac-permission-title">{t.onboarding.permissionTitle}</h1>
       <p className="onboarding-subtitle">{t.onboarding.permissionSubtitle}</p>
       <ol className="permission-steps">
         <li><span>1</span>{t.onboarding.permissionStepOne}</li>
@@ -455,7 +500,7 @@ function MacPermissionOnboarding({ actions, onContinue, runtime, t }) {
         <li><span>3</span>{t.onboarding.permissionStepThree}</li>
       </ol>
       {runtime?.macInstall?.issue && <div className="permission-copy-warning"><strong>{t.onboarding.permissionCopyTitle}</strong><span>{text(t.settings.accessibilityInstallIssues[runtime.macInstall.issue] || t.settings.accessibilityInstallIssues["unknown-location"], { name: runtime.macInstall.appName, path: runtime.macInstall.bundlePath || "—" })}</span></div>}
-      <div className="permission-repair"><strong>{t.onboarding.permissionRepairTitle}</strong><span>{t.onboarding.permissionRepairText}</span></div>
+      <div className="permission-repair"><strong>{runtime?.accessibilityMainTrusted ? t.onboarding.permissionWrongTargetTitle : t.onboarding.permissionRepairTitle}</strong><span>{runtime?.accessibilityMainTrusted ? t.onboarding.permissionWrongTargetText : t.onboarding.permissionRepairText}</span></div>
       <div className="onboarding-privacy"><LockKey size={25} /><div><strong>{t.settings.deviceOnly}</strong><span>{t.onboarding.permissionPrivacy}</span></div></div>
       <button className="onboarding-continue" onClick={request} disabled={requesting}>{requesting ? t.onboarding.permissionWaiting : t.onboarding.permissionGrant}<ArrowRight size={19} /></button>
       <button className="permission-check" onClick={refresh} disabled={checking}>{checking ? t.onboarding.permissionChecking : t.onboarding.permissionCheck}<ArrowClockwise size={18} /></button>
@@ -492,6 +537,38 @@ function SidebarUpdateStatus({ update, actions, setPage, t }) {
   </button>;
 }
 
+function commitThemeChange(nextTheme, event, onChange) {
+  transitionDocumentTheme(nextTheme, {
+    clientX: event?.clientX,
+    clientY: event?.clientY,
+    onCommit: (selected) => {
+      const result = onChange(selected);
+      result?.catch?.(() => {});
+    },
+  });
+}
+
+function ThemeQuickToggle({ theme, actions, t }) {
+  const selected = normalizeTheme(theme);
+  const effective = effectiveTheme(selected);
+  const next = effective === "dark" ? "light" : "dark";
+  const Icon = effective === "dark" ? Moon : Sun;
+  return <button className="sidebar-theme-toggle" onClick={(event) => commitThemeChange(next, event, actions.setTheme)} title={text(t.settings.themeSwitch, { theme: t.settings.themeOptions[next] })} aria-label={text(t.settings.themeSwitch, { theme: t.settings.themeOptions[next] })}>
+    <span className="theme-toggle-icon"><Icon size={18} weight="fill" /></span>
+    <span><strong>{t.settings.themeOptions[selected]}</strong><small>{t.settings.themeQuick}</small></span>
+  </button>;
+}
+
+function ThemeSelector({ theme, onChange, disabled, t }) {
+  const selected = normalizeTheme(theme);
+  const options = [
+    { id: "system", icon: Desktop },
+    { id: "light", icon: Sun },
+    { id: "dark", icon: Moon },
+  ];
+  return <div className="appearance-setting"><div className="appearance-copy"><Sparkle size={21} /><span><strong>{t.settings.theme}</strong><small>{t.settings.themeText}</small></span></div><div className="theme-options" role="group" aria-label={t.settings.theme}>{options.map(({ id, icon: Icon }) => <button key={id} className={selected === id ? "active" : ""} aria-pressed={selected === id} disabled={disabled} onClick={(event) => commitThemeChange(id, event, onChange)}><Icon size={20} weight={selected === id ? "fill" : "regular"} /><span><strong>{t.settings.themeOptions[id]}</strong><small>{t.settings.themeDescriptions[id]}</small></span>{selected === id && <Check size={15} weight="bold" />}</button>)}</div></div>;
+}
+
 function ReviewCoach({ state, onReview, onModel, onLater, language, t }) {
   const backlog = state.reviewBacklog || {};
   const [visible, setVisible] = useState(false);
@@ -515,7 +592,68 @@ function ReviewCoach({ state, onReview, onModel, onLater, language, t }) {
   </aside>;
 }
 
-function Sidebar({ page, setPage, state, actions, language, t }) {
+function AppLoading({ language }) {
+  const copy = translations[normalizeLanguage(language)].quickTour;
+  return <main className="app-loading" aria-live="polite"><div className="app-loading-mark"><Compass size={34} weight="fill" /><span /></div><strong>{copy.loadingTitle}</strong><small>{copy.loadingText}</small></main>;
+}
+
+function QuickTour({ onClose, onNavigate, t }) {
+  const [index, setIndex] = useState(0);
+  const [rect, setRect] = useState(null);
+  const steps = [
+    { selector: '[data-tour="overview"]', page: "history", icon: ChartBar, ...t.quickTour.steps[0] },
+    { selector: '[data-tour="ask"]', page: "history", icon: MagnifyingGlass, ...t.quickTour.steps[1] },
+    { selector: '[data-tour="purpose"]', page: "history", icon: Sparkle, ...t.quickTour.steps[2] },
+    { selector: '[data-tour="analysis"]', page: "settings", focus: "smart", icon: Brain, ...t.quickTour.steps[3] },
+    { selector: '[data-tour="local-status"]', page: "settings", icon: LockKey, ...t.quickTour.steps[4] },
+  ];
+  const step = steps[index];
+  useEffect(() => {
+    let resizeObserver;
+    const update = () => {
+      const target = document.querySelector(step.selector);
+      if (!target) { setRect(null); return; }
+      const next = target.getBoundingClientRect();
+      if (next.width < 2 || next.height < 2) { setRect(null); return; }
+      setRect({ left: next.left, top: next.top, width: next.width, height: next.height, right: next.right, bottom: next.bottom });
+    };
+    onNavigate(step.page, step.focus || "");
+    const revealTimer = setTimeout(() => {
+      const target = document.querySelector(step.selector);
+      if (target && !target.closest(".sidebar")) target.scrollIntoView({ block: step.selector === '[data-tour="overview"]' ? "start" : "center", behavior: "smooth" });
+      update();
+      if (target && typeof ResizeObserver !== "undefined") { resizeObserver = new ResizeObserver(update); resizeObserver.observe(target); }
+    }, 140);
+    window.addEventListener("resize", update);
+    document.addEventListener("scroll", update, true);
+    return () => { clearTimeout(revealTimer); resizeObserver?.disconnect(); window.removeEventListener("resize", update); document.removeEventListener("scroll", update, true); };
+  }, [index]);
+  useEffect(() => {
+    const keyboard = (event) => {
+      if (event.key === "Escape") onClose();
+      if (event.key === "ArrowRight") setIndex((current) => Math.min(steps.length - 1, current + 1));
+      if (event.key === "ArrowLeft") setIndex((current) => Math.max(0, current - 1));
+    };
+    document.addEventListener("keydown", keyboard);
+    return () => document.removeEventListener("keydown", keyboard);
+  }, [onClose]);
+  const Icon = step.icon;
+  const spotlight = rect ? { left: Math.max(8, rect.left - 7), top: Math.max(8, rect.top - 7), width: Math.max(42, rect.width + 14), height: Math.max(42, rect.height + 14) } : null;
+  const canPlaceRight = rect && rect.right + 405 < window.innerWidth;
+  const cardStyle = canPlaceRight ? { left: rect.right + 22, top: Math.max(24, Math.min(window.innerHeight - 420, rect.top - 10)) } : undefined;
+  return <div className={`quick-tour-layer ${rect ? "" : "no-target"}`} role="dialog" aria-modal="true" aria-labelledby="quick-tour-title">
+    {spotlight && <div className="quick-tour-spotlight" style={spotlight} />}
+    <section className={`quick-tour-card ${canPlaceRight ? "beside" : "corner"}`} style={cardStyle}>
+      <header><span>{t.quickTour.eyebrow}</span><small>{text(t.quickTour.counter, { current: index + 1, total: steps.length })}</small><button onClick={onClose} aria-label={t.quickTour.close}><X size={18} /></button></header>
+      <div className="quick-tour-visual" key={index}><Sparkle className="quick-tour-spark one" size={19} weight="fill" /><span><Icon size={31} weight="duotone" /></span><Sparkle className="quick-tour-spark two" size={14} weight="fill" /></div>
+      <div className="quick-tour-copy" key={`copy-${index}`}><h2 id="quick-tour-title">{step.title}</h2><p>{step.text}</p><div><Info size={16} /><span>{step.hint}</span></div></div>
+      <div className="quick-tour-progress" aria-hidden="true">{steps.map((item, itemIndex) => <span key={item.title} className={itemIndex <= index ? "active" : ""} />)}</div>
+      <footer><button className="quick-tour-skip" onClick={onClose}>{t.quickTour.close}</button><span />{index > 0 && <button className="quick-tour-back" onClick={() => setIndex(index - 1)}><CaretLeft size={16} />{t.quickTour.previous}</button>}<button className="quick-tour-next" onClick={() => index === steps.length - 1 ? onClose() : setIndex(index + 1)}>{index === steps.length - 1 ? t.quickTour.finish : t.quickTour.next}<ArrowRight size={16} /></button></footer>
+    </section>
+  </div>;
+}
+
+function Sidebar({ page, setPage, state, actions, language, t, onStartTour }) {
   const historyStartedAt = state.historyStartedAt ? new Date(state.historyStartedAt) : null;
   const historyStart = historyStartedAt && Number.isFinite(historyStartedAt.getTime())
     ? text(t.status.historyStart, { time: new Intl.DateTimeFormat(t.locale, { dateStyle: "short", timeStyle: "short" }).format(historyStartedAt) })
@@ -524,8 +662,10 @@ function Sidebar({ page, setPage, state, actions, language, t }) {
   const reviewCount = state.reviewBacklog?.notificationDue ? Number(state.reviewBacklog.uniqueCount || 0) : 0;
   return <aside className="sidebar">
     <div className="brand-mark"><Compass size={29} weight="fill" /></div>
-    <nav className="main-nav" aria-label={language === "ru" ? "Разделы" : "Sections"}>{NAVIGATION.map(({ id, icon: Icon, separated }) => <button key={id} className={`${page === id ? "active" : ""} ${separated ? "separated" : ""}`} onClick={() => setPage(id)}><Icon size={25} weight={page === id ? "fill" : "regular"} /><span>{t.nav[id]}</span>{id === "settings" && reviewCount > 0 && <em className="nav-review-count" aria-label={text(t.reviewCoach.navCount, { count: reviewCount })}>{reviewCount}</em>}</button>)}</nav>
-    <div className="sidebar-status"><div className="status-row"><span className={`status-dot ${state.settings.trackingEnabled ? "on" : "off"}`} /><span>{state.settings.trackingEnabled ? t.common.local : t.status.paused}</span></div><div className="status-row muted"><Database size={18} /><span>{text(t.status.retention, { period: formatRetention(state.settings.retentionHours, t) })}</span></div><div className="expiry">{historyStart}</div></div>
+    <nav className="main-nav" aria-label={language === "ru" ? "Разделы" : "Sections"}>{NAVIGATION.map(({ id, icon: Icon, separated }) => <button key={id} data-tour={id === "settings" ? "settings-nav" : undefined} className={`${page === id ? "active" : ""} ${separated ? "separated" : ""}`} onClick={() => setPage(id)} aria-label={t.nav[id]} title={t.nav[id]}><Icon size={25} weight={page === id ? "fill" : "regular"} /><span>{t.nav[id]}</span>{id === "settings" && reviewCount > 0 && <em className="nav-review-count" aria-label={text(t.reviewCoach.navCount, { count: reviewCount })}>{reviewCount}</em>}</button>)}</nav>
+    <button className="sidebar-tour-button" onClick={onStartTour} title={t.quickTour.replay}><Info size={19} /><span>{t.quickTour.replay}</span></button>
+    <ThemeQuickToggle theme={state.settings.theme} actions={actions} t={t} />
+    <div className="sidebar-status" data-tour="local-status"><div className="status-row"><span className={`status-dot ${state.settings.trackingEnabled ? "on" : "off"}`} /><span>{state.settings.trackingEnabled ? t.common.local : t.status.paused}</span></div><div className="status-row muted"><Database size={18} /><span>{text(t.status.retention, { period: formatRetention(state.settings.retentionHours, t) })}</span></div><div className="expiry">{historyStart}</div></div>
     <SidebarUpdateStatus update={update} actions={actions} setPage={setPage} t={t} />
     <button className={`tracking-button ${state.settings.trackingEnabled ? "pause" : "resume"}`} onClick={() => actions.setTracking(!state.settings.trackingEnabled)}>{state.settings.trackingEnabled ? <Pause size={22} weight="fill" /> : <Play size={22} weight="fill" />}{state.settings.trackingEnabled ? t.status.pause : t.status.resume}</button>
   </aside>;
@@ -536,7 +676,7 @@ function QuestionBar({ onAsk, t, initial = "" }) {
   const [busy, setBusy] = useState(false);
   useEffect(() => { setQuestion(initial); }, [initial]);
   async function submit(event) { event?.preventDefault(); const value = question.trim() || t.question.fallback; setBusy(true); try { await onAsk(value); } finally { setBusy(false); } }
-  return <form className="question-bar" onSubmit={submit}><MagnifyingGlass size={26} /><input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={t.question.placeholder} aria-label={t.question.label} /><button type="submit" disabled={busy}>{busy ? t.question.searching : t.question.ask}</button></form>;
+  return <form className="question-bar" data-tour="ask" onSubmit={submit}><MagnifyingGlass size={26} /><input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={t.question.placeholder} aria-label={t.question.label} /><button type="submit" disabled={busy}>{busy ? t.question.searching : t.question.ask}</button></form>;
 }
 
 function OverviewMetrics({ stats, language, t, capabilities = {} }) {
@@ -628,7 +768,7 @@ function ActivityRhythm({ stats, language, t }) {
 function DayOverview({ stats, language, t, capabilities }) {
   const intentMax = Math.max(1, ...stats.intentTotals.map((item) => item.durationMs));
   const appMax = Math.max(1, ...stats.appTotals.map((item) => item.durationMs));
-  return <div className="day-overview"><OverviewMetrics stats={stats} language={language} t={t} capabilities={capabilities} /><div className="overview-charts"><RankedBars title={t.overview.intentTitle} subtitle={t.overview.intentSubtitle} items={stats.intentTotals} max={intentMax} renderLabel={(item) => item.label} renderValue={(item) => formatDuration(item.durationMs, language)} /><RankedBars title={t.overview.appsTitle} subtitle={t.overview.appsSubtitle} items={stats.appTotals} max={appMax} renderLabel={(item) => item.app} renderValue={(item) => formatDuration(item.durationMs, language)} /></div><ActivityRhythm stats={stats} language={language} t={t} /></div>;
+  return <div className="day-overview" data-tour="overview"><OverviewMetrics stats={stats} language={language} t={t} capabilities={capabilities} /><div className="overview-charts"><RankedBars title={t.overview.intentTitle} subtitle={t.overview.intentSubtitle} items={stats.intentTotals} max={intentMax} renderLabel={(item) => item.label} renderValue={(item) => formatDuration(item.durationMs, language)} /><RankedBars title={t.overview.appsTitle} subtitle={t.overview.appsSubtitle} items={stats.appTotals} max={appMax} renderLabel={(item) => item.app} renderValue={(item) => formatDuration(item.durationMs, language)} /></div><ActivityRhythm stats={stats} language={language} t={t} /></div>;
 }
 
 function IntentPicker({ activity, onClassify, t }) {
@@ -706,7 +846,7 @@ function HistoryPage({ state, actions, setPage, selectedDay, language, t }) {
     setLoadedDay(await actions.loadDay(selectedDay));
   };
   const reviewCount = loadedDay?.reviewQueue?.length || 0;
-  return <div className="history-page"><QuestionBar t={t} onAsk={async (question) => setResult(await actions.ask(question))} />{showUndo && <div className="undo-banner"><Check size={17} /><span>{t.intent.ruleApplied}</span><button onClick={undoRule}><ArrowCounterClockwise size={16} /> {t.intent.undo}</button><button className="icon-button" onClick={() => setShowUndo(false)} aria-label={t.common.cancel}><X size={15} /></button></div>}<div className="history-layout"><main className="timeline-column"><DayOverview stats={stats} language={language} t={t} capabilities={state.runtime?.capabilities} />{reviewCount > 0 && <button className="review-banner" onClick={() => setPage("settings", "review")}><WarningCircle size={18} /><span><strong>{text(t.intent.reviewCount, { count: reviewCount })}</strong><small>{t.intent.reviewHint}</small></span><ArrowRight size={17} /></button>}<div className="section-title timeline-title"><h2>{t.history.title}</h2><span>{t.history.newestFirst}</span></div>{sessions.length ? <div className="timeline reverse-timeline">{sessions.map((session) => <Session key={session.id} session={session} onDelete={removeSession} onClassify={classify} language={language} t={t} />)}</div> : <div className="empty-state"><Clock size={34} /><h3>{t.history.emptyTitle}</h3><p>{t.history.emptyText}</p><button onClick={() => setPage("settings")}>{t.history.checkSettings} <ArrowRight size={17} /></button></div>}</main><Summary result={result} sessions={sessions} stats={stats} brief={loadedDay?.brief || state.brief} language={language} t={t} /></div><RulePreviewDialog preview={rulePreview} busy={applyingRule} onConfirm={confirmRule} onCancel={() => setRulePreview(null)} language={language} t={t} /></div>;
+  return <div className="history-page"><QuestionBar t={t} onAsk={async (question) => setResult(await actions.ask(question))} />{showUndo && <div className="undo-banner"><Check size={17} /><span>{t.intent.ruleApplied}</span><button onClick={undoRule}><ArrowCounterClockwise size={16} /> {t.intent.undo}</button><button className="icon-button" onClick={() => setShowUndo(false)} aria-label={t.common.cancel}><X size={15} /></button></div>}<div className="history-layout"><main className="timeline-column"><DayOverview stats={stats} language={language} t={t} capabilities={state.runtime?.capabilities} />{reviewCount > 0 && <button className="review-banner" onClick={() => setPage("settings", "review")}><WarningCircle size={18} /><span><strong>{text(t.intent.reviewCount, { count: reviewCount })}</strong><small>{t.intent.reviewHint}</small></span><ArrowRight size={17} /></button>}<div className="section-title timeline-title"><h2>{t.history.title}</h2><span>{t.history.newestFirst}</span></div>{sessions.length ? <div className="timeline reverse-timeline" data-tour="purpose">{sessions.map((session) => <Session key={session.id} session={session} onDelete={removeSession} onClassify={classify} language={language} t={t} />)}</div> : <div className="empty-state" data-tour="purpose"><Clock size={34} /><h3>{t.history.emptyTitle}</h3><p>{t.history.emptyText}</p><button onClick={() => setPage("settings")}>{t.history.checkSettings} <ArrowRight size={17} /></button></div>}</main><Summary result={result} sessions={sessions} stats={stats} brief={loadedDay?.brief || state.brief} language={language} t={t} /></div><RulePreviewDialog preview={rulePreview} busy={applyingRule} onConfirm={confirmRule} onCancel={() => setRulePreview(null)} language={language} t={t} /></div>;
 }
 
 function AskPage({ actions, setPage, language, retentionHours, t }) {
@@ -766,7 +906,60 @@ function ReviewQueue({ items, onClassify, learningExplained, onAcknowledge, t })
   return <div className="review-queue" id="review-settings"><div className="review-heading"><div><strong>{t.settings.reviewTitle}</strong><p>{t.settings.reviewText}</p></div><span>{items.length}</span></div>{items.length > 0 && !learningExplained && <div className="review-learning-note"><Sparkle size={20} /><span><strong>{t.settings.reviewLearnTitle}</strong><small>{t.settings.reviewLearnText}</small></span><button onClick={onAcknowledge}>{t.settings.reviewUnderstood}</button></div>}{items.length ? <div className="review-list">{items.slice(0, 8).map((item) => <article key={item.id}><div><strong>{item.observedLabel || item.title || item.app}</strong><small>{item.app} · {text(t.intent.confidence, { percent: Math.round(Number(item.confidenceScore || 0) * 100) })}</small><em>{text(t.settings.reviewOccurrences, { count: item.occurrenceCount || 1 })}</em></div><select value={item.intent || "unknown"} onChange={(event) => { onAcknowledge?.(); onClassify(item, event.target.value); }} aria-label={t.intent.classify}>{Object.entries(t.intent.labels).filter(([key]) => key !== "mixed").map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select></article>)}</div> : <div className="review-empty"><CheckCircle size={20} /><span>{t.settings.reviewEmpty}</span></div>}</div>;
 }
 
-function SmartAnalysisSettings({ state, actions, pending, run, t }) {
+function qualityPercent(value) {
+  return Math.round(Number(value || 0) * 100);
+}
+
+function EngineQualityInline({ engine, quality, t, compact = false }) {
+  const benchmark = quality?.benchmark?.engines?.[engine]?.benchmark;
+  if (!benchmark) return null;
+  return <span className={`engine-quality-inline ${compact ? "compact" : ""}`}>
+    <span><b>≈{qualityPercent(benchmark.precision)}%</b><small>{t.settings.enginePrecisionShort}</small></span>
+    <span><b>{qualityPercent(benchmark.coverage)}%</b><small>{t.settings.engineCoverageShort}</small></span>
+  </span>;
+}
+
+function QualityLegend({ quality, t, personal = false }) {
+  const count = quality?.benchmark?.engines?.builtin?.benchmark?.labelable || 0;
+  if (!count) return null;
+  const personalResult = quality?.personal;
+  return <div className={`quality-legend ${personal ? "onboarding-quality-legend" : ""}`}><Info size={18} /><span>
+    <strong>{text(t.settings.engineBenchmarkTitle, { count })}</strong>
+    <small>{t.settings.engineBenchmarkLegend}</small>
+    {personal && personalResult?.contextCount > 0 && <em>{text(t.settings.enginePersonalAvailable, { contexts: personalResult.contextCount, labelled: personalResult.labelledContextCount || 0 })}</em>}
+  </span></div>;
+}
+
+function AnalysisQualityPanel({ quality, signalInstalled, semanticInstalled, pending, onRefresh, t }) {
+  const personal = quality?.personal;
+  const modes = [
+    { id: "builtin", title: t.settings.analysisBuiltin, installed: true },
+    { id: "signals", title: t.settings.analysisSignals, installed: signalInstalled },
+    { id: "semantic", title: t.settings.analysisSemantic, installed: semanticInstalled },
+  ];
+  const labelled = Number(personal?.labelledContextCount || 0);
+  const preliminary = labelled > 0 && labelled < 15;
+  const checkedAt = personal?.generatedAt ? new Intl.DateTimeFormat(t.locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(personal.generatedAt)) : "";
+  return <section className="engine-quality-panel">
+    <header><div><ChartBar size={21} /><span><strong>{t.settings.engineQualityTitle}</strong><small>{t.settings.engineQualityText}</small></span></div><button className="text-button" disabled={Boolean(pending) || quality?.running} onClick={onRefresh}><ArrowClockwise size={16} className={quality?.running ? "spin" : ""} />{quality?.running ? t.settings.engineQualityChecking : t.settings.engineQualityRefresh}</button></header>
+    <QualityLegend quality={quality} t={t} />
+    {personal ? <div className="personal-quality">
+      <div className="personal-quality-heading"><span><strong>{t.settings.enginePersonalTitle}</strong><small>{text(t.settings.enginePersonalSample, { contexts: personal.contextCount || 0, labelled })}{checkedAt ? ` · ${checkedAt}` : ""}</small></span>{preliminary && <em>{t.settings.enginePersonalPreliminary}</em>}</div>
+      <div className="personal-quality-grid">
+        {modes.map((mode) => {
+          const result = personal.engines?.[mode.id];
+          const unavailable = mode.id !== "builtin" && !mode.installed;
+          const waitingForPass = mode.id !== "builtin" && mode.installed && !Number(result?.ruleCount || 0);
+          return <div className={`personal-quality-row ${unavailable || waitingForPass ? "unavailable" : ""}`} key={mode.id}><strong>{mode.title}</strong>{unavailable ? <span>{t.settings.enginePersonalInstall}</span> : waitingForPass ? <span>{t.settings.enginePersonalRun}</span> : <><span><b>{qualityPercent(result?.history?.coverage)}%</b><small>{t.settings.enginePersonalHistoryCoverage}</small></span><span><b>{labelled ? `${qualityPercent(result?.personal?.accuracy)}%` : "—"}</b><small>{t.settings.enginePersonalAgreement}</small></span></>}</div>;
+        })}
+      </div>
+      <p>{labelled ? preliminary ? t.settings.enginePersonalSmallSample : t.settings.enginePersonalNote : t.settings.enginePersonalNoLabels}</p>
+    </div> : <div className="personal-quality-empty"><Clock size={18} /><span>{quality?.running ? t.settings.engineQualityChecking : t.settings.enginePersonalWaiting}</span></div>}
+    {quality?.error && <small className="analysis-error">{t.settings.engineQualityError}</small>}
+  </section>;
+}
+
+function SmartAnalysisSettings({ state, actions, pending, run, t, onStartTour }) {
   const runtime = state.runtime?.smartAnalysis || {};
   const engine = state.settings.analysisEngine || runtime.engine || "builtin";
   const signal = runtime.signal || {};
@@ -784,13 +977,14 @@ function SmartAnalysisSettings({ state, actions, pending, run, t }) {
   return <div className="analysis-settings">
     <div className="feature-heading analysis-heading"><Brain size={23} /><div><strong>{t.settings.smartTitle}</strong><span>{t.settings.smartText}</span></div></div>
     <div className="analysis-mode-grid" role="radiogroup" aria-label={t.settings.analysisMode}>
-      {modes.map((mode) => { const Icon = mode.icon; return <button type="button" key={mode.id} className={`analysis-mode-card ${engine === mode.id ? "selected" : ""}`} role="radio" aria-checked={engine === mode.id} disabled={Boolean(pending) || semantic.downloading || semantic.running} onClick={() => run(`analysis-${mode.id}`, () => actions.setAnalysisEngine(mode.id))}><span className="analysis-mode-icon"><Icon size={19} /></span><span className="analysis-mode-copy"><strong>{mode.title}</strong><small>{mode.description}</small><em>{mode.size}</em></span><span className={`status-dot ${mode.installed ? "on" : "off"}`} /></button>; })}
+      {modes.map((mode) => { const Icon = mode.icon; return <button type="button" key={mode.id} className={`analysis-mode-card ${engine === mode.id ? "selected" : ""}`} role="radio" aria-checked={engine === mode.id} disabled={Boolean(pending) || semantic.downloading || semantic.running} onClick={() => run(`analysis-${mode.id}`, () => actions.setAnalysisEngine(mode.id))}><span className="analysis-mode-icon"><Icon size={19} /></span><span className="analysis-mode-copy"><strong>{mode.title}</strong><small>{mode.description}</small><em>{mode.size}</em><EngineQualityInline engine={mode.id} quality={runtime.quality} t={t} /></span><span className={`status-dot ${mode.installed ? "on" : "off"}`} /></button>; })}
     </div>
+    <AnalysisQualityPanel quality={runtime.quality} signalInstalled={Boolean(signal.installed)} semanticInstalled={Boolean(semantic.installed)} pending={pending} onRefresh={() => run("analysis-quality", actions.refreshAnalysisQuality)} t={t} />
     {engine === "signals" && <div className="analysis-detail"><div className="feature-status"><span className={`status-dot ${signal.installed && !signal.updateAvailable ? "on" : "off"}`} />{signal.installed ? signal.updateAvailable ? text(t.settings.smartOutdated, { version: signal.version || "1.0" }) : text(t.settings.smartInstalled, { version: signal.version || "1.1", size: t.settings.analysisSignalsSize }) : t.settings.smartNotInstalled}{signal.running && <em>{t.settings.smartRunning}</em>}</div><div className="feature-actions">{(!signal.installed || signal.updateAvailable) && <button className="secondary-button" disabled={Boolean(pending)} onClick={() => run("smart-download", actions.downloadSmartModel)}><DownloadSimple size={17} /> {signal.updateAvailable ? t.settings.smartUpdate : t.settings.smartDownload}</button>}{!signal.installed && <button className="secondary-button" disabled={Boolean(pending)} onClick={() => run("smart-file", actions.installSmartModel)}><FolderOpen size={17} /> {t.settings.smartFile}</button>}{signal.installed && <button className="secondary-button" disabled={Boolean(pending) || signal.running} onClick={() => run("smart-run", actions.runSelectedAnalysis)}><Sparkle size={17} /> {t.settings.smartRun}</button>}{signal.installed && <button className="text-button" disabled={Boolean(pending)} onClick={() => run("smart-remove", actions.removeSmartModel)}>{t.settings.smartRemove}</button>}</div><p>{t.settings.smartPrivacy}</p></div>}
     {engine === "semantic" && <div className="analysis-detail"><div className="feature-status"><span className={`status-dot ${semantic.installed ? "on" : "off"}`} />{semantic.installed ? text(t.settings.semanticInstalled, { version: semantic.version || "1.0", size: semanticSize }) : text(t.settings.semanticNotInstalled, { size: semanticSize })}{(semantic.downloading || semantic.running) && <em>{semantic.downloading ? t.settings.semanticDownloading : t.settings.smartRunning}</em>}</div>{(semantic.downloading || semantic.running) && <div className="analysis-progress" aria-label={t.settings.semanticProgress}><span style={{ width: `${Math.max(2, Number(semantic.progress || 0))}%` }} /></div>}<div className="feature-actions">{!semantic.installed && <button className="secondary-button" disabled={Boolean(pending) || semantic.downloading} onClick={() => run("semantic-download", actions.downloadSemanticModel)}><DownloadSimple size={17} /> {t.settings.semanticDownload}</button>}{semantic.installed && <button className="secondary-button" disabled={Boolean(pending) || semantic.running} onClick={() => run("semantic-run", actions.runSelectedAnalysis)}><Sparkle size={17} /> {t.settings.smartRun}</button>}{semantic.installed && <button className="text-button" disabled={Boolean(pending) || semantic.running} onClick={() => run("semantic-remove", actions.removeSemanticModel)}>{t.settings.semanticRemove}</button>}</div>{semantic.error && <small className="analysis-error">{semantic.error}</small>}<p>{t.settings.semanticPrivacy}</p></div>}
     {engine === "builtin" && <p className="analysis-footnote">{t.settings.analysisBuiltinPrivacy}</p>}
-    {lastResult.status && lastResult.status !== "never" && <div className="analysis-result"><CheckCircle size={18} /><span><strong>{t.settings.analysisLastResult}</strong><small>{text(t.settings.analysisResultMetrics, { candidates: lastResult.candidates || 0, refined: lastResult.refined || 0, changed: lastResult.changed || 0 })}</small></span></div>}
-    <div className="analysis-tour-link"><span><strong>{t.settings.tourTitle}</strong><small>{t.settings.tourText}</small></span><button className="secondary-button" disabled={Boolean(pending)} onClick={() => run("restart-onboarding", actions.restartOnboarding)}><Compass size={17} />{t.settings.tourAction}</button></div>
+    {lastResult.status && lastResult.status !== "never" && <div className="analysis-result"><CheckCircle size={18} /><span><strong>{t.settings.analysisLastResult}</strong><small>{text(t.settings.analysisResultMetrics, { candidates: lastResult.candidates || 0, refined: lastResult.refined || 0, changed: lastResult.changed || 0 })}</small>{engine === "semantic" && Number(lastResult.candidates || 0) > 0 && <em>{text(t.settings.semanticLastCoverage, { percent: Math.round((Number(lastResult.refined || 0) / Number(lastResult.candidates)) * 100) })}</em>}</span></div>}
+    <div className="analysis-tour-link"><span><strong>{t.quickTour.replay}</strong><small>{t.quickTour.steps[4].hint}</small></span><button className="secondary-button" disabled={Boolean(pending)} onClick={onStartTour}><Compass size={17} />{t.quickTour.replay}</button></div>
   </div>;
 }
 
@@ -820,7 +1014,7 @@ function DataPortability({ actions, pending, run, t }) {
   return <div className="data-portability"><div className="portability-actions"><button className="secondary-button" disabled={Boolean(pending)} onClick={() => exportFile("json")}><UploadSimple size={17} /> JSON</button><button className="secondary-button" disabled={Boolean(pending)} onClick={() => exportFile("csv")}><FileCsv size={17} /> CSV</button><button className="secondary-button" disabled={Boolean(pending)} onClick={() => setMode("backup")}><LockKey size={17} /> {t.settings.backup}</button><button className="secondary-button" disabled={Boolean(pending)} onClick={() => setMode("restore")}><ArrowCounterClockwise size={17} /> {t.settings.restore}</button></div><p>{t.settings.backupText}</p>{mode && <div className="passphrase-panel"><Key size={20} /><div><strong>{mode === "backup" ? t.settings.backupTitle : t.settings.restoreTitle}</strong><input autoFocus type="password" value={passphrase} onChange={(event) => setPassphrase(event.target.value)} onKeyDown={(event) => event.key === "Enter" && submit()} placeholder={t.settings.passphrase} minLength={8} maxLength={512} /><small>{t.settings.passphraseText}</small></div><button className="primary-update-button" onClick={submit} disabled={passphrase.length < 8 || Boolean(pending)}>{mode === "backup" ? t.settings.backup : t.settings.restore}</button><button className="icon-button" onClick={() => { setMode(""); setPassphrase(""); }} aria-label={t.common.cancel}><X size={17} /></button></div>}{result && <div className="portability-result"><Check size={17} /> {text(t.settings.fileReady, { path: result })}</div>}</div>;
 }
 
-function SettingsPage({ state, actions, isDesktop, language, focusSection, t }) {
+function SettingsPage({ state, actions, isDesktop, language, focusSection, t, onStartTour }) {
   const [confirming, setConfirming] = useState(false);
   const [pending, setPending] = useState("");
   const [actionError, setActionError] = useState("");
@@ -875,7 +1069,7 @@ function SettingsPage({ state, actions, isDesktop, language, focusSection, t }) 
   const macInstall = runtime.macInstall || {};
   const accessibilityText = macInstall.issue
     ? text(t.settings.accessibilityInstallIssues[macInstall.issue] || t.settings.accessibilityInstallIssues["unknown-location"], { name: macInstall.appName || "Daytrace", path: macInstall.bundlePath || "—" })
-    : t.settings.accessibilityText;
+    : runtime.accessibilityMainTrusted ? t.settings.accessibilityWrongTarget : t.settings.accessibilityText;
   const statusLabel = t.settings.statuses[runtime.trackerStatus] || t.settings.statuses.stopped;
   const setting = (key, title, description) => (
     <div className="setting-row" key={key}>
@@ -895,7 +1089,7 @@ function SettingsPage({ state, actions, isDesktop, language, focusSection, t }) 
       {runtime.platform === "darwin" && !runtime.accessibilityTrusted && (
         <div className="permission-card">
           <ShieldCheck size={22} />
-          <div><strong>{t.settings.accessibility}</strong><span>{accessibilityText}</span></div>
+          <div className="permission-copy"><strong>{t.settings.accessibility}</strong><span>{accessibilityText}</span></div>
           <div className="permission-actions">
             <button onClick={() => run("accessibility", actions.requestAccessibility)} disabled={Boolean(pending)}>{t.settings.grantAccess}</button>
             <button onClick={() => run("accessibility-check", actions.refreshAccessibility)} disabled={Boolean(pending)}>{t.onboarding.permissionCheck}</button>
@@ -903,6 +1097,10 @@ function SettingsPage({ state, actions, isDesktop, language, focusSection, t }) 
           </div>
         </div>
       )}
+      <div className="settings-section appearance-section">
+        <h3>{t.settings.appearance}</h3>
+        <ThemeSelector theme={state.settings.theme} disabled={Boolean(pending)} onChange={(next) => run("theme", () => actions.setTheme(next))} t={t} />
+      </div>
       <div className="settings-section">
         <h3>{t.settings.language}</h3>
         <LanguageSelector language={language} onChange={(next) => run("language", () => actions.setLanguage(next))} t={t} />
@@ -931,9 +1129,9 @@ function SettingsPage({ state, actions, isDesktop, language, focusSection, t }) 
         {(state.settings.intentRulesUndo || []).length > 0 && <button className="secondary-button rule-undo" disabled={Boolean(pending)} onClick={() => run("undo-rules", actions.undoIntentRules)}><ArrowCounterClockwise size={17} /> {t.intent.undoLastRuleChange}</button>}
         <ReviewQueue items={state.reviewQueue || []} onClassify={classifyReview} learningExplained={Boolean(state.settings.reviewLearningExplained)} onAcknowledge={() => actions.acknowledgeReviewGuidance("understood")} t={t} />
       </div>
-      <div className="settings-section smart-analysis-section" id="smart-analysis-settings">
+      <div className="settings-section smart-analysis-section" id="smart-analysis-settings" data-tour="analysis">
         <h3>{t.settings.smartAnalysis}</h3>
-        <SmartAnalysisSettings state={state} actions={actions} pending={pending} run={run} t={t} />
+        <SmartAnalysisSettings state={state} actions={actions} pending={pending} run={run} t={t} onStartTour={onStartTour} />
       </div>
       <div className="settings-section browser-companion-section">
         <h3>{t.settings.browserCompanion}</h3>
@@ -970,10 +1168,16 @@ function SettingsPage({ state, actions, isDesktop, language, focusSection, t }) 
 }
 
 export function App() {
-  const { state, actions, isDesktop, language } = useDaytrace();
-  const [page, setPage] = useState("history");
+  const { state, actions, isDesktop, language, hydrated } = useDaytrace();
+  const [page, setPage] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const previewPage = params.get("capture") === "desktop" ? params.get("page") : "";
+    return NAVIGATION.some((item) => item.id === previewPage) ? previewPage : "history";
+  });
   const [settingsFocus, setSettingsFocus] = useState("");
   const [selectedDay, setSelectedDay] = useState(() => startOfLocalDay(Date.now()));
+  const [tourOpen, setTourOpen] = useState(() => new URLSearchParams(window.location.search).get("tour") === "1");
+  const autoTourStarted = useRef(false);
   const t = translations[language];
   const today = startOfLocalDay(Date.now());
   const displayDay = page === "history" ? selectedDay : today;
@@ -981,9 +1185,24 @@ export function App() {
   const isToday = displayDay === today;
   const firstRetainedDay = startOfLocalDay(state.retentionCutoff);
   const navigate = (nextPage, focus = "") => { setPage(nextPage); setSettingsFocus(nextPage === "settings" ? focus : ""); };
+  const theme = normalizeTheme(state.settings.theme);
+  useEffect(() => {
+    applyDocumentTheme(theme);
+    return observeSystemTheme(theme);
+  }, [theme]);
   useEffect(() => { document.documentElement.lang = language; document.title = "Daytrace"; }, [language]);
   useEffect(() => { if (selectedDay < firstRetainedDay) setSelectedDay(firstRetainedDay); }, [firstRetainedDay, selectedDay]);
-  if (!state.settings.onboardingComplete || Number(state.settings.onboardingVersion || 0) < CURRENT_ONBOARDING_VERSION) return <Onboarding state={state} actions={actions} language={language} />;
-  if (isDesktop && state.runtime?.platform === "darwin" && !state.runtime.accessibilityTrusted && !state.settings.accessibilityOnboardingDismissed) return <MacPermissionOnboarding actions={actions} onContinue={actions.dismissAccessibilityOnboarding} runtime={state.runtime} t={t} />;
-  return <><div className="app-shell"><Sidebar page={page} setPage={navigate} state={state} actions={actions} language={language} t={t} /><div className="app-main"><header className="date-header"><div className="date-copy" key={`${displayDay}-${language}`}><h1>{isToday ? `${t.common.today}, ${date.date}` : date.date}</h1><span>{date.weekday}</span></div>{page === "history" && <DateNavigation selectedDay={selectedDay} minDay={firstRetainedDay} maxDay={today} availableDays={state.availableDays || []} language={language} onSelect={setSelectedDay} t={t} />}</header>{page === "history" && <HistoryPage key={selectedDay} state={state} actions={actions} setPage={navigate} selectedDay={selectedDay} language={language} t={t} />}{page === "ask" && <AskPage actions={actions} setPage={navigate} language={language} retentionHours={state.settings.retentionHours} t={t} />}{page === "skills" && <SkillsPage state={state} actions={actions} t={t} />}{page === "settings" && <SettingsPage state={state} actions={actions} isDesktop={isDesktop} language={language} focusSection={settingsFocus} t={t} />}{page === "exclusions" && <ExclusionsPage state={state} actions={actions} t={t} />}</div></div><ReviewCoach state={state} language={language} t={t} onReview={async () => { await actions.acknowledgeReviewGuidance("review"); navigate("settings", "review"); }} onModel={async () => { await actions.acknowledgeReviewGuidance("model"); navigate("settings", "smart"); }} onLater={() => actions.acknowledgeReviewGuidance("later")} /></>;
+  useEffect(() => {
+    if (!hydrated || !state.settings.onboardingComplete || state.settings.quickTourComplete || autoTourStarted.current) return;
+    autoTourStarted.current = true;
+    setTourOpen(true);
+    // Mark the tour as shown when it opens. A crash or forced shutdown midway
+    // must not turn it into a permanent startup screen.
+    void actions.completeQuickTour();
+  }, [hydrated, state.settings.onboardingComplete, state.settings.quickTourComplete]);
+  if (!hydrated) return <AppLoading language={language} />;
+  if (!state.settings.onboardingComplete) return <Onboarding state={state} actions={actions} language={language} />;
+  const showMacPermission = isDesktop && state.runtime?.platform === "darwin" && !state.runtime.accessibilityTrusted && !state.settings.accessibilityOnboardingDismissed;
+  const startTour = () => { setTourOpen(true); setPage("history"); setSettingsFocus(""); };
+  return <><div className="app-shell"><Sidebar page={page} setPage={navigate} state={state} actions={actions} language={language} t={t} onStartTour={startTour} /><div className="app-main"><header className="date-header"><div className="date-copy" key={`${displayDay}-${language}`}><h1>{isToday ? `${t.common.today}, ${date.date}` : date.date}</h1><span>{date.weekday}</span></div>{page === "history" && <DateNavigation selectedDay={selectedDay} minDay={firstRetainedDay} maxDay={today} availableDays={state.availableDays || []} language={language} onSelect={setSelectedDay} t={t} />}</header>{page === "history" && <HistoryPage key={selectedDay} state={state} actions={actions} setPage={navigate} selectedDay={selectedDay} language={language} t={t} />}{page === "ask" && <AskPage actions={actions} setPage={navigate} language={language} retentionHours={state.settings.retentionHours} t={t} />}{page === "skills" && <SkillsPage state={state} actions={actions} t={t} />}{page === "settings" && <SettingsPage state={state} actions={actions} isDesktop={isDesktop} language={language} focusSection={settingsFocus} t={t} onStartTour={startTour} />}{page === "exclusions" && <ExclusionsPage state={state} actions={actions} t={t} />}</div></div>{showMacPermission && !tourOpen && <MacPermissionOnboarding actions={actions} onContinue={actions.dismissAccessibilityOnboarding} runtime={state.runtime} t={t} />}{!tourOpen && <ReviewCoach state={state} language={language} t={t} onReview={async () => { await actions.acknowledgeReviewGuidance("review"); navigate("settings", "review"); }} onModel={async () => { await actions.acknowledgeReviewGuidance("model"); navigate("settings", "smart"); }} onLater={() => actions.acknowledgeReviewGuidance("later")} />}{tourOpen && <QuickTour t={t} onNavigate={navigate} onClose={() => setTourOpen(false)} />}</>;
 }

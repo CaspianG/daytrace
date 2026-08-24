@@ -11,13 +11,17 @@ func accessibilityTrusted(prompt: Bool) -> Bool {
 
 if CommandLine.arguments.contains("--check-accessibility") || CommandLine.arguments.contains("--request-accessibility") {
     let prompt = CommandLine.arguments.contains("--request-accessibility")
-    let trusted = accessibilityTrusted(prompt: prompt)
-    if prompt && !trusted {
-        // The macOS consent prompt is asynchronous. Keep the helper alive long
-        // enough for the system to attribute and present it before we exit.
-        RunLoop.current.run(until: Date().addingTimeInterval(0.4))
+    if accessibilityTrusted(prompt: prompt) { exit(0) }
+    if prompt {
+        // The prompt is asynchronous. Keep the exact helper identity alive while
+        // the user enables its switch, and report success without a relaunch.
+        let deadline = Date().addingTimeInterval(60)
+        while Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+            if AXIsProcessTrusted() { exit(0) }
+        }
     }
-    exit((trusted || AXIsProcessTrusted()) ? 0 : 77)
+    exit(77)
 }
 
 struct Snapshot: Equatable {
@@ -79,7 +83,9 @@ func flush(value: Snapshot? = nil) {
 }
 
 func sample(force: Bool = false) {
-    let current = snapshot()
+    lock.lock(); let idleBeforeSample = isIdle; lock.unlock()
+    if idleBeforeSample && !force { return }
+    let current = autoreleasepool { snapshot() }
     lock.lock(); let previous = active; active = current; let idle = isIdle; lock.unlock()
     if (force || current != previous) && !idle { flush(value: previous); emit(kind: "foreground", count: 1, value: current) }
 }
@@ -93,15 +99,20 @@ func samplePresence() {
     let idleNow = secondsSinceInput() >= idleThreshold
     lock.lock(); let wasIdle = isIdle; isIdle = idleNow; let current = active; lock.unlock()
     if idleNow && !wasIdle { flush(value: current); emit(kind: "idle", count: 1, value: current) }
-    if !idleNow && wasIdle { emit(kind: "resume", count: 1, value: current) }
+    if !idleNow && wasIdle { emit(kind: "resume", count: 1, value: current); sample(force: true) }
 }
 
 func heartbeat() {
+    if !AXIsProcessTrusted() { flush(); exit(77) }
     lock.lock(); let idle = isIdle; let current = active; lock.unlock()
     if !idle { emit(kind: "heartbeat", count: 1, value: current) }
 }
 
 let callback: CGEventTapCallBack = { _, type, event, _ in
+    if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+        if let eventTap { CGEvent.tapEnable(tap: eventTap, enable: true) }
+        return Unmanaged.passUnretained(event)
+    }
     lock.lock()
     if type == .keyDown { inputs += 1 }
     if type == .leftMouseDown || type == .rightMouseDown || type == .otherMouseDown { clicks += 1 }
@@ -124,13 +135,13 @@ if collectInput {
     }
 }
 
-active = snapshot(); isIdle = secondsSinceInput() >= idleThreshold; emit(kind: "foreground", count: 1, value: active)
+active = autoreleasepool { snapshot() }; isIdle = secondsSinceInput() >= idleThreshold; emit(kind: "foreground", count: 1, value: active)
 if isIdle { emit(kind: "idle", count: 1, value: active) }
 let center = NSWorkspace.shared.notificationCenter
 let observer = center.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { _ in sample(force: false) }
 let sampleTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { _ in sample(force: false) }
 let flushTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { _ in flush() }
-let presenceTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { _ in samplePresence() }
+let presenceTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in samplePresence() }
 let heartbeatTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in heartbeat() }
 RunLoop.main.run()
 center.removeObserver(observer); sampleTimer.invalidate(); flushTimer.invalidate(); presenceTimer.invalidate(); heartbeatTimer.invalidate(); flush()

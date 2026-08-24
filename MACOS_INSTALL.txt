@@ -17,23 +17,23 @@ missing paid Apple certificate; it is not a malware detection result.
 4. If it is still blocked, open System Settings > Privacy & Security, scroll to
    Security, find the message about Daytrace, and click Open Anyway. Confirm
    with your password or Touch ID if macOS asks.
-5. Launch Daytrace and grant Accessibility access when its own setup explains
-   the permission. This second permission is required for local activity
-   tracking and is separate from Gatekeeper.
+5. Launch Daytrace and click Register collector. macOS adds Daytrace Collector
+   to Accessibility. Enable that exact helper, not an old Daytrace or
+   Daytrace 2 entry. This permission is separate from Gatekeeper.
 
-If Accessibility is already enabled but Daytrace still asks for it, remove all
-old Daytrace and Daytrace 2 entries with the minus button, click plus, choose
-exactly /Applications/Daytrace.app, enable it, return to Daytrace, and click
-Check again. The current build checks the same native collector that records
-events. Open Daytrace without tracking remains available so the setup screen
-cannot lock you out of the application.
+If Accessibility appears enabled but Daytrace still asks, the switch probably
+belongs to the UI app rather than its collector. Return to Daytrace, click
+Register collector, enable the Daytrace Collector entry macOS adds, and click
+Check again. If several collector entries exist, remove the stale ones first.
+The setup has a close button and never locks settings or existing local data.
 
 From v0.5.4 onward, the in-app Update button verifies the DMG, replaces the
 installed app, repairs a numbered copy such as Daytrace 2.app, and relaunches
 Daytrace automatically. Updating from v0.5.3 or older requires this manual DMG
 replacement once because the old installed binary does not contain the new
-updater. An unsigned update can still make macOS request Accessibility again;
-Daytrace can open the correct settings page but cannot grant itself access.
+updater. If an unsigned update changes the collector, macOS can still request
+Daytrace Collector access again. Daytrace registers the right helper and never
+blocks the interface, but cannot grant itself this protected permission.
 
 From v0.5.5 onward, Daytrace keeps the previous app until the new version has
 rendered and shown a real window. If Gatekeeper blocks it or startup fails, the
@@ -62,23 +62,23 @@ Gatekeeper из-за отсутствия платного сертификат�
    «Конфиденциальность и безопасность», прокрутите до раздела «Безопасность»,
    найдите сообщение о Daytrace и нажмите «Всё равно открыть». Подтвердите
    действие паролем или Touch ID, если macOS попросит.
-5. Запустите Daytrace и выдайте «Универсальный доступ», когда приложение объяснит
-   разрешение. Оно нужно для локального сбора активности и не связано с
-   предупреждением Gatekeeper.
+5. Запустите Daytrace и нажмите «Зарегистрировать сборщик». macOS добавит в
+   «Универсальный доступ» Daytrace Collector. Включите именно его, а не старый
+   Daytrace или Daytrace 2. Это разрешение не связано с Gatekeeper.
 
-Если доступ уже включён, но Daytrace продолжает его просить, удалите кнопкой «−»
-все старые записи Daytrace и Daytrace 2, нажмите «+», выберите именно
-/Applications/Daytrace.app, включите её, вернитесь в Daytrace и нажмите
-«Проверить снова». Актуальная версия проверяет тот же нативный сборщик, который
-записывает события. Кнопка «Открыть Daytrace без сбора» остаётся доступной, чтобы
-экран настройки не блокировал вход в приложение.
+Если доступ выглядит включённым, но Daytrace продолжает его просить, скорее всего
+включена запись окна, а не сборщика. Вернитесь в Daytrace, нажмите
+«Зарегистрировать сборщик», включите добавленный macOS Daytrace Collector и
+нажмите «Проверить снова». Если записей сборщика несколько, удалите старые.
+Экран можно закрыть; настройки и сохранённые данные он больше не блокирует.
 
 Начиная с v0.5.4 кнопка обновления сама проверяет DMG, заменяет установленное
 приложение, исправляет номерную копию вроде Daytrace 2.app и перезапускает
 Daytrace. При переходе с v0.5.3 или старше ручную замену через DMG нужно сделать
 один раз: в старом установленном файле нового механизма ещё нет. После обновления
-без подписи macOS всё ещё может повторно запросить «Универсальный доступ»;
-Daytrace откроет нужный раздел, но не может выдать разрешение самому себе.
+без подписи, изменившего сборщик, macOS всё ещё может повторно запросить доступ
+для Daytrace Collector. Daytrace зарегистрирует правильного помощника и не
+заблокирует интерфейс, но не может выдать разрешение самому себе.
 
 Начиная с v0.5.5 Daytrace хранит предыдущую версию, пока новая действительно не
 отрисует и не покажет окно. Если её заблокирует Gatekeeper или запуск завершится

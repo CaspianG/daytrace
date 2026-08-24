@@ -174,7 +174,23 @@ function sessionize(events, now = Date.now(), language = "ru", intentRules = [])
   const lang = normalizeLanguage(language);
   const labels = FOCUS_LABELS[lang];
   const intentLabels = INTENT_LABELS[lang];
-  const sorted = [...events].sort((a, b) => new Date(a.at) - new Date(b.at));
+  // Event files are normally already chronological. Parsing a timestamp inside
+  // the sort comparator turned one day with tens of thousands of lightweight
+  // input samples into hundreds of thousands of Date allocations and visible
+  // UI stalls. Parse each timestamp once and sort only when the journal is
+  // actually out of order (for example after an imported backup).
+  const prepared = [];
+  let chronological = true;
+  let previousAt = -Infinity;
+  for (let index = 0; index < events.length; index += 1) {
+    const event = events[index];
+    const at = new Date(event?.at).getTime();
+    if (!Number.isFinite(at)) continue;
+    if (at < previousAt) chronological = false;
+    previousAt = at;
+    prepared.push({ event, at, index });
+  }
+  const sorted = chronological ? prepared : prepared.sort((a, b) => a.at - b.at || a.index - b.index);
   const activities = [];
   let active = null;
 
@@ -209,9 +225,8 @@ function sessionize(events, now = Date.now(), language = "ru", intentRules = [])
     };
   }
 
-  for (const event of sorted) {
-    const at = new Date(event.at).getTime();
-    if (!Number.isFinite(at)) continue;
+  for (const item of sorted) {
+    const { event, at } = item;
     if (isSystemNoise(event) || isDaytraceEvent(event)) continue;
 
     // A suspended machine, an idle night, or a collector restart must never
@@ -267,14 +282,26 @@ function sessionize(events, now = Date.now(), language = "ru", intentRules = [])
   }
 
   const sessions = [];
+  const focusCache = new Map();
+  const intentCache = new Map();
   for (const activity of merged) {
-    const classification = inferFocusDetails(activity);
+    const focusKey = `${activity.app}\u0000${activity.process}\u0000${activity.title}\u0000${activity.context}`;
+    let classification = focusCache.get(focusKey);
+    if (!classification) {
+      classification = inferFocusDetails(activity);
+      focusCache.set(focusKey, classification);
+    }
     const focus = classification.focus;
     activity.focus = focus;
     activity.focusLabel = labels[focus];
     activity.focusConfidence = classification.confidence;
     activity.focusReason = classification.reason;
-    const intentClassification = inferIntentDetails(activity, intentRules);
+    const intentKey = `${focusKey}\u0000${activity.domain}\u0000${activity.urlPath}\u0000${activity.source}`;
+    let intentClassification = intentCache.get(intentKey);
+    if (!intentClassification) {
+      intentClassification = inferIntentDetails(activity, intentRules);
+      intentCache.set(intentKey, intentClassification);
+    }
     setIntent(activity, intentClassification.intent, intentClassification.confidence, intentClassification.reason, intentClassification.evidence, intentLabels, intentClassification.score);
     const previous = sessions.at(-1);
     const gap = previous ? activity.start - previous.end : Infinity;

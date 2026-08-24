@@ -2,7 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { shouldRecord } = require("./privacy.cjs");
 const { sessionize } = require("./sessionizer.cjs");
-const { answerQuestion, questionWindow, suggestSkills } = require("./local-answer.cjs");
+const { answerQuestion, questionWindow, suggestSkillsFromSessions } = require("./local-answer.cjs");
 const { normalizeIntentRules } = require("./intent-classifier.cjs");
 const { buildDayBrief, buildReviewBacklog, buildReviewQueue } = require("./activity-insights.cjs");
 
@@ -23,9 +23,11 @@ const DEFAULT_SETTINGS = {
   analysisEngine: "builtin",
   smartAnalysisEnabled: false,
   browserCompanionEnabled: false,
+  theme: "system",
   language: "en",
   onboardingComplete: false,
   onboardingVersion: 0,
+  quickTourComplete: false,
   accessibilityOnboardingDismissed: false,
   reviewLearningExplained: false,
   reviewReminderSnoozedUntil: null,
@@ -69,6 +71,12 @@ function normalizeAnalysisEngine(value, fallback = "builtin") {
   return ["builtin", "signals", "semantic"].includes(fallback) ? fallback : "builtin";
 }
 
+function normalizeTheme(value, fallback = "system") {
+  const normalized = String(value || "").toLowerCase();
+  if (["system", "light", "dark"].includes(normalized)) return normalized;
+  return ["system", "light", "dark"].includes(fallback) ? fallback : "system";
+}
+
 function normalizeOptionalTimestamp(value) {
   const timestamp = Math.round(Number(value));
   return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : null;
@@ -88,6 +96,12 @@ function normalizeSettings(value, defaults = DEFAULT_SETTINGS) {
   const onboardingVersion = Number.isFinite(onboardingVersionValue) && onboardingVersionValue >= 0
     ? Math.min(100, onboardingVersionValue)
     : onboardingComplete ? 1 : 0;
+  // Profiles that already completed onboarding before the in-app tour existed
+  // must not be interrupted after an update. A genuinely new profile keeps the
+  // default false and receives the tour after first-run setup.
+  const quickTourComplete = Object.hasOwn(source, "quickTourComplete")
+    ? normalizeBoolean(source.quickTourComplete, defaults.quickTourComplete)
+    : onboardingComplete;
   return {
     trackingEnabled: normalizeBoolean(merged.trackingEnabled, defaults.trackingEnabled),
     retentionHours: normalizeRetentionHours(merged.retentionHours, defaults.retentionHours),
@@ -103,9 +117,11 @@ function normalizeSettings(value, defaults = DEFAULT_SETTINGS) {
     analysisEngine,
     smartAnalysisEnabled: analysisEngine !== "builtin",
     browserCompanionEnabled: normalizeBoolean(merged.browserCompanionEnabled, defaults.browserCompanionEnabled),
+    theme: normalizeTheme(merged.theme, defaults.theme),
     language: normalizeLanguage(merged.language),
     onboardingComplete,
     onboardingVersion,
+    quickTourComplete,
     accessibilityOnboardingDismissed: normalizeBoolean(merged.accessibilityOnboardingDismissed, defaults.accessibilityOnboardingDismissed),
     reviewLearningExplained: normalizeBoolean(merged.reviewLearningExplained, defaults.reviewLearningExplained),
     reviewReminderSnoozedUntil: normalizeOptionalTimestamp(merged.reviewReminderSnoozedUntil),
@@ -146,8 +162,11 @@ class EventStore {
     this.smartContextsFile = path.join(root, "smart-contexts.json");
     this.onChange = onChange;
     this.eventsCache = null;
+    this.eventFileCache = new Map();
+    this.dayStateCache = new Map();
     this.stateCache = null;
     this.historyStartedAtCache = undefined;
+    this.lastEventAtCache = undefined;
     ensurePrivateDirectory(this.root);
     ensurePrivateDirectory(this.eventsDir);
     ensurePrivateDirectory(this.skillsDir);
@@ -167,6 +186,42 @@ class EventStore {
 
   invalidate() {
     this.stateCache = null;
+    this.dayStateCache.clear();
+  }
+
+  invalidateDayAt(value) {
+    this.stateCache = null;
+    const day = new Date(Number(value));
+    if (!Number.isFinite(day.getTime())) { this.dayStateCache.clear(); return; }
+    day.setHours(0, 0, 0, 0);
+    this.dayStateCache.delete(day.getTime());
+  }
+
+  readEventFile(name) {
+    const file = path.join(this.eventsDir, name);
+    let stat;
+    try { stat = fs.statSync(file); }
+    catch {
+      this.eventFileCache.delete(name);
+      return [];
+    }
+    const cached = this.eventFileCache.get(name);
+    if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
+      // Refresh insertion order so the cache remains a small LRU of recently
+      // viewed hours instead of growing with long retention periods.
+      this.eventFileCache.delete(name);
+      this.eventFileCache.set(name, cached);
+      return cached.events;
+    }
+    const events = [];
+    for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/).filter(Boolean)) {
+      try { events.push(JSON.parse(line)); }
+      catch { /* A truncated final line is ignored. */ }
+    }
+    this.eventFileCache.delete(name);
+    this.eventFileCache.set(name, { size: stat.size, mtimeMs: stat.mtimeMs, events });
+    while (this.eventFileCache.size > 96) this.eventFileCache.delete(this.eventFileCache.keys().next().value);
+    return events;
   }
 
   updateSettings(patch) {
@@ -251,6 +306,7 @@ class EventStore {
     delete normalized.private;
     const eventFile = this.eventFile(normalized.at);
     fs.appendFileSync(eventFile, `${JSON.stringify(normalized)}\n`, { encoding: "utf8", mode: 0o600 });
+    this.eventFileCache.delete(path.basename(eventFile));
     secureMode(eventFile, 0o600);
     if (this.eventsCache) this.eventsCache.push(normalized);
     const normalizedAt = new Date(normalized.at).getTime();
@@ -259,8 +315,9 @@ class EventStore {
       && (this.historyStartedAtCache === null || normalizedAt < this.historyStartedAtCache)) {
       this.historyStartedAtCache = normalizedAt;
     }
-    this.invalidate();
-    this.onChange();
+    if (this.lastEventAtCache === undefined || this.lastEventAtCache === null || normalizedAt > this.lastEventAtCache) this.lastEventAtCache = normalizedAt;
+    this.invalidateDayAt(normalizedAt);
+    this.onChange(normalized);
     return true;
   }
 
@@ -269,14 +326,7 @@ class EventStore {
     const cutoff = Date.now() - this.settings.retentionHours * 60 * 60_000;
     const events = [];
     for (const name of fs.readdirSync(this.eventsDir).filter((item) => item.endsWith(".jsonl")).sort()) {
-      const file = path.join(this.eventsDir, name);
-      const lines = fs.readFileSync(file, "utf8").split(/\r?\n/).filter(Boolean);
-      for (const line of lines) {
-        try {
-          const event = JSON.parse(line);
-          if (new Date(event.at).getTime() >= cutoff) events.push(event);
-        } catch { /* A truncated final line is ignored. */ }
-      }
+      for (const event of this.readEventFile(name)) if (new Date(event.at).getTime() >= cutoff) events.push(event);
     }
     if (this.settings.retentionHours <= 48) this.eventsCache = events;
     return events;
@@ -301,16 +351,32 @@ class EventStore {
     }
     const events = [];
     for (const name of fs.readdirSync(this.eventsDir).filter((item) => item.endsWith(".jsonl") && dayKeys.has(item.slice(0, 10))).sort()) {
-      const file = path.join(this.eventsDir, name);
-      for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/).filter(Boolean)) {
-        try {
-          const event = JSON.parse(line);
-          const at = new Date(event.at).getTime();
-          if (at >= min && at < max) events.push(event);
-        } catch { /* A truncated final line is ignored. */ }
+      for (const event of this.readEventFile(name)) {
+        const at = new Date(event.at).getTime();
+        if (at >= min && at < max) events.push(event);
       }
     }
     return events;
+  }
+
+  latestEventAt() {
+    if (this.lastEventAtCache !== undefined) return this.lastEventAtCache;
+    const names = fs.readdirSync(this.eventsDir)
+      .filter((name) => /^\d{4}-\d{2}-\d{2}-\d{2}\.jsonl$/.test(name))
+      .sort()
+      .reverse();
+    for (const name of names) {
+      const events = this.readEventFile(name);
+      for (let index = events.length - 1; index >= 0; index -= 1) {
+        const at = new Date(events[index]?.at).getTime();
+        if (Number.isFinite(at)) {
+          this.lastEventAtCache = at;
+          return at;
+        }
+      }
+    }
+    this.lastEventAtCache = null;
+    return null;
   }
 
   availableDays() {
@@ -358,18 +424,28 @@ class EventStore {
     const start = new Date(Number(value));
     if (!Number.isFinite(start.getTime())) throw new Error("Invalid day");
     start.setHours(0, 0, 0, 0);
+    const cacheKey = start.getTime();
+    const cached = this.dayStateCache.get(cacheKey);
+    if (cached) {
+      this.dayStateCache.delete(cacheKey);
+      this.dayStateCache.set(cacheKey, cached);
+      return cached;
+    }
     const end = new Date(start);
     end.setDate(end.getDate() + 1);
     const now = Date.now();
     const events = this.loadEventsRange(start.getTime(), end.getTime());
     const sessions = sessionize(events, Math.min(now, end.getTime()), this.settings.language, this.analysisRules());
-    return {
+    const result = {
       day: start.getTime(),
       sessions,
       brief: buildDayBrief(sessions, this.settings.language),
       reviewQueue: buildReviewQueue(sessions, this.settings.language),
       eventCount: events.length,
     };
+    this.dayStateCache.set(cacheKey, result);
+    while (this.dayStateCache.size > 370) this.dayStateCache.delete(this.dayStateCache.keys().next().value);
+    return result;
   }
 
   async previewIntentRules(value) {
@@ -447,28 +523,31 @@ class EventStore {
       const file = path.join(this.eventsDir, name);
       try {
         const bounds = hourlyFileBounds(name);
-        if (bounds?.end <= cutoff) { fs.unlinkSync(file); continue; }
+        if (bounds?.end <= cutoff) { fs.unlinkSync(file); this.eventFileCache.delete(name); continue; }
         if (bounds?.start >= cutoff) { secureMode(file, 0o600); continue; }
         const lines = fs.readFileSync(file, "utf8").split(/\r?\n/).filter(Boolean);
         const kept = lines.filter((line) => {
           try { return new Date(JSON.parse(line).at).getTime() >= cutoff; } catch { return false; }
         });
-        if (!kept.length) fs.unlinkSync(file);
+        if (!kept.length) { fs.unlinkSync(file); this.eventFileCache.delete(name); }
         else {
-          if (kept.length !== lines.length) fs.writeFileSync(file, `${kept.join("\n")}\n`, { encoding: "utf8", mode: 0o600 });
+          if (kept.length !== lines.length) { fs.writeFileSync(file, `${kept.join("\n")}\n`, { encoding: "utf8", mode: 0o600 }); this.eventFileCache.delete(name); }
           secureMode(file, 0o600);
         }
       } catch { /* File may have disappeared between scans. */ }
     }
     if (this.eventsCache) this.eventsCache = this.eventsCache.filter((event) => new Date(event.at).getTime() >= cutoff);
     this.historyStartedAtCache = undefined;
+    this.lastEventAtCache = undefined;
     this.invalidate();
   }
 
   deleteAll() {
     for (const name of fs.readdirSync(this.eventsDir)) fs.rmSync(path.join(this.eventsDir, name), { force: true });
     this.eventsCache = [];
+    this.eventFileCache.clear();
     this.historyStartedAtCache = null;
+    this.lastEventAtCache = null;
     this.invalidate();
     this.onChange();
   }
@@ -486,14 +565,16 @@ class EventStore {
       });
       if (kept.length) {
         fs.writeFileSync(file, `${kept.join("\n")}\n`, { encoding: "utf8", mode: 0o600 });
+        this.eventFileCache.delete(name);
         secureMode(file, 0o600);
-      } else fs.rmSync(file, { force: true });
+      } else { fs.rmSync(file, { force: true }); this.eventFileCache.delete(name); }
     }
     if (this.eventsCache) this.eventsCache = this.eventsCache.filter((event) => {
       const at = new Date(event.at).getTime();
       return at < min || at > max;
     });
     this.historyStartedAtCache = undefined;
+    this.lastEventAtCache = undefined;
     this.invalidate();
     this.onChange();
   }
@@ -504,17 +585,23 @@ class EventStore {
     const retentionCutoff = now - this.settings.retentionHours * 60 * 60_000;
     const analysisStart = Math.max(now - 48 * 60 * 60_000, retentionCutoff);
     const events = this.loadEventsRange(analysisStart, now + 1);
-    const sessions = sessionize(events, now, this.settings.language, this.analysisRules());
-    const reviewQueue = buildReviewQueue(sessions, this.settings.language);
+    const firstDay = new Date(analysisStart);
+    firstDay.setHours(0, 0, 0, 0);
+    const sessions = [];
+    for (const cursor = new Date(firstDay); cursor.getTime() <= now; cursor.setDate(cursor.getDate() + 1)) {
+      sessions.push(...this.dayState(cursor.getTime()).sessions);
+    }
+    const retainedSessions = sessions.filter((session) => session.end > analysisStart && session.start <= now);
+    const reviewQueue = buildReviewQueue(retainedSessions, this.settings.language);
     this.stateCache = {
       settings: this.settings,
-      sessions,
-      brief: buildDayBrief(sessions, this.settings.language),
+      sessions: retainedSessions,
+      brief: buildDayBrief(retainedSessions, this.settings.language),
       reviewQueue,
       reviewBacklog: buildReviewBacklog(reviewQueue, this.settings, now),
       eventCount: events.length,
       lastEventAt: events.length ? events.at(-1).at : null,
-      skills: suggestSkills(events, new Date(), this.settings.language, this.analysisRules()),
+      skills: suggestSkillsFromSessions(retainedSessions, this.settings.language),
       dataPath: this.root,
       retentionCutoff,
       historyStartedAt: this.historyStartedAt(retentionCutoff),
@@ -554,4 +641,4 @@ class EventStore {
   }
 }
 
-module.exports = { CURRENT_ONBOARDING_VERSION, DEFAULT_SETTINGS, EventStore, normalizeAnalysisEngine, normalizeExcludedApps, normalizeLanguage, normalizeRetentionHours, normalizeSettings };
+module.exports = { CURRENT_ONBOARDING_VERSION, DEFAULT_SETTINGS, EventStore, normalizeAnalysisEngine, normalizeExcludedApps, normalizeLanguage, normalizeRetentionHours, normalizeSettings, normalizeTheme };

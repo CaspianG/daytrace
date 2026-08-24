@@ -1,10 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { AutoModel, AutoTokenizer, env } from "@huggingface/transformers";
 import { SEMANTIC_INTENTS, scoreSemanticVector, semanticDecision, semanticPrototypes, semanticText, shouldSkipSemantic, unitVector } from "../src/semantic-analysis-core.js";
 
+const require = createRequire(import.meta.url);
+const { ANALYSIS_ENGINE_QUALITY, SEMANTIC_MODEL_QUALITY } = require("../electron/lib/semantic-model-quality.cjs");
+const classifier = require("../electron/lib/intent-classifier.cjs");
+const signalWorker = require("../electron/lib/smart-analysis-worker.cjs");
+
 env.allowRemoteModels = false;
 env.allowLocalModels = true;
+if (env.backends?.onnx?.wasm) env.backends.onnx.wasm.numThreads = 1;
 const fixture = JSON.parse(fs.readFileSync(new URL("../tests/fixtures/semantic-accuracy.json", import.meta.url), "utf8"));
 
 function pooledVectors(output, inputs, pooling) {
@@ -26,7 +33,18 @@ function pooledVectors(output, inputs, pooling) {
 async function evaluateLanguage(language, root, modelId, pooling) {
   env.localModelPath = `${root}${path.sep}`;
   const tokenizer = await AutoTokenizer.from_pretrained(modelId, { local_files_only: true });
-  const model = await AutoModel.from_pretrained(modelId, { local_files_only: true, dtype: "q8", device: "cpu" });
+  const model = await AutoModel.from_pretrained(modelId, {
+    local_files_only: true,
+    dtype: "q8",
+    device: "cpu",
+    session_options: {
+      executionMode: "sequential",
+      enableCpuMemArena: false,
+      enableMemPattern: false,
+      intraOpNumThreads: 1,
+      interOpNumThreads: 1,
+    },
+  });
   const prototypes = semanticPrototypes(language);
   const prototypeTexts = SEMANTIC_INTENTS.flatMap((intent) => prototypes[intent]);
   const cases = fixture.cases.filter((item) => item.language === language);
@@ -64,21 +82,62 @@ function metrics(items) {
   const correct = covered.filter((item) => item.predicted === item.expected);
   return { cases: items.length, labelable: labelable.length, covered: covered.length, correct: correct.length, precision: correct.length / Math.max(1, covered.length), coverage: covered.length / Math.max(1, labelable.length) };
 }
+function deterministicMetrics(predict) {
+  const predictions = fixture.cases.map((item) => ({ ...item, predicted: predict(item) }));
+  return {
+    ...metrics(predictions),
+    falseCertainty: predictions.filter((item) => item.expected === "unknown" && item.predicted !== "unknown").length,
+    holdout: metrics(predictions.filter((item) => item.set === "holdout")),
+  };
+}
+const signalModel = signalWorker.loadModel(path.resolve("models", "daytrace-smart-v1.json"));
+const builtinMetrics = deterministicMetrics((item) => classifier.inferIntentDetails(item, []).intent);
+const signalMetrics = deterministicMetrics((item) => signalWorker.classifyContext(item, signalModel)?.intent || classifier.inferIntentDetails(item, []).intent);
 const summary = {
   ...metrics(results),
   falseCertainty: falseCertainty.length,
   languages: Object.fromEntries(["ru", "en"].map((language) => [language, metrics(results.filter((item) => item.language === language))])),
   holdout: metrics(results.filter((item) => item.set === "holdout")),
 };
-console.log(JSON.stringify(process.argv.includes("--details") ? { ...summary, results } : summary, null, 2));
+const engineSummary = {
+  builtin: builtinMetrics,
+  signals: signalMetrics,
+  semantic: { ...metrics(results), falseCertainty: falseCertainty.length, holdout: metrics(results.filter((item) => item.set === "holdout")) },
+};
+const expected = SEMANTIC_MODEL_QUALITY;
+const qualityManifestMatches = expected.modelVersion === "1.0.0"
+  && summary.cases === expected.benchmark.cases
+  && summary.labelable === expected.benchmark.labelable
+  && summary.covered === expected.benchmark.covered
+  && summary.correct === expected.benchmark.correct
+  && summary.falseCertainty === expected.benchmark.falseCertainty
+  && summary.holdout.cases === expected.holdout.cases
+  && summary.holdout.labelable === expected.holdout.labelable
+  && summary.holdout.covered === expected.holdout.covered
+  && summary.holdout.correct === expected.holdout.correct;
+const engineManifestMatches = Object.entries(engineSummary).every(([engine, measured]) => {
+  const manifest = ANALYSIS_ENGINE_QUALITY.engines[engine];
+  return measured.cases === manifest.benchmark.cases
+    && measured.labelable === manifest.benchmark.labelable
+    && measured.covered === manifest.benchmark.covered
+    && measured.correct === manifest.benchmark.correct
+    && measured.falseCertainty === manifest.benchmark.falseCertainty
+    && measured.holdout.cases === manifest.holdout.cases
+    && measured.holdout.labelable === manifest.holdout.labelable
+    && measured.holdout.covered === manifest.holdout.covered
+    && measured.holdout.correct === manifest.holdout.correct;
+});
+console.log(JSON.stringify(process.argv.includes("--details") ? { ...summary, engines: engineSummary, results } : { ...summary, engines: engineSummary }, null, 2));
 const gatesPass = summary.precision >= 0.94
   && summary.coverage >= 0.7
   && summary.holdout.precision >= 0.9
   && summary.holdout.coverage >= 0.65
   && Object.values(summary.languages).every((item) => item.precision >= 0.9 && item.coverage >= 0.65)
-  && falseCertainty.length === 0;
+  && falseCertainty.length === 0
+  && qualityManifestMatches
+  && engineManifestMatches;
 if (!gatesPass) {
   const failures = results.filter((item) => item.predicted !== "unknown" && item.predicted !== item.expected);
-  console.error(JSON.stringify({ failures, falseCertainty }, null, 2));
+  console.error(JSON.stringify({ failures, falseCertainty, qualityManifestMatches, engineManifestMatches }, null, 2));
 }
 if (!gatesPass && !probeRussianEncoderForEnglish) process.exitCode = 1;

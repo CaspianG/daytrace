@@ -85,13 +85,14 @@ test("new macOS app can confirm readiness only inside the exact updater work dir
 });
 
 test("desktop runtime confirms an update only after the renderer is visible", () => {
+  const rendererIndex = mainSource.indexOf("Renderer loaded without visible content");
   const visibleIndex = mainSource.indexOf("window.show(); window.focus();");
   const bridgeIndex = mainSource.indexOf("Renderer could not reach the local Daytrace service");
   const confirmationIndex = mainSource.indexOf("confirmMacUpdateReady(macUpdateReadyRequest)");
+  assert.ok(rendererIndex >= 0);
   assert.ok(visibleIndex >= 0);
-  assert.ok(bridgeIndex >= 0 && bridgeIndex < visibleIndex);
+  assert.ok(bridgeIndex > rendererIndex && bridgeIndex < visibleIndex);
   assert.ok(confirmationIndex > visibleIndex);
-  assert.match(mainSource.slice(visibleIndex - 500, confirmationIndex), /Renderer loaded without visible content/);
 });
 
 test("verified macOS update mounts, checks version, and launches detached replacement", async (t) => {
