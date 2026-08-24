@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, powerMonitor, shell, systemPreferences, Tray } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, powerMonitor, shell, systemPreferences, Tray } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const { createHash } = require("node:crypto");
@@ -6,7 +6,7 @@ const { spawn } = require("node:child_process");
 const readline = require("node:readline");
 const { Readable, Transform } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
-const { CURRENT_ONBOARDING_VERSION, EventStore, normalizeAnalysisEngine } = require("./lib/event-store.cjs");
+const { CURRENT_ONBOARDING_VERSION, EventStore, normalizeAnalysisEngine, normalizeTheme } = require("./lib/event-store.cjs");
 const { createAccessibilityService } = require("./lib/accessibility-service.cjs");
 const { getMacInstallInfo } = require("./lib/mac-install-service.cjs");
 const { confirmMacUpdateReady, findStaleMacDuplicates, getMacUpdateReadyRequest, prepareMacUpdate } = require("./lib/mac-update-service.cjs");
@@ -15,22 +15,28 @@ const { MAX_RELEASE_JSON_BYTES, MAX_UPDATE_BYTES, normalizeChecksumRelease, norm
 const { WINDOWS_UPDATE_ENV, confirmWindowsUpdateReady, getWindowsUpdateReadyRequest, prepareWindowsUpdate } = require("./lib/windows-update-service.cjs");
 const { BrowserCompanionService, installNativeHost, runNativeMessagingHost } = require("./lib/browser-companion.cjs");
 const { SmartAnalysisService } = require("./lib/smart-analysis-service.cjs");
-const { SemanticModelService } = require("./lib/semantic-model-service.cjs");
+const { AUTO_ANALYSIS_INTERVAL_MS, SemanticModelService } = require("./lib/semantic-model-service.cjs");
+const { AnalysisQualityService } = require("./lib/analysis-quality-service.cjs");
 const { createEncryptedBackup, exportCsv, exportJson, restoreEncryptedBackup } = require("./lib/data-portability.cjs");
 const { platformCapabilities, runDiagnostics } = require("./lib/diagnostics.cjs");
+const { createRecoveryBackoff } = require("./lib/runtime-recovery.cjs");
 
 if (process.argv.includes("--disable-gpu") || process.env.DAYTRACE_SOFTWARE_RENDERING === "1") app.disableHardwareAcceleration();
+const BACKGROUND_PERFORMANCE_SMOKE = process.argv.includes("--daytrace-background-performance-smoke-test");
+const RUNTIME_RECOVERY_SMOKE = process.argv.includes("--daytrace-runtime-recovery-smoke-test");
 const SEMANTIC_SMOKE_TEST = process.argv.includes("--daytrace-semantic-smoke-test");
 const SMOKE_TEST = process.argv.includes("--daytrace-smoke-test") || SEMANTIC_SMOKE_TEST;
+const RESET_QUICK_TOUR = process.argv.includes("--daytrace-reset-quick-tour");
+const ISOLATED_TEST_RUNTIME = SMOKE_TEST || BACKGROUND_PERFORMANCE_SMOKE || RUNTIME_RECOVERY_SMOKE;
 const smokeTempRoot = fs.realpathSync(app.getPath("temp"));
 const smokeUserDataArgument = process.argv.find((argument) => String(argument).startsWith("--daytrace-smoke-user-data="));
 const requestedSmokeUserData = smokeUserDataArgument ? path.resolve(String(smokeUserDataArgument).slice("--daytrace-smoke-user-data=".length)) : "";
 let canonicalSmokeUserData = "";
 try { canonicalSmokeUserData = requestedSmokeUserData ? fs.realpathSync(requestedSmokeUserData) : ""; } catch { }
-const smokeUserData = SMOKE_TEST && path.dirname(canonicalSmokeUserData) === smokeTempRoot && path.basename(canonicalSmokeUserData).startsWith("daytrace-desktop-smoke-")
+const smokeUserData = ISOLATED_TEST_RUNTIME && path.dirname(canonicalSmokeUserData) === smokeTempRoot && path.basename(canonicalSmokeUserData).startsWith("daytrace-desktop-smoke-")
   ? canonicalSmokeUserData
-  : SMOKE_TEST ? path.join(smokeTempRoot, `daytrace-desktop-smoke-${process.pid}`) : "";
-if (SMOKE_TEST) app.setPath("userData", smokeUserData);
+  : ISOLATED_TEST_RUNTIME ? path.join(smokeTempRoot, `daytrace-desktop-smoke-${process.pid}`) : "";
+if (ISOLATED_TEST_RUNTIME) app.setPath("userData", smokeUserData);
 const startupLogPath = path.join(app.getPath("userData"), "startup.log");
 function startupLog(message, error = null) {
   const suffix = error ? `\n${error?.stack || String(error)}` : "";
@@ -56,6 +62,7 @@ let tracker = null;
 let trackerStatus = "stopped";
 let store = null;
 let broadcastTimer = null;
+let broadcastDeadline = 0;
 let releaseTimer = null;
 let updateTimer = null;
 let updateAbortController = null;
@@ -66,10 +73,17 @@ let trackerStarting = false;
 let browserCompanion = null;
 let smartAnalysis = null;
 let semanticAnalysis = null;
+let analysisQuality = null;
 let smartAnalysisTimer = null;
 let semanticRequestPending = false;
 let semanticBackgroundWindowOwned = false;
 let latestDiagnostics = null;
+let trackerReadyTimer = null;
+let systemResumeTimer = null;
+let trackerStderrWindowAt = 0;
+let trackerStderrSuppressed = 0;
+let rendererRecoveryShowWindow = true;
+const accessibilityProbeChildren = new Set();
 const UPDATE_DIR = path.join(app.getPath("temp"), "daytrace-updates");
 const DATA_ROOT = path.join(app.getPath("userData"), "daytrace-data");
 const macUpdateReadyRequest = process.platform === "darwin" ? getMacUpdateReadyRequest({
@@ -96,18 +110,92 @@ const UPDATE_INTERVAL_MS = 6 * 60 * 60_000;
 const OFFLINE_RETRY_MS = 30 * 60_000;
 const REVIEW_ACTION_SNOOZE_MS = 24 * 60 * 60_000;
 const REVIEW_LATER_SNOOZE_MS = 7 * 24 * 60 * 60_000;
+const MAC_ACCESSIBILITY_TARGET = "Daytrace Collector";
+const TRACKER_READY_TIMEOUT_MS = 10_000;
 const RENDERER_FILE = path.join(__dirname, "..", "dist", "client", "index.html");
 const DEV_RENDERER_ORIGIN = "http://127.0.0.1:5173";
-const USE_LOCAL_RENDERER = app.isPackaged || SMOKE_TEST;
+const USE_LOCAL_RENDERER = app.isPackaged || ISOLATED_TEST_RUNTIME;
 
 const MAIN_TEXT = {
   en: { open: "Open Daytrace", pause: "Pause tracking", resume: "Resume tracking", quit: "Quit", tooltip: "Daytrace — local day history", startupTitle: "Daytrace could not start", startupMessage: "The local window could not be opened. Details were written to startup.log." },
   ru: { open: "Открыть Daytrace", pause: "Приостановить отслеживание", resume: "Возобновить отслеживание", quit: "Выйти", tooltip: "Daytrace — локальная история дня", startupTitle: "Daytrace не запустился", startupMessage: "Не удалось открыть локальное окно. Подробности записаны в startup.log." },
 };
 
+const NATIVE_THEME_COLORS = {
+  light: { background: "#fbfaf7", symbols: "#292823" },
+  dark: { background: "#11140f", symbols: "#edf0e8" },
+};
+
+const trackerRecovery = createRecoveryBackoff({
+  baseDelayMs: 1_000,
+  maxDelayMs: 60_000,
+  stableAfterMs: 60_000,
+  onRetry: ({ attempt, reason }) => {
+    if (isQuitting || !store?.settings?.trackingEnabled) return;
+    startupLog(`tracker-recovery-attempt attempt=${attempt} reason=${reason}`);
+    startTracker();
+  },
+});
+const rendererRecovery = createRecoveryBackoff({
+  baseDelayMs: 750,
+  maxDelayMs: 8_000,
+  stableAfterMs: 60_000,
+  maxAttempts: 3,
+  onRetry: ({ attempt, reason }) => {
+    if (isQuitting) return;
+    startupLog(`renderer-recovery-attempt attempt=${attempt} reason=${reason}`);
+    void openWindow(rendererRecoveryShowWindow).catch((error) => {
+      startupLog("renderer-recovery-failed", error);
+      const failedWindow = mainWindow;
+      mainWindow = null;
+      if (failedWindow && !failedWindow.isDestroyed()) {
+        try { failedWindow.destroy(); } catch { }
+      }
+      const retry = rendererRecovery.schedule("window-recreate-failed");
+      if (retry.exhausted) dialog.showErrorBox(mainText().startupTitle, mainText().startupMessage);
+    });
+  },
+});
+const browserCompanionRecovery = createRecoveryBackoff({
+  baseDelayMs: 2_000,
+  maxDelayMs: 5 * 60_000,
+  stableAfterMs: 5 * 60_000,
+  onRetry: ({ attempt, reason }) => {
+    if (isQuitting || !store?.settings?.browserCompanionEnabled) return;
+    startupLog(`browser-companion-recovery-attempt attempt=${attempt} reason=${reason}`);
+    void syncBrowserCompanion();
+  },
+});
+
+function currentNativeThemeColors() {
+  return nativeTheme.shouldUseDarkColors ? NATIVE_THEME_COLORS.dark : NATIVE_THEME_COLORS.light;
+}
+
+function updateNativeThemeShell() {
+  const colors = currentNativeThemeColors();
+  for (const window of [mainWindow, semanticWindow]) {
+    if (!window || window.isDestroyed()) continue;
+    window.setBackgroundColor(colors.background);
+    if (typeof window.setTitleBarOverlay === "function") {
+      try { window.setTitleBarOverlay({ color: colors.background, symbolColor: colors.symbols, height: 38 }); } catch { }
+    }
+  }
+  return colors;
+}
+
+function applyNativeTheme(value = store?.settings?.theme) {
+  const selected = normalizeTheme(value);
+  if (nativeTheme.themeSource !== selected) nativeTheme.themeSource = selected;
+  return updateNativeThemeShell();
+}
+
 function appLanguage() { return String(store?.settings?.language || app.getLocale() || "en").toLowerCase().startsWith("ru") ? "ru" : "en"; }
 function mainText() { return MAIN_TEXT[appLanguage()]; }
 function accessibilityTrusted() { return accessibilityService?.check() ?? process.platform !== "darwin"; }
+function mainAccessibilityTrusted() {
+  if (process.platform !== "darwin") return true;
+  try { return Boolean(systemPreferences.isTrustedAccessibilityClient(false)); } catch { return false; }
+}
 function accessibilityChanged(trusted) {
   if (!store || process.platform !== "darwin") return;
   if (trusted) {
@@ -130,7 +218,7 @@ function analysisRuntimeStatus() {
   const signal = smartAnalysis?.status() || { installed: false, running: false };
   const semantic = semanticAnalysis?.status() || { installed: false, running: false };
   const selected = engine === "semantic" ? semantic : engine === "signals" ? signal : { installed: true, running: false, version: "built-in" };
-  return { engine, ...selected, signal, semantic };
+  return { engine, ...selected, signal, semantic, quality: analysisQuality?.status() || null };
 }
 function state() {
   const browserStatus = browserCompanion?.status() || { running: false };
@@ -142,6 +230,8 @@ function state() {
       packaged: app.isPackaged,
       trackerStatus,
       accessibilityTrusted: accessibilityTrusted(),
+      accessibilityMainTrusted: mainAccessibilityTrusted(),
+      accessibilityTarget: process.platform === "darwin" ? MAC_ACCESSIBILITY_TARGET : "",
       macInstall: getMacInstallInfo({ platform: process.platform, packaged: app.isPackaged, execPath: process.execPath }),
       autoStartSupported: app.isPackaged && ["win32", "darwin"].includes(process.platform),
       autoStartEnabled: currentAutoStart(),
@@ -157,7 +247,19 @@ function sendState() {
   if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) return;
   mainWindow.webContents.send("daytrace:state-changed", state());
 }
-function broadcastState() { clearTimeout(broadcastTimer); broadcastTimer = setTimeout(sendState, 12_000); }
+function broadcastState(change = null) {
+  // Anonymous input/click samples only update counters and must never force a
+  // full 48-hour dashboard rebuild. Foreground boundaries remain responsive;
+  // ordinary heartbeats refresh the visible duration at a calm cadence.
+  if (change?.kind === "input" || change?.kind === "click") return;
+  const delay = ["foreground", "idle", "resume"].includes(change?.kind) ? 1_500 : change?.kind === "heartbeat" ? 30_000 : 150;
+  const deadline = Date.now() + delay;
+  if (broadcastTimer && broadcastDeadline <= deadline) return;
+  clearTimeout(broadcastTimer);
+  broadcastDeadline = deadline;
+  broadcastTimer = setTimeout(() => { broadcastTimer = null; broadcastDeadline = 0; sendState(); }, delay);
+  broadcastTimer.unref();
+}
 
 function setUpdateRuntime(patch) {
   updateRuntime = { ...updateRuntime, ...patch };
@@ -349,7 +451,13 @@ async function cleanStaleMacDuplicates() {
 
 function trackerPath() {
   if (process.platform === "win32") return app.isPackaged ? path.join(process.resourcesPath, "tracker", "windows", "Daytrace.Tracker.exe") : path.join(__dirname, "..", "native", "windows-tracker", "bin", "Release", "daytrace-win-x64", "Daytrace.Tracker.exe");
-  if (process.platform === "darwin") return app.isPackaged ? path.join(path.dirname(process.execPath), "daytrace-tracker") : path.join(__dirname, "..", "native", "macos-tracker", "build", "daytrace-tracker");
+  if (process.platform === "darwin") {
+    const preferred = app.isPackaged
+      ? path.join(path.dirname(path.dirname(process.execPath)), "Helpers", "Daytrace Collector.app", "Contents", "MacOS", "Daytrace Collector")
+      : path.join(__dirname, "..", "native", "macos-tracker", "build", "Daytrace Collector.app", "Contents", "MacOS", "Daytrace Collector");
+    const legacy = app.isPackaged ? path.join(path.dirname(process.execPath), "daytrace-tracker") : path.join(__dirname, "..", "native", "macos-tracker", "build", "daytrace-tracker");
+    return fs.existsSync(preferred) ? preferred : legacy;
+  }
   return null;
 }
 function probeTrackerAccessibility(prompt = false) {
@@ -371,6 +479,7 @@ function probeTrackerAccessibility(prompt = false) {
     let child;
     try {
       child = spawn(executable, [prompt ? "--request-accessibility" : "--check-accessibility"], { windowsHide: true, stdio: "ignore" });
+      accessibilityProbeChildren.add(child);
     } catch (error) {
       startupLog("accessibility-probe-spawn-failed", error);
       finish(false);
@@ -380,17 +489,37 @@ function probeTrackerAccessibility(prompt = false) {
       child.kill();
       startupLog("accessibility-probe-timeout");
       finish(false);
-    }, 5_000);
+    }, prompt ? 65_000 : 5_000);
     timeout.unref?.();
-    child.once("error", (error) => { startupLog("accessibility-probe-error", error); finish(false); });
-    child.once("exit", (code) => finish(code === 0));
+    child.once("error", (error) => { accessibilityProbeChildren.delete(child); startupLog("accessibility-probe-error", error); finish(false); });
+    child.once("exit", (code) => { accessibilityProbeChildren.delete(child); finish(code === 0); });
   });
+}
+function clearTrackerReadyTimer() {
+  clearTimeout(trackerReadyTimer);
+  trackerReadyTimer = null;
+}
+function scheduleTrackerRestart(reason) {
+  if (isQuitting || !store?.settings?.trackingEnabled) return;
+  trackerStatus = "recovering";
+  const retry = trackerRecovery.schedule(reason);
+  if (retry.scheduled) startupLog(`tracker-recovery-scheduled attempt=${retry.attempt} delayMs=${retry.delayMs} reason=${retry.reason}`);
+  sendState();
+}
+function trackerStderr(chunk) {
+  const now = Date.now();
+  if (now - trackerStderrWindowAt >= 60_000) {
+    if (trackerStderrSuppressed) startupLog(`tracker-stderr-suppressed count=${trackerStderrSuppressed}`);
+    trackerStderrWindowAt = now;
+    trackerStderrSuppressed = 0;
+    startupLog(`tracker-stderr ${String(chunk).replace(/\s+/g, " ").trim().slice(0, 500)}`);
+  } else trackerStderrSuppressed += 1;
 }
 function startTracker() {
   if (tracker || trackerStarting || !store?.settings.trackingEnabled) return;
+  trackerRecovery.cancel({ reset: false });
   trackerStarting = true;
   try {
-    if (process.platform === "darwin" && !accessibilityTrusted()) { trackerStatus = "permission-required"; accessibilityService?.watch(); sendState(); return; }
     const executable = trackerPath();
     if (!executable || !fs.existsSync(executable)) { trackerStatus = "unavailable"; startupLog(`tracker-unavailable path=${executable || "none"}`); sendState(); return; }
     trackerStatus = "starting";
@@ -405,11 +534,24 @@ function startTracker() {
       },
     });
     tracker = child;
+    trackerRecovery.markStarted();
+    clearTrackerReadyTimer();
+    trackerReadyTimer = setTimeout(() => {
+      if (tracker !== child || trackerStatus !== "starting") return;
+      tracker = null;
+      trackerStatus = "error";
+      startupLog("tracker-ready-timeout");
+      try { child.kill(); } catch { }
+      scheduleTrackerRestart("ready-timeout");
+    }, TRACKER_READY_TIMEOUT_MS);
+    trackerReadyTimer.unref();
     const lines = readline.createInterface({ input: child.stdout });
     lines.on("line", (line) => {
       try {
+        if (Buffer.byteLength(line, "utf8") > 4_096) return;
         const event = JSON.parse(line);
         if (tracker === child && trackerStatus === "starting") {
+          clearTrackerReadyTimer();
           trackerStatus = "running";
           accessibilityService?.mark(true);
           sendState();
@@ -419,27 +561,63 @@ function startTracker() {
     });
     child.once("error", (error) => {
       if (tracker !== child) return;
-      trackerStatus = "error"; tracker = null; startupLog("tracker-error", error); sendState();
+      clearTrackerReadyTimer();
+      trackerStatus = "error"; tracker = null; startupLog("tracker-error", error);
+      scheduleTrackerRestart("process-error");
     });
     child.once("exit", (code) => {
       if (tracker !== child) return;
+      clearTrackerReadyTimer();
       tracker = null;
       if (!isQuitting && store.settings.trackingEnabled) {
-        trackerStatus = code === 77 ? "permission-required" : code === 0 ? "stopped" : "error";
+        trackerStatus = code === 77 ? "permission-required" : "error";
         if (code === 77) { accessibilityService?.mark(false); accessibilityService?.watch(); }
+        else scheduleTrackerRestart(`exit-${Number.isInteger(code) ? code : "unknown"}`);
       }
       sendState();
     });
-    child.stderr.on("data", (chunk) => startupLog(`tracker-stderr ${String(chunk).trim()}`));
-  } catch (error) { tracker = null; trackerStatus = "error"; startupLog("tracker-spawn-failed", error); }
+    child.stderr.on("data", trackerStderr);
+  } catch (error) {
+    clearTrackerReadyTimer();
+    tracker = null; trackerStatus = "error"; startupLog("tracker-spawn-failed", error);
+    scheduleTrackerRestart("spawn-failed");
+  }
   finally { trackerStarting = false; }
   sendState();
 }
-function stopTracker(status = "paused") { const child = tracker; tracker = null; trackerStarting = false; if (child) child.kill(); trackerStatus = status; sendState(); }
+function stopTracker(status = "paused") {
+  const child = tracker;
+  tracker = null;
+  trackerStarting = false;
+  clearTrackerReadyTimer();
+  trackerRecovery.cancel();
+  if (child) child.kill();
+  trackerStatus = status;
+  sendState();
+}
 function restartTracker() {
   const shouldRun = Boolean(store?.settings.trackingEnabled);
   stopTracker(shouldRun ? "starting" : "paused");
   if (shouldRun) setTimeout(startTracker, 250).unref();
+}
+function scheduleTrackerAfterSystemResume(reason) {
+  clearTimeout(systemResumeTimer);
+  systemResumeTimer = setTimeout(() => {
+    systemResumeTimer = null;
+    if (isQuitting || !store?.settings?.trackingEnabled) return;
+    startupLog(`system-active reason=${reason}`);
+    if (process.platform === "darwin") {
+      void accessibilityService?.refresh(false).then((trusted) => {
+        if (trusted) restartTracker();
+        else {
+          trackerStatus = "permission-required";
+          accessibilityService?.watch();
+          sendState();
+        }
+      });
+    } else restartTracker();
+  }, 750);
+  systemResumeTimer.unref();
 }
 
 function trayIconPath() { return path.join(__dirname, "..", "build", process.platform === "win32" ? "icon.ico" : "icon.png"); }
@@ -486,9 +664,22 @@ function secureWindowNavigation(window) {
   });
 }
 
+function recoverMainRenderer(window, reason) {
+  if (isQuitting || SMOKE_TEST || !window || window.isDestroyed()) return;
+  const showWindow = window.isVisible();
+  startupLog(`renderer-recovery-scheduled reason=${reason} visible=${showWindow}`);
+  if (mainWindow === window) mainWindow = null;
+  try { window.destroy(); } catch { }
+  if (!showWindow && !RUNTIME_RECOVERY_SMOKE) return;
+  rendererRecoveryShowWindow = showWindow;
+  const retry = rendererRecovery.schedule(reason);
+  if (retry.exhausted) dialog.showErrorBox(mainText().startupTitle, mainText().startupMessage);
+}
+
 async function createSemanticHostWindow() {
+  const themeColors = currentNativeThemeColors();
   const window = new BrowserWindow({
-    width: 360, height: 240, show: false, backgroundColor: "#fbfaf7",
+    width: 360, height: 240, show: false, backgroundColor: themeColors.background,
     webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
   });
   semanticWindow = window;
@@ -502,8 +693,9 @@ async function createSemanticHostWindow() {
   });
   window.on("closed", () => { if (semanticWindow === window) semanticWindow = null; });
   try {
-    if (!USE_LOCAL_RENDERER) await window.loadURL(`${DEV_RENDERER_ORIGIN}?semanticHost=1`);
-    else await window.loadFile(RENDERER_FILE, { query: { semanticHost: "1" } });
+    const theme = normalizeTheme(store?.settings?.theme);
+    if (!USE_LOCAL_RENDERER) await window.loadURL(`${DEV_RENDERER_ORIGIN}?semanticHost=1&theme=${encodeURIComponent(theme)}`);
+    else await window.loadFile(RENDERER_FILE, { query: { semanticHost: "1", theme } });
     const ready = await window.webContents.executeJavaScript("new Promise((resolve) => { const deadline = Date.now() + 10000; const check = () => window.__daytraceSemanticHostReady ? resolve(true) : Date.now() >= deadline ? resolve(false) : setTimeout(check, 25); check(); })");
     if (!ready) throw new Error("Semantic worker host did not become ready");
     startupLog("semantic-window-ready-background");
@@ -523,9 +715,11 @@ async function ensureSemanticHostWindow() {
 
 async function createWindow(showWindow = true) {
   startupLog(`createWindow packaged=${app.isPackaged}`);
+  const themeColors = currentNativeThemeColors();
+  let runtimeReady = false;
   const window = new BrowserWindow({
-    width: 1488, height: 1058, minWidth: 1080, minHeight: 720, backgroundColor: "#fbfaf7", title: "Daytrace",
-    titleBarStyle: "hidden", titleBarOverlay: { color: "#fbfaf7", symbolColor: "#292823", height: 38 }, show: false,
+    width: 1488, height: 1058, minWidth: 1080, minHeight: 720, backgroundColor: themeColors.background, title: "Daytrace",
+    titleBarStyle: "hidden", titleBarOverlay: { color: themeColors.background, symbolColor: themeColors.symbols, height: 38 }, show: false,
     webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: true },
   });
   mainWindow = window;
@@ -536,6 +730,7 @@ async function createWindow(showWindow = true) {
   window.webContents.on("render-process-gone", (_event, details) => {
     startupLog(`renderer-gone reason=${details.reason}`);
     if (semanticAnalysis?.active) semanticAnalysis.cancel(`Semantic analysis process exited: ${details.reason}`);
+    if (runtimeReady) recoverMainRenderer(window, `renderer-${details.reason}`);
   });
   window.on("minimize", (event) => { if (!isQuitting) { event.preventDefault(); hideWindow(window); } });
   window.on("close", (event) => { if (!isQuitting) { event.preventDefault(); hideWindow(window); } });
@@ -544,13 +739,19 @@ async function createWindow(showWindow = true) {
     void accessibilityService?.refresh(false).then((trusted) => { if (trusted) startTracker(); else accessibilityService?.watch(); sendState(); });
   });
   window.on("closed", () => { if (mainWindow === window) mainWindow = null; });
-  if (!USE_LOCAL_RENDERER) await window.loadURL(DEV_RENDERER_ORIGIN);
-  else await window.loadFile(RENDERER_FILE);
+  const theme = normalizeTheme(store?.settings?.theme);
+  if (!USE_LOCAL_RENDERER) await window.loadURL(`${DEV_RENDERER_ORIGIN}?theme=${encodeURIComponent(theme)}`);
+  else await window.loadFile(RENDERER_FILE, { query: { theme } });
   const renderer = await window.webContents.executeJavaScript("new Promise((resolve) => { const deadline = Date.now() + 10000; const check = () => { const root = document.getElementById('root'); if (window.__daytraceAppReady && root?.childElementCount > 0 && root?.innerText.trim().length > 0) resolve({ children: root.childElementCount, text: root.innerText.trim().length }); else if (Date.now() >= deadline) resolve({ children: 0, text: 0 }); else setTimeout(check, 25); }; check(); })");
   if (renderer.children < 1 || renderer.text < 1) throw new Error("Renderer loaded without visible content");
   const bridgeReady = await window.webContents.executeJavaScript("window.daytrace?.getState().then((value) => Boolean(value?.settings && value?.runtime)).catch(() => false)");
   if (!bridgeReady) throw new Error("Renderer could not reach the local Daytrace service");
+  runtimeReady = true;
+  rendererRecovery.markStarted();
   if (SMOKE_TEST) {
+    const themeBridgeReady = await window.webContents.executeJavaScript("window.daytrace?.setTheme('dark').then((value) => value?.settings?.theme === 'dark').catch(() => false)");
+    if (!themeBridgeReady || nativeTheme.themeSource !== "dark") throw new Error("Renderer could not persist the native dark theme");
+    await window.webContents.executeJavaScript("window.daytrace?.setTheme('system')");
     startupLog(`desktop-smoke-ready children=${renderer.children} text=${renderer.text}`);
   } else if (showWindow) {
     window.show(); window.focus(); startupLog(`window-visible children=${renderer.children} text=${renderer.text}`);
@@ -592,22 +793,30 @@ function extensionFolder() {
 async function syncBrowserCompanion() {
   if (!browserCompanion || !store) return;
   if (store.settings.browserCompanionEnabled) {
-    try { await browserCompanion.start(); }
-    catch (error) { startupLog("browser-companion-start-failed", error); }
-  } else browserCompanion.stop();
+    try { await browserCompanion.start(); browserCompanionRecovery.cancel(); }
+    catch (error) {
+      startupLog("browser-companion-start-failed", error);
+      browserCompanionRecovery.schedule("start-failed");
+    }
+  } else {
+    browserCompanionRecovery.cancel();
+    browserCompanion.stop();
+  }
   sendState();
 }
 
 async function runSmartAnalysis(force = false) {
   const engine = normalizeAnalysisEngine(store?.settings?.analysisEngine);
   if (engine === "builtin") return { status: "disabled", rules: [] };
-  if (!force && powerMonitor.getSystemIdleTime() < 120) return { status: "waiting-for-idle", rules: [] };
-  if (engine === "semantic") return requestSemanticAnalysis();
+  if (!force && powerMonitor.getSystemIdleTime() < 300) return { status: "waiting-for-idle", rules: [] };
+  if (!force && typeof powerMonitor.isOnBatteryPower === "function" && powerMonitor.isOnBatteryPower()) return { status: "waiting-for-power", rules: [] };
+  if (engine === "semantic") return requestSemanticAnalysis(force);
   if (!smartAnalysis) return { status: "unavailable", rules: [] };
   try {
     const analysis = smartAnalysis.analyze(store);
     sendState();
     const result = await analysis;
+    analysisQuality?.schedule(50);
     sendState();
     return result;
   } catch (error) {
@@ -617,15 +826,15 @@ async function runSmartAnalysis(force = false) {
   }
 }
 
-function requestSemanticAnalysis() {
+function requestSemanticAnalysis(force = false) {
   if (!semanticAnalysis?.status().installed) return { status: "model-required" };
   if (semanticAnalysis.status().running) return { status: "busy" };
+  const prepared = semanticAnalysis.prepare(store, force);
+  if (prepared.status !== "ready") {
+    sendState();
+    return prepared;
+  }
   if (!mainWindow || mainWindow.isDestroyed()) {
-    if (!store.smartAnalysisCandidates(1, 30).length) {
-      const result = semanticAnalysis.begin(store);
-      sendState();
-      return result;
-    }
     if (semanticRequestPending) return { status: "requested" };
     semanticRequestPending = true;
     void ensureSemanticHostWindow().then((window) => {
@@ -653,9 +862,9 @@ function releaseSemanticBackgroundWindow() {
 
 function scheduleSmartAnalysis() {
   clearInterval(smartAnalysisTimer);
-  smartAnalysisTimer = setInterval(() => void runSmartAnalysis(false).catch(() => {}), 5 * 60_000);
+  smartAnalysisTimer = setInterval(() => void runSmartAnalysis(false).catch(() => {}), AUTO_ANALYSIS_INTERVAL_MS);
   smartAnalysisTimer.unref();
-  setTimeout(() => void runSmartAnalysis(false).catch(() => {}), 60_000).unref();
+  setTimeout(() => void runSmartAnalysis(false).catch(() => {}), 5 * 60_000).unref();
 }
 
 function refreshDiagnostics() {
@@ -672,6 +881,76 @@ function refreshDiagnostics() {
   });
   sendState();
   return latestDiagnostics;
+}
+
+async function runBackgroundPerformanceSmoke() {
+  const trackerDeadline = Date.now() + 12_000;
+  while (!["running", "permission-required", "unavailable", "error"].includes(trackerStatus) && Date.now() < trackerDeadline) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  if (process.platform === "win32" && trackerStatus !== "running") throw new Error(`Windows collector did not become ready: ${trackerStatus}`);
+  if (BrowserWindow.getAllWindows().length !== 0) throw new Error("Background launch created a renderer window");
+
+  app.getAppMetrics();
+  const cpuStart = process.cpuUsage();
+  const startedAt = Date.now();
+  const samples = [];
+  for (let index = 0; index < 12; index += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    const metrics = app.getAppMetrics();
+    samples.push({
+      cpu: metrics.reduce((total, metric) => total + Math.max(0, Number(metric.cpu?.percentCPUUsage || 0)), 0),
+      privateMiB: metrics.reduce((total, metric) => total + Math.max(0, Number(metric.memory?.privateBytes || 0)), 0) / 1024,
+      workingMiB: metrics.reduce((total, metric) => total + Math.max(0, Number(metric.memory?.workingSetSize || 0)), 0) / 1024,
+      processes: metrics.length,
+    });
+  }
+  const elapsedMs = Math.max(1, Date.now() - startedAt);
+  const cpu = process.cpuUsage(cpuStart);
+  const mainCpuPercent = ((cpu.user + cpu.system) / 1_000) / elapsedMs * 100;
+  const averageCpuPercent = samples.reduce((total, sample) => total + sample.cpu, 0) / samples.length;
+  const peakPrivateMiB = Math.max(...samples.map((sample) => sample.privateMiB));
+  const peakWorkingMiB = Math.max(...samples.map((sample) => sample.workingMiB));
+  const peakProcesses = Math.max(...samples.map((sample) => sample.processes));
+  const firstPrivateMiB = samples.slice(0, 3).reduce((total, sample) => total + sample.privateMiB, 0) / 3;
+  const lastPrivateMiB = samples.slice(-3).reduce((total, sample) => total + sample.privateMiB, 0) / 3;
+  const privateGrowthMiB = lastPrivateMiB - firstPrivateMiB;
+  const cpuBudget = 5;
+  const privateMemoryBudgetMiB = 180;
+  const privateGrowthBudgetMiB = 20;
+  if (mainCpuPercent > cpuBudget || averageCpuPercent > cpuBudget) throw new Error(`Background CPU budget exceeded: main=${mainCpuPercent.toFixed(2)} average=${averageCpuPercent.toFixed(2)}`);
+  if (peakPrivateMiB > privateMemoryBudgetMiB) throw new Error(`Background private-memory budget exceeded: ${peakPrivateMiB.toFixed(1)} MiB`);
+  if (privateGrowthMiB > privateGrowthBudgetMiB) throw new Error(`Background private-memory growth budget exceeded: ${privateGrowthMiB.toFixed(1)} MiB`);
+  startupLog(`background-performance-smoke-passed durationMs=${elapsedMs} mainCpuPercent=${mainCpuPercent.toFixed(3)} averageCpuPercent=${averageCpuPercent.toFixed(3)} peakPrivateMiB=${peakPrivateMiB.toFixed(1)} privateGrowthMiB=${privateGrowthMiB.toFixed(1)} peakWorkingMiB=${peakWorkingMiB.toFixed(1)} peakProcesses=${peakProcesses} trackerStatus=${trackerStatus}`);
+}
+
+async function waitForRuntime(predicate, timeoutMs, label) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try { if (await predicate()) return; } catch { }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`${label} did not recover within ${timeoutMs} ms`);
+}
+
+async function runRuntimeRecoverySmoke() {
+  let trackerRecovered = process.platform !== "win32";
+  if (process.platform === "win32") {
+    await waitForRuntime(() => trackerStatus === "running" && tracker, 12_000, "Windows collector startup");
+    const previousTracker = tracker;
+    previousTracker.kill();
+    await waitForRuntime(() => trackerStatus === "running" && tracker && tracker !== previousTracker, 15_000, "Windows collector");
+    trackerRecovered = true;
+  }
+
+  const previousWindow = mainWindow;
+  if (!previousWindow || previousWindow.isDestroyed()) throw new Error("Recovery smoke has no renderer to crash");
+  previousWindow.webContents.forcefullyCrashRenderer();
+  await waitForRuntime(async () => {
+    if (!mainWindow || mainWindow === previousWindow || mainWindow.isDestroyed()) return false;
+    return mainWindow.webContents.executeJavaScript("Boolean(window.__daytraceAppReady && document.getElementById('root')?.childElementCount)");
+  }, 15_000, "Electron renderer");
+  startupLog(`runtime-recovery-smoke-passed trackerRecovered=${trackerRecovered} rendererRecovered=true platform=${process.platform}`);
 }
 
 async function chooseExport(format) {
@@ -709,6 +988,8 @@ async function chooseRestore(passphrase) {
   try {
     await restoreEncryptedBackup(DATA_ROOT, selected.filePaths[0], passphrase, { defaultLanguage: app.getLocale() });
     store = new EventStore(DATA_ROOT, broadcastState, { defaultLanguage: app.getLocale() });
+    analysisQuality?.schedule(50);
+    applyNativeTheme();
     store.updateSettings({ autoStartEnabled: currentAutoStart() });
     await syncBrowserCompanion();
     if (store.settings.trackingEnabled || wasTracking) startTracker();
@@ -716,6 +997,8 @@ async function chooseRestore(passphrase) {
     return state();
   } catch (error) {
     store = new EventStore(DATA_ROOT, broadcastState, { defaultLanguage: app.getLocale() });
+    analysisQuality?.schedule(50);
+    applyNativeTheme();
     await syncBrowserCompanion();
     if (store.settings.trackingEnabled || wasTracking) startTracker();
     throw error;
@@ -747,14 +1030,19 @@ function registerIpc() {
     if (key === "browserCompanionEnabled") await syncBrowserCompanion();
     return state();
   });
+  handleIpc("daytrace:set-theme", (theme) => {
+    const selected = normalizeTheme(theme);
+    store.updateSettings({ theme: selected });
+    applyNativeTheme(selected);
+    return state();
+  });
   handleIpc("daytrace:set-analysis-engine", async (engine) => {
     const normalized = normalizeAnalysisEngine(engine);
     store.updateSettings({ analysisEngine: normalized });
     if (normalized === "signals" && smartAnalysis?.status().installed) await runSmartAnalysis(true);
-    if (normalized === "semantic" && semanticAnalysis?.status().installed) setTimeout(requestSemanticAnalysis, 50).unref();
     return state();
   });
-  handleIpc("daytrace:set-retention", (hours) => { store.updateSettings({ retentionHours: hours }); return state(); });
+  handleIpc("daytrace:set-retention", (hours) => { store.updateSettings({ retentionHours: hours }); analysisQuality?.schedule(50); return state(); });
   handleIpc("daytrace:set-autostart", (enabled) => {
     if (!app.isPackaged || !["win32", "darwin"].includes(process.platform)) return state();
     app.setLoginItemSettings(loginItemSettings(Boolean(enabled)));
@@ -762,16 +1050,18 @@ function registerIpc() {
     return state();
   });
   handleIpc("daytrace:request-accessibility", async () => {
+    store.updateSettings({ accessibilityOnboardingDismissed: true });
+    sendState();
     if (process.platform === "darwin") await accessibilityService.request();
-    if (accessibilityTrusted()) startTracker();
-    else { trackerStatus = "permission-required"; accessibilityService?.watch(); }
+    startTracker();
+    if (!accessibilityTrusted()) accessibilityService?.watch();
     sendState();
     return state();
   });
   handleIpc("daytrace:refresh-accessibility", async () => {
     if (process.platform === "darwin") await accessibilityService.refresh(false);
-    if (accessibilityTrusted()) startTracker();
-    else { trackerStatus = "permission-required"; accessibilityService?.watch(); }
+    startTracker();
+    if (!accessibilityTrusted()) accessibilityService?.watch();
     sendState();
     return state();
   });
@@ -785,8 +1075,8 @@ function registerIpc() {
   });
   handleIpc("daytrace:set-exclusions", (apps) => { store.updateSettings({ excludedApps: apps }); return state(); });
   handleIpc("daytrace:preview-intent-rules", (rules) => store.previewIntentRules(Array.isArray(rules) ? rules : []));
-  handleIpc("daytrace:set-intent-rules", (rules) => store.applyIntentRules(Array.isArray(rules) ? rules : []));
-  handleIpc("daytrace:undo-intent-rules", () => store.undoIntentRules());
+  handleIpc("daytrace:set-intent-rules", (rules) => { const next = store.applyIntentRules(Array.isArray(rules) ? rules : []); analysisQuality?.schedule(50); return next; });
+  handleIpc("daytrace:undo-intent-rules", () => { const next = store.undoIntentRules(); analysisQuality?.schedule(50); return next; });
   handleIpc("daytrace:set-language", (language) => { store.updateSettings({ language: String(language || "").toLowerCase().startsWith("ru") ? "ru" : "en" }); if (tray) tray.setToolTip(mainText().tooltip); updateTrayMenu(); return state(); });
   handleIpc("daytrace:complete-onboarding", (selection) => {
     const input = selection && typeof selection === "object" ? selection : { language: selection };
@@ -794,14 +1084,26 @@ function registerIpc() {
     const analysisEngine = normalizeAnalysisEngine(input.analysisEngine || store.settings.analysisEngine);
     if (analysisEngine === "signals" && !smartAnalysis?.status().installed) throw new Error("Install the signal pack before selecting it during onboarding");
     if (analysisEngine === "semantic" && !semanticAnalysis?.status().installed) throw new Error("Install the semantic model before selecting it during onboarding");
-    store.updateSettings({ language, analysisEngine, onboardingComplete: true, onboardingVersion: CURRENT_ONBOARDING_VERSION });
+    const firstCompletion = !store.settings.onboardingComplete;
+    store.updateSettings({
+      language,
+      analysisEngine,
+      onboardingComplete: true,
+      onboardingVersion: CURRENT_ONBOARDING_VERSION,
+      quickTourComplete: firstCompletion ? false : store.settings.quickTourComplete,
+    });
     updateTrayMenu();
     if (analysisEngine === "signals") setTimeout(() => void runSmartAnalysis(true).catch(() => {}), 50).unref();
-    if (analysisEngine === "semantic") setTimeout(requestSemanticAnalysis, 50).unref();
     return state();
   });
   handleIpc("daytrace:restart-onboarding", () => {
-    store.updateSettings({ onboardingVersion: Math.max(0, CURRENT_ONBOARDING_VERSION - 1) });
+    // Kept as a compatibility endpoint for older renderers. Replaying help is
+    // now an in-app, ephemeral tour and must never make onboarding reappear on
+    // the next launch.
+    return state();
+  });
+  handleIpc("daytrace:complete-quick-tour", () => {
+    store.updateSettings({ quickTourComplete: true });
     return state();
   });
   handleIpc("daytrace:acknowledge-review-guidance", (action) => {
@@ -815,13 +1117,14 @@ function registerIpc() {
     });
     return state();
   });
-  handleIpc("daytrace:delete-all", () => { store.deleteAll(); return state(); });
-  handleIpc("daytrace:delete-session", (start, end) => { store.deleteRange(start, end); return state(); });
+  handleIpc("daytrace:delete-all", () => { store.deleteAll(); analysisQuality?.schedule(50); return state(); });
+  handleIpc("daytrace:delete-session", (start, end) => { store.deleteRange(start, end); analysisQuality?.schedule(50); return state(); });
   handleIpc("daytrace:export-skill", (skill) => store.exportSkill(skill));
   handleIpc("daytrace:export-data", (format) => chooseExport(format));
   handleIpc("daytrace:create-backup", (passphrase) => chooseBackup(passphrase));
   handleIpc("daytrace:restore-backup", (passphrase) => chooseRestore(passphrase));
   handleIpc("daytrace:run-diagnostics", () => refreshDiagnostics());
+  handleIpc("daytrace:refresh-analysis-quality", async () => { await analysisQuality?.refresh(); return state(); });
   handleIpc("daytrace:install-browser-host", async () => {
     if (!app.isPackaged || !["win32", "darwin"].includes(process.platform)) throw new Error("Install the packaged Daytrace app before enabling the browser companion");
     const hostExecutable = process.platform === "win32" ? trackerPath() : process.execPath;
@@ -851,17 +1154,17 @@ function registerIpc() {
     }
     return state();
   });
-  handleIpc("daytrace:remove-smart-model", () => { smartAnalysis.remove(); if (store.settings.analysisEngine === "signals") store.updateSettings({ analysisEngine: "builtin" }); return state(); });
+  handleIpc("daytrace:remove-smart-model", () => { smartAnalysis.remove(); if (store.settings.analysisEngine === "signals") store.updateSettings({ analysisEngine: "builtin" }); analysisQuality?.schedule(50); return state(); });
   handleIpc("daytrace:run-smart-analysis", async () => { await runSmartAnalysis(true); return state(); });
   handleIpc("daytrace:download-semantic-model", async () => {
     await semanticAnalysis.download();
     store.updateSettings({ analysisEngine: "semantic" });
     return state();
   });
-  handleIpc("daytrace:remove-semantic-model", () => { semanticAnalysis.remove(); if (store.settings.analysisEngine === "semantic") store.updateSettings({ analysisEngine: "builtin" }); return state(); });
+  handleIpc("daytrace:remove-semantic-model", () => { semanticAnalysis.remove(); if (store.settings.analysisEngine === "semantic") store.updateSettings({ analysisEngine: "builtin" }); analysisQuality?.schedule(50); return state(); });
   handleIpc("daytrace:begin-semantic-analysis", () => { const result = semanticAnalysis.begin(store); if (result.status !== "ready") releaseSemanticBackgroundWindow(); return result; });
   handleIpc("daytrace:report-semantic-analysis", (token, progress, stage) => semanticAnalysis.report(String(token || ""), progress, stage));
-  handleIpc("daytrace:finish-semantic-analysis", (token, decisions) => { semanticAnalysis.complete(String(token || ""), decisions, store); const nextState = state(); releaseSemanticBackgroundWindow(); return nextState; });
+  handleIpc("daytrace:finish-semantic-analysis", (token, decisions) => { semanticAnalysis.complete(String(token || ""), decisions, store); analysisQuality?.schedule(50); const nextState = state(); releaseSemanticBackgroundWindow(); return nextState; });
   handleIpc("daytrace:fail-semantic-analysis", (token, error) => { if (semanticAnalysis.active?.token === String(token || "")) semanticAnalysis.cancel(error); const nextState = state(); releaseSemanticBackgroundWindow(); return nextState; });
   handleIpc("daytrace:reveal-data", () => shell.openPath(store.root));
   handleIpc("daytrace:check-updates", async () => { await checkForUpdates(); return state(); });
@@ -880,6 +1183,15 @@ if (nativeMessagingOrigin) {
     try {
       Menu.setApplicationMenu(null);
       store = new EventStore(DATA_ROOT, broadcastState, { defaultLanguage: app.getLocale() });
+      if (RESET_QUICK_TOUR && store.settings.onboardingComplete) {
+        store.updateSettings({ quickTourComplete: false });
+        startupLog("quick-tour-reset-for-this-launch");
+      }
+      applyNativeTheme();
+      nativeTheme.on("updated", () => {
+        updateNativeThemeShell();
+        if (store?.settings?.theme === "system") sendState();
+      });
       smartAnalysis = new SmartAnalysisService(DATA_ROOT, { version: app.getVersion(), fetch: (url, options) => net.fetch(url, options) });
       semanticAnalysis = new SemanticModelService(DATA_ROOT, {
         version: app.getVersion(),
@@ -887,7 +1199,21 @@ if (nativeMessagingOrigin) {
         developmentAssetRoot: app.isPackaged ? "" : path.join(__dirname, "..", "models"),
         onChange: sendState,
       });
-      browserCompanion = new BrowserCompanionService(DATA_ROOT, (context) => Boolean(store?.settings.browserCompanionEnabled && store.append(context)));
+      analysisQuality = new AnalysisQualityService(DATA_ROOT, {
+        onChange: sendState,
+        canRun: () => powerMonitor.getSystemIdleTime() >= 5 * 60 && !powerMonitor.isOnBatteryPower(),
+      });
+      // The cached aggregate is enough for startup. Recalculate only after the
+      // app has settled and the machine is genuinely idle on external power.
+      analysisQuality.schedule(60_000);
+      browserCompanion = new BrowserCompanionService(
+        DATA_ROOT,
+        (context) => Boolean(store?.settings.browserCompanionEnabled && store.append(context)),
+        { onFailure: (error) => {
+          startupLog("browser-companion-runtime-failed", error);
+          if (store?.settings?.browserCompanionEnabled) browserCompanionRecovery.schedule("runtime-failed");
+        } },
+      );
       accessibilityService = createAccessibilityService({
         platform: process.platform,
         isTrusted: (prompt) => systemPreferences.isTrustedAccessibilityClient(prompt),
@@ -902,8 +1228,22 @@ if (nativeMessagingOrigin) {
       store.updateSettings({ autoStartEnabled: currentAutoStart() });
       await syncBrowserCompanion();
       registerIpc(); createTray();
+      powerMonitor.on("suspend", () => { startupLog("system-suspended"); stopTracker("suspended"); });
+      powerMonitor.on("lock-screen", () => { startupLog("system-locked"); stopTracker("suspended"); });
+      powerMonitor.on("resume", () => scheduleTrackerAfterSystemResume("resume"));
+      powerMonitor.on("unlock-screen", () => scheduleTrackerAfterSystemResume("unlock"));
       const launchedInBackground = process.argv.includes("--background") || app.getLoginItemSettings().wasOpenedAtLogin || app.getLoginItemSettings().wasOpenedAsHidden;
-      if (!launchedInBackground) await openWindow(); else setTimeout(startTracker, 400).unref();
+      if (RUNTIME_RECOVERY_SMOKE) await openWindow(false);
+      else if (!launchedInBackground) await openWindow();
+      else setTimeout(startTracker, 400).unref();
+      if (BACKGROUND_PERFORMANCE_SMOKE) {
+        await runBackgroundPerformanceSmoke();
+        isQuitting = true; app.exit(0); return;
+      }
+      if (RUNTIME_RECOVERY_SMOKE) {
+        await runRuntimeRecoverySmoke();
+        isQuitting = true; app.exit(0); return;
+      }
       if (SEMANTIC_SMOKE_TEST) {
         await semanticAnalysis.download();
         store.updateSettings({ analysisEngine: "semantic" });
@@ -954,13 +1294,20 @@ if (nativeMessagingOrigin) {
   app.on("second-instance", () => void openWindow());
   app.on("before-quit", () => {
     isQuitting = true;
+    clearTimeout(broadcastTimer);
     clearTimeout(releaseTimer);
     clearTimeout(updateTimer);
+    clearTimeout(systemResumeTimer);
     clearInterval(smartAnalysisTimer);
     updateAbortController?.abort();
+    rendererRecovery.cancel();
+    browserCompanionRecovery.cancel();
     accessibilityService?.stop();
+    for (const child of accessibilityProbeChildren) { try { child.kill(); } catch { } }
+    accessibilityProbeChildren.clear();
     browserCompanion?.stop();
     semanticAnalysis?.cancel();
+    analysisQuality?.stop();
     stopTracker("stopped");
   });
 }

@@ -22,6 +22,8 @@ jobs:
       - run: npm run test:desktop
       - run: npm run test:sites
       - run: npm run build:tracker:win
+      - run: npm run test:stability
+      - run: npm run test:performance
   test-macos:
     runs-on: macos-14
     steps:
@@ -33,3 +35,5 @@ jobs:
       - run: npm run build
       - run: npm run test:desktop
       - run: npm run build:tracker:mac
+      - run: npm run test:stability
+      - run: npm run test:performance

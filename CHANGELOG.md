@@ -2,6 +2,23 @@
 
 All notable changes to Daytrace are documented here.
 
+## [Unreleased]
+
+## [0.5.9] - 2026-08-24
+
+- Added a side-by-side Built-in / Signal pack / Semantic quality comparison to first-run onboarding and Settings. All three modes are measured on the same versioned 48-label RU/EN set, with decision precision kept separate from coverage.
+- Added an aggregate-only personal-history check. A short-lived background worker streams retained local events, measures unique-context coverage, and uses only explicit user corrections as ground truth for personal agreement. The cache contains counts and ratios, never titles; fewer than 15 corrected contexts is shown as a preliminary sample.
+- Installed optional modes no longer display a misleading copy of Built-in personal coverage before they have produced local decisions; Settings asks for one real analysis pass instead.
+- Fixed the recurring startup-training loop. First-run setup is now profile-scoped instead of version-scoped, completed profiles migrate without interruption, and updates can never reopen setup or the product guide.
+- Added a five-step RU/EN animated quick guide over the real overview, question bar, purpose correction, analysis settings, and local-status controls. It appears once after a genuinely new setup, is marked shown as soon as it opens so a crash cannot create a loop, and remains replayable from the sidebar and Settings without changing preferences.
+- Added a deliberate `--daytrace-reset-quick-tour` support launch for inspecting the guide on one device without resetting history, language, model selection, permissions, or first-run setup.
+- Reworked timeline preparation around bounded hourly-file and selected-day caches, single timestamp parsing, repeated-context classification caches, and session-based workflow suggestions. On the retained Windows verification history, cold 48-hour state fell to about 499 ms, a cached day to 0.01 ms, and refresh after a new event to about 220 ms.
+- Anonymous input/click counters no longer rebuild the full dashboard. Foreground boundaries, heartbeats, and ordinary setting changes now use separate calm refresh cadences, while the selected day alone is invalidated after a new event.
+- Optional semantic analysis now remembers only hashed reviewed contexts, processes only new contexts, waits for five minutes of idle time and external power, and runs no more than once every 30 minutes. The aggregate personal-quality scan is likewise delayed until the app has settled and the machine is idle on external power.
+- The Windows low-load release check measured 0.032% average sampled Electron CPU, 0.392% main-process CPU, 125.6 MiB peak private memory, and 0.1 MiB short-run growth. The optional bilingual semantic pass remains short-lived and one-threaded rather than resident.
+- Added a reproducible candidate-model evaluator. Two roughly 129 MiB multilingual q8 candidates were rejected because their held-out decision precision was materially below the current roughly 48 MiB specialized RU/EN pair; no heavier model was shipped without a measured user benefit.
+- Added automated visual checks and localized screenshots for the quick guide in light, dark, analysis, and compact-window states, including overflow and spotlight-target assertions.
+
 ## [0.5.8] - 2026-08-24
 
 - Added a polished three-step RU/EN onboarding for new installs and a one-time versioned walkthrough for every existing user. It explains local privacy, how corrections are remembered, and offers Built-in, Signal pack 1.1, or Semantic model 1.0 without downloading anything silently.
@@ -9,6 +26,10 @@ All notable changes to Daytrace are documented here.
 - Repeated ambiguous activity is grouped into stable review contexts with occurrence counts and total duration. Browser, messenger, and AI-assistant corrections remain scoped to the exact visible context, while specialized native applications use an application-level rule.
 - Added a one-time explanation that each new context normally needs one decision and the correction is then reused locally. The review queue, Settings badge, guided section navigation, replayable tour, animations, reduced-motion fallback, tests, and localized README screenshots cover the full flow.
 - The local Vite preview now ignores generated desktop packaging folders, preventing its Windows file watcher from racing Electron Builder's atomic staging rename.
+- Added bounded automatic recovery for the native collector, Electron renderer, and optional browser companion. Release smoke tests now terminate the Windows collector and force-crash the renderer, then require both to return without a tight restart loop.
+- Added a cross-platform background performance gate with CPU, private-memory, and short-run memory-growth ceilings. Windows v0.5.8 verification measured 0.065% average Electron CPU and 87.1 MiB peak private memory; the final native Windows collector was measured separately at 28.6 MiB peak working set and no measurable CPU tick over 20.10 seconds.
+- Lock or suspend now stops collection until unlock or resume restores fresh OS hooks. macOS Accessibility probes use exponential backoff, idle periods avoid repeated AX window reads, revoked permission exits cleanly for reauthorization, and disabled event taps re-enable automatically.
+- Repeated renderer state notifications are throttled instead of being continuously rescheduled, and installed optional-model metadata is cached so a visible timeline does not repeatedly parse or stat every model asset.
 
 ## [0.5.7] - 2026-08-24
 

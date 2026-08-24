@@ -18,6 +18,8 @@ const macGuide = fs.readFileSync(path.join(root, "docs", "MACOS_INSTALL.md"), "u
 const macGuideRu = fs.readFileSync(path.join(root, "docs", "MACOS_INSTALL_RU.md"), "utf8");
 const bundledMacGuide = fs.readFileSync(path.join(root, "MACOS_INSTALL.txt"), "utf8");
 const bundleMacGuideScript = fs.readFileSync(path.join(root, "scripts", "bundle-macos-install-guide.sh"), "utf8");
+const macTrackerBuild = fs.readFileSync(path.join(root, "scripts", "build-macos-tracker.sh"), "utf8");
+const verifyMacPackageScript = fs.readFileSync(path.join(root, "scripts", "verify-macos-package.sh"), "utf8");
 const verifyMacReleaseScript = fs.readFileSync(path.join(root, "scripts", "verify-macos-release.sh"), "utf8");
 const electronMain = fs.readFileSync(path.join(root, "electron", "main.cjs"), "utf8");
 const windowsTrackerBuild = fs.readFileSync(path.join(root, "scripts", "build-windows-tracker.cjs"), "utf8");
@@ -41,9 +43,14 @@ test("both READMEs document Windows, macOS, and measured system load", () => {
   for (const document of [readme, readmeRu]) {
     assert.match(document, /Windows/);
     assert.match(document, /macOS/);
-    assert.match(document, /0[,.]039%/);
-    assert.match(document, /199 (?:MiB|МиБ)/);
+    assert.match(document, /0[,.]032%/);
+    assert.match(document, /125[,.]6 (?:MiB|МиБ)/);
+    assert.match(document, /(?:499 ms|499 мс)/);
+    assert.match(document, /(?:backoff|экспоненциальн)/i);
+    assert.match(document, /(?:physical-Mac|физическом Mac)/i);
   }
+  assert.match(pkg.scripts["test:stability"], /run-runtime-recovery-smoke/);
+  assert.match(pkg.scripts["test:performance"], /run-background-performance-smoke/);
 });
 
 test("Windows native collector remains self-contained with a lean fast-start publish", () => {
@@ -96,6 +103,7 @@ test("macOS tagged releases remain publishable without unavailable Apple credent
   assert.match(releaseWorkflow, /body_path: \.github\/RELEASE_BODY\.md/);
   assert.match(pkg.scripts["dist:mac"], /mac\.identity=null/);
   assert.match(pkg.scripts["dist:mac"], /mac\.notarize=false/);
+  assert.match(pkg.scripts["dist:mac"], /verify-macos-package\.sh/);
   assert.match(pkg.scripts["dist:mac"], /bundle-macos-install-guide\.sh/);
   assert.equal(pkg.build.dmg.contents.some((item) => item.path === "MACOS_INSTALL.txt"), true);
   assert.equal(pkg.build.dmg.contents.some((item) => item.name === "IF MAC BLOCKS DAYTRACE - OPEN THIS.txt"), true);
@@ -103,11 +111,17 @@ test("macOS tagged releases remain publishable without unavailable Apple credent
   assert.match(bundleMacGuideScript, /unzip -tq/);
 });
 
-test("macOS packages and checks the real Accessibility collector under the app identity", () => {
-  assert.deepEqual(pkg.build.mac.binaries, ["Contents/MacOS/daytrace-tracker"]);
-  assert.equal(pkg.build.mac.extraFiles.some((item) => item.to === "MacOS/daytrace-tracker"), true);
-  assert.match(verifyMacReleaseScript, /Contents\/MacOS\/daytrace-tracker/);
-  assert.match(electronMain, /path\.join\(path\.dirname\(process\.execPath\), "daytrace-tracker"\)/);
+test("macOS packages and checks a named Accessibility collector with its own exact TCC identity", () => {
+  assert.deepEqual(pkg.build.mac.binaries, ["Contents/Helpers/Daytrace Collector.app/Contents/MacOS/Daytrace Collector"]);
+  assert.equal(pkg.build.mac.extraFiles.some((item) => item.to === "Helpers/Daytrace Collector.app"), true);
+  assert.match(macTrackerBuild, /CFBundleIdentifier<\/key><string>local\.daytrace\.desktop\.collector/);
+  assert.match(macTrackerBuild, /codesign --force --sign - --options runtime --identifier local\.daytrace\.desktop\.collector/);
+  assert.match(verifyMacReleaseScript, /Contents\/Helpers\/Daytrace Collector\.app/);
+  assert.match(verifyMacPackageScript, /CFBundleIdentifier/);
+  assert.match(verifyMacPackageScript, /lipo -archs/);
+  assert.match(verifyMacPackageScript, /--check-accessibility/);
+  assert.match(verifyMacPackageScript, /--daytrace-smoke-test/);
+  assert.match(electronMain, /"Helpers", "Daytrace Collector\.app", "Contents", "MacOS", "Daytrace Collector"/);
   assert.match(electronMain, /--check-accessibility/);
   assert.match(electronMain, /probeTrusted: process\.platform === "darwin" \? probeTrackerAccessibility : null/);
 });

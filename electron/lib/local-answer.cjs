@@ -301,10 +301,10 @@ function answerQuestion(question, events, now = new Date(), language = "ru", int
   };
 }
 
-function suggestSkills(events, now = new Date(), language = "ru", intentRules = []) {
+function suggestSkillsFromSessions(sessions, language = "ru") {
   const lang = normalizeLanguage(language);
   const groups = new Map();
-  for (const session of sessionize(events, now.getTime(), lang, intentRules)) {
+  for (const session of sessions) {
     const apps = [...new Set(session.activities.map((item) => item.app))].slice(0, 4);
     const key = `${session.intent}:${session.focus}:${apps.join(">").toLowerCase()}`;
     const item = groups.get(key) || { key, focus: session.focus, label: `${session.intentLabel}: ${session.label}`, apps, count: 0, durationMs: 0 };
@@ -317,4 +317,9 @@ function suggestSkills(events, now = new Date(), language = "ru", intentRules = 
   }));
 }
 
-module.exports = { answerQuestion, durationText, interpretQuestion, meaningfulTransitions, questionWindow, suggestSkills };
+function suggestSkills(events, now = new Date(), language = "ru", intentRules = []) {
+  const lang = normalizeLanguage(language);
+  return suggestSkillsFromSessions(sessionize(events, now.getTime(), lang, intentRules), lang);
+}
+
+module.exports = { answerQuestion, durationText, interpretQuestion, meaningfulTransitions, questionWindow, suggestSkills, suggestSkillsFromSessions };

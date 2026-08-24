@@ -78,7 +78,18 @@ export function semanticPrototypes(language) {
 
 export function shouldSkipSemantic(activity) {
   const title = String(activity?.title || "").replace(/\s+/g, " ").trim();
-  if (!title || /^(?:active window|активное окно|home|new tab|новая вкладка|general chat|общий чат)$/i.test(title)) return true;
+  const app = String(activity?.app || "").replace(/\s+/g, " ").trim();
+  const domain = String(activity?.domain || "").replace(/\s+/g, " ").trim();
+  if (!title || /^(?:active window|активное окно|home|new tab|новая вкладка|general chat|общий чат|notifications?|уведомления|setup|установка|program manager|plugin manager|open workspace|pricing|цены|вход|login|sign in|почта|mail|inbox|входящие|sent|отправленные|extensions?|расширения|translation|перевод|opening|открытие|contacts?(?: and)? addresses|контакты и адреса)$/i.test(title)) return true;
+  if (/(?:^|\s)@\s*[\p{L}\p{N}_+.-]+$/u.test(title) || /(?:^|\s)@[\p{L}\p{N}_+.-]+$/u.test(title)) return true;
+  if (/^[▲▼]?\s*[\d.,]+\s*\|.*\b(?:trade|trading|contracts?|perpetual)\b/i.test(title) || /^[▲▼]?\s*[\d.,]+\s*\|.*(?:трейдинг|контракт)/i.test(title)) return true;
+  if (/(?:file explorer|проводник|finder)/i.test(app) && /(?:[0-9a-f]{8}-[0-9a-f-]{20,}|\s[—-]\s*(?:проводник|file explorer|finder)$)/i.test(title)) return true;
+  if (/^(?:chatgpt(?::.*)?|daytrace|bybit)$/i.test(title) || /(?:gmail|почта mail)$/i.test(title) || /(?:landing page|целевая страница|internet speed test|интернетометр)/i.test(title)) return true;
+  if (/(?:\.\.\.|…)$/.test(title)) return true;
+  const searchMatch = title.match(/^(.*?)\s*[—-]\s*(?:поиск в google|google search|search results?)$/i);
+  const meaningfulTitle = (searchMatch?.[1] || title).replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const words = meaningfulTitle.match(/[\p{L}\p{N}]{2,}/gu) || [];
+  if (!domain && words.length < 3) return true;
   return activity?.intentReason === "conflicting-title-signals";
 }
 

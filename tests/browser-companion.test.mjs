@@ -62,6 +62,23 @@ test("local companion socket authenticates and forwards only sanitized context",
   assert.equal(service.status().lastContextAt > 0, true);
 });
 
+test("a listening companion reports runtime failure and removes its stale endpoint", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "daytrace-browser-recovery-"));
+  const failures = [];
+  const service = new companion.BrowserCompanionService(root, () => true, {
+    platform: process.platform,
+    onFailure: (error) => failures.push(error.message),
+  });
+  t.after(() => { service.stop(); fs.rmSync(root, { recursive: true, force: true }); });
+  await service.start();
+  const server = service.server;
+  server.emit("error", new Error("synthetic runtime failure"));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(service.status().running, false);
+  assert.deepEqual(failures, ["synthetic runtime failure"]);
+  assert.equal(fs.existsSync(path.join(root, "browser-host.json")), false);
+});
+
 test("macOS host installation writes only declared per-user manifests", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "daytrace-browser-host-"));
   const home = path.join(root, "home");

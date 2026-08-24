@@ -10,6 +10,10 @@ fi
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 spctl --assess --verbose=2 --type exec "$APP_PATH"
 xcrun stapler validate "$APP_PATH"
-codesign --verify --strict --verbose=2 "$APP_PATH/Contents/MacOS/daytrace-tracker"
+COLLECTOR_APP="$APP_PATH/Contents/Helpers/Daytrace Collector.app"
+COLLECTOR_EXECUTABLE="$COLLECTOR_APP/Contents/MacOS/Daytrace Collector"
+test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$COLLECTOR_APP/Contents/Info.plist")" = "local.daytrace.desktop.collector"
+codesign --verify --deep --strict --verbose=2 "$COLLECTOR_APP"
+codesign --verify --strict --verbose=2 "$COLLECTOR_EXECUTABLE"
 
 echo "Verified signed and notarized macOS app: $APP_PATH"

@@ -48,7 +48,7 @@ function runDiagnostics({ store, platform = process.platform, packaged = false, 
   const trackerExists = capabilities.activeWindowTitles && trackerExecutable ? fs.existsSync(trackerExecutable) : false;
   const checks = [
     result("storage", writableCheck(store.root) ? "pass" : "fail", store.root),
-    result("tracker", !capabilities.activeWindowTitles ? "not-applicable" : trackerStatus === "running" ? "pass" : trackerStatus === "permission-required" ? "warn" : "fail", trackerStatus),
+    result("tracker", !capabilities.activeWindowTitles ? "not-applicable" : trackerStatus === "running" ? "pass" : ["permission-required", "recovering", "suspended"].includes(trackerStatus) ? "warn" : "fail", trackerStatus),
     result("collector", !capabilities.activeWindowTitles ? "not-applicable" : trackerExists ? "pass" : "fail", trackerExists ? path.basename(trackerExecutable) : "missing"),
     result("accessibility", platform !== "darwin" ? "not-applicable" : accessibilityTrusted ? "pass" : "fail"),
     result("titles", !settings.collectWindowTitles ? "not-applicable" : recentForeground?.title ? "pass" : "warn", recentForeground?.at || ""),

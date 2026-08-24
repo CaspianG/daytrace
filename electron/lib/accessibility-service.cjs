@@ -6,18 +6,21 @@ function createAccessibilityService({
   probeTrusted = null,
   openExternal,
   onChange = () => {},
-  intervalMs = 1_500,
-  setIntervalFn = setInterval,
-  clearIntervalFn = clearInterval,
+  intervalMs = 2_000,
+  maximumIntervalMs = 30_000,
+  setTimeoutFn = setTimeout,
+  clearTimeoutFn = clearTimeout,
 }) {
   let timer = null;
   let lastTrusted;
   let refreshPromise = null;
+  let nextIntervalMs = intervalMs;
 
   function stopWatching() {
-    if (!timer) return;
-    clearIntervalFn(timer);
+    if (timer === null) return;
+    clearTimeoutFn(timer);
     timer = null;
+    nextIntervalMs = intervalMs;
   }
 
   function publish(value) {
@@ -49,19 +52,27 @@ function createAccessibilityService({
   }
 
   function watch() {
-    if (platform !== "darwin" || check() || timer) return;
-    timer = setIntervalFn(() => refresh(false), intervalMs);
+    if (platform !== "darwin" || check() || timer !== null) return;
+    const delay = nextIntervalMs;
+    timer = setTimeoutFn(async () => {
+      timer = null;
+      const trusted = await refresh(false);
+      if (trusted) return;
+      nextIntervalMs = Math.min(maximumIntervalMs, Math.max(intervalMs, delay * 2));
+      watch();
+    }, delay);
     timer?.unref?.();
   }
 
   async function request() {
     if (platform !== "darwin") return true;
-    let trusted = await refresh(true);
+    let trusted = await refresh(false);
     if (trusted) return true;
+    const promptResult = refresh(true);
+    await Promise.resolve();
     await openExternal(ACCESSIBILITY_SETTINGS_URL);
-    trusted = await refresh(false);
-    if (!trusted) watch();
-    return trusted;
+    void promptResult.then((value) => { if (!value) watch(); });
+    return check();
   }
 
   return { check, refresh, mark: publish, request, watch, stop: stopWatching, settingsUrl: ACCESSIBILITY_SETTINGS_URL };

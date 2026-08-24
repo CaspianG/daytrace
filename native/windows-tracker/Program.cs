@@ -24,6 +24,8 @@ internal static class Program
     private static System.Threading.Timer? _sampleTimer;
     private static System.Threading.Timer? _titleTimer;
     private static System.Threading.Timer? _inputTimer;
+    private static int _titleSampleBusy;
+    private static int _activeSampleBusy;
     private static readonly bool CollectTitles = Environment.GetEnvironmentVariable("DAYTRACE_COLLECT_TITLES") != "0";
     private static readonly bool CollectInput = Environment.GetEnvironmentVariable("DAYTRACE_COLLECT_INPUT") != "0";
     private static readonly bool CollectTabCount = Environment.GetEnvironmentVariable("DAYTRACE_COLLECT_TAB_COUNT") != "0";
@@ -85,23 +87,28 @@ internal static class Program
 
     private static void SampleForegroundTitle()
     {
-        lock (Sync) { if (_isIdle) return; }
-        var hwnd = GetForegroundWindow();
-        if (hwnd == IntPtr.Zero || hwnd != GetForegroundWindow()) return;
-        var snapshot = ReadWindow(hwnd, false);
-        WindowSnapshot previous;
-        lock (Sync)
+        if (Interlocked.Exchange(ref _titleSampleBusy, 1) != 0) return;
+        try
         {
-            previous = _active;
-            // A generic title (for example a browser New Tab page) is still a
-            // real context boundary. Keeping the previous specific title here
-            // would incorrectly charge subsequent time to the old page.
-            if (snapshot.Process == previous.Process && snapshot.Title == previous.Title) return;
-            _active = snapshot with { TabCount = previous.Process == snapshot.Process ? previous.TabCount : 0 };
-            snapshot = _active;
+            lock (Sync) { if (_isIdle) return; }
+            var hwnd = GetForegroundWindow();
+            if (hwnd == IntPtr.Zero || hwnd != GetForegroundWindow()) return;
+            var snapshot = ReadWindow(hwnd, false);
+            WindowSnapshot previous;
+            lock (Sync)
+            {
+                previous = _active;
+                // A generic title (for example a browser New Tab page) is still a
+                // real context boundary. Keeping the previous specific title here
+                // would incorrectly charge subsequent time to the old page.
+                if (snapshot.Process == previous.Process && snapshot.Title == previous.Title) return;
+                _active = snapshot with { TabCount = previous.Process == snapshot.Process ? previous.TabCount : 0 };
+                snapshot = _active;
+            }
+            FlushCounts(previous);
+            Emit("foreground", 1, snapshot);
         }
-        FlushCounts(previous);
-        Emit("foreground", 1, snapshot);
+        finally { Volatile.Write(ref _titleSampleBusy, 0); }
     }
 
     private static void SampleInputActivity()
@@ -149,27 +156,30 @@ internal static class Program
 
     private static void SampleActiveWindow()
     {
-        var snapshot = ReadWindow(GetForegroundWindow(), true);
-        WindowSnapshot previous;
-        var changed = false;
-        var idle = false;
-        lock (Sync)
+        if (Interlocked.Exchange(ref _activeSampleBusy, 1) != 0) return;
+        try
         {
-            previous = _active;
-            changed = snapshot.Process != previous.Process || snapshot.Title != previous.Title;
-            _active = snapshot;
-            idle = _isIdle;
+            lock (Sync) { if (_isIdle) return; }
+            var snapshot = ReadWindow(GetForegroundWindow(), true);
+            WindowSnapshot previous;
+            var changed = false;
+            lock (Sync)
+            {
+                previous = _active;
+                changed = snapshot.Process != previous.Process || snapshot.Title != previous.Title;
+                _active = snapshot;
+            }
+            if (changed)
+            {
+                FlushCounts(previous);
+                Emit("foreground", 1, snapshot);
+            }
+            else if (GetIdleMilliseconds() < IDLE_THRESHOLD_MS)
+            {
+                Emit("heartbeat", 1, snapshot);
+            }
         }
-        if (idle) return;
-        if (changed)
-        {
-            FlushCounts(previous);
-            Emit("foreground", 1, snapshot);
-        }
-        else if (GetIdleMilliseconds() < IDLE_THRESHOLD_MS)
-        {
-            Emit("heartbeat", 1, snapshot);
-        }
+        finally { Volatile.Write(ref _activeSampleBusy, 0); }
     }
 
     private static WindowSnapshot ReadActiveWindow() => ReadWindow(GetForegroundWindow(), true);

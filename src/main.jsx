@@ -10,5 +10,8 @@ if (semanticHost) {
   });
 } else {
   root.textContent = "Loading Daytrace…";
-  import("./app-entry.jsx");
+  import("./theme.js").then(({ bootstrapTheme }) => {
+    bootstrapTheme();
+    return import("./app-entry.jsx");
+  });
 }

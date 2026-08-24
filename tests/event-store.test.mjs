@@ -107,6 +107,32 @@ test("extending retention reports the first real event instead of inventing an o
   assert.equal(store.state().historyStartedAt, null);
 });
 
+test("day and dashboard caches invalidate only the day that received a new event", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "daytrace-day-cache-test-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const store = new storeModule.EventStore(root);
+  const now = Date.now();
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  yesterday.setHours(12, 0, 0, 0);
+  const currentAt = now - 5_000;
+  store.append({ at: yesterday.toISOString(), kind: "foreground", app: "Archive", title: "Yesterday" });
+  store.append({ at: new Date(currentAt).toISOString(), kind: "foreground", app: "Editor", title: "Today" });
+
+  const previousDay = store.dayState(yesterday.getTime());
+  const currentDay = store.dayState(currentAt);
+  const dashboard = store.state();
+  assert.strictEqual(store.dayState(yesterday.getTime()), previousDay);
+  assert.strictEqual(store.dayState(currentAt), currentDay);
+  assert.strictEqual(store.state(), dashboard);
+
+  store.append({ at: new Date(currentAt + 2_000).toISOString(), kind: "heartbeat", app: "Editor", title: "Today" });
+  assert.strictEqual(store.dayState(yesterday.getTime()), previousDay);
+  assert.notStrictEqual(store.dayState(currentAt), currentDay);
+  assert.equal(store.dayState(currentAt).eventCount, 2);
+  assert.notStrictEqual(store.state(), dashboard);
+});
+
 test("retention values are clamped to the supported 48-hour to one-year range", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "daytrace-retention-clamp-test-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -117,6 +143,19 @@ test("retention values are clamped to the supported 48-hour to one-year range", 
   assert.equal(store.settings.retentionHours, 365 * 24);
   store.updateSettings({ retentionHours: "invalid" });
   assert.equal(store.settings.retentionHours, 365 * 24);
+});
+
+test("appearance mode is normalized and persists locally", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "daytrace-theme-test-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const store = new storeModule.EventStore(root);
+  assert.equal(store.settings.theme, "system");
+  store.updateSettings({ theme: "dark" });
+  assert.equal(new storeModule.EventStore(root).settings.theme, "dark");
+  store.updateSettings({ theme: "unsupported-theme" });
+  assert.equal(store.settings.theme, "dark");
+  assert.equal(storeModule.normalizeTheme("LIGHT"), "light");
+  assert.equal(storeModule.normalizeTheme("unexpected"), "system");
 });
 
 test("legacy smart-analysis settings migrate to an explicit engine and only the selected engine applies", (t) => {
@@ -148,6 +187,7 @@ test("malformed settings and collector events cannot corrupt the journal", (t) =
     collectWindowTitles: 0,
     excludedApps: { unexpected: true },
     retentionHours: "not-a-number",
+    theme: "high-contrast-purple",
     language: "ru-RU",
     unknownSetting: "must not persist",
   }));
@@ -159,6 +199,7 @@ test("malformed settings and collector events cannot corrupt the journal", (t) =
   assert.equal(store.settings.collectWindowTitles, true);
   assert.equal(store.settings.retentionHours, 48);
   assert.equal(store.settings.language, "ru");
+  assert.equal(store.settings.theme, "system");
   assert.equal("unknownSetting" in store.settings, false);
   assert.equal(store.append({ at: "not-a-date", kind: "foreground", app: "Editor" }), false);
   assert.equal(store.append({ at: new Date().toISOString(), kind: "arbitrary", app: "Editor" }), false);

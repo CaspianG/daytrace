@@ -7,6 +7,7 @@ import answers from "../electron/lib/local-answer.cjs";
 import sessionizer from "../electron/lib/sessionizer.cjs";
 import storeModule from "../electron/lib/event-store.cjs";
 import { formatDuration, normalizeLanguage, translations } from "../src/i18n.js";
+import { effectiveTheme, normalizeTheme } from "../src/theme.js";
 
 const base = new Date("2026-08-15T09:00:00+03:00").getTime();
 const events = [
@@ -28,6 +29,12 @@ test("renderer translations have the same complete key structure", () => {
   assert.equal(normalizeLanguage("en-US"), "en");
   assert.equal(formatDuration(90 * 60_000, "en"), "1 h 30 min");
   assert.equal(formatDuration(90 * 60_000, "ru"), "1 ч 30 мин");
+  assert.equal(normalizeTheme("DARK"), "dark");
+  assert.equal(normalizeTheme("unsupported"), "system");
+  assert.equal(effectiveTheme("system", true), "dark");
+  assert.equal(effectiveTheme("system", false), "light");
+  assert.equal(translations.en.settings.themeOptions.dark, "Dark");
+  assert.equal(translations.ru.settings.themeOptions.dark, "Тёмная");
 });
 test("sessions and local answers are fully localized", () => {
   const enSessions = sessionizer.sessionize(events, base + 60 * 60_000, "en");
@@ -54,27 +61,32 @@ test("first run follows the OS language and persists onboarding choices", (t) =>
   assert.equal(store.settings.language, "ru");
   assert.equal(store.settings.onboardingComplete, false);
   assert.equal(store.settings.onboardingVersion, 0);
+  assert.equal(store.settings.quickTourComplete, false);
   assert.equal(store.settings.accessibilityOnboardingDismissed, false);
-  store.updateSettings({ language: "en", onboardingComplete: true, onboardingVersion: 2, accessibilityOnboardingDismissed: true, reviewLearningExplained: true });
+  store.updateSettings({ language: "en", onboardingComplete: true, onboardingVersion: 2, quickTourComplete: true, accessibilityOnboardingDismissed: true, reviewLearningExplained: true });
 
   const reopened = new storeModule.EventStore(root, () => {}, { defaultLanguage: "ru-RU" });
   assert.equal(reopened.settings.language, "en");
   assert.equal(reopened.settings.onboardingComplete, true);
   assert.equal(reopened.settings.onboardingVersion, 2);
+  assert.equal(reopened.settings.quickTourComplete, true);
   assert.equal(reopened.settings.accessibilityOnboardingDismissed, true);
   assert.equal(reopened.settings.reviewLearningExplained, true);
 });
 
-test("legacy users are migrated to the one-time improved onboarding", (t) => {
+test("updates never reopen onboarding or the quick tour for an existing profile", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "daytrace-onboarding-migration-test-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.writeFileSync(path.join(root, "settings.json"), JSON.stringify({ language: "ru", onboardingComplete: true }));
   const store = new storeModule.EventStore(root);
   assert.equal(store.settings.onboardingComplete, true);
   assert.equal(store.settings.onboardingVersion, 1);
-  store.updateSettings({ onboardingVersion: storeModule.CURRENT_ONBOARDING_VERSION });
+  assert.equal(store.settings.quickTourComplete, true);
+  store.updateSettings({ onboardingVersion: 99 });
   const reopened = new storeModule.EventStore(root);
-  assert.equal(reopened.settings.onboardingVersion, 2);
+  assert.equal(reopened.settings.onboardingComplete, true);
+  assert.equal(reopened.settings.onboardingVersion, 99);
+  assert.equal(reopened.settings.quickTourComplete, true);
 });
 
 test("local answers use browser and Telegram context without message content", () => {
@@ -142,7 +154,10 @@ test("English and Russian READMEs use only their matching localized visuals", ()
   assert.match(englishReadme, /rhythm-en\.png/);
   assert.match(englishReadme, /retention-en\.png/);
   assert.match(englishReadme, /onboarding-en\.png/);
+  assert.match(englishReadme, /quick-tour-en\.png/);
   assert.match(englishReadme, /review-coach-en\.png/);
+  assert.match(englishReadme, /analysis-quality-en\.png/);
+  assert.match(englishReadme, /appearance-dark-en\.png/);
   assert.doesNotMatch(englishReadme, /(?:daytrace-cover|timeline)-ru\.png/);
 
   assert.match(russianReadme, /daytrace-cover-ru\.png/);
@@ -155,7 +170,10 @@ test("English and Russian READMEs use only their matching localized visuals", ()
   assert.match(russianReadme, /rhythm-ru\.png/);
   assert.match(russianReadme, /retention-ru\.png/);
   assert.match(russianReadme, /onboarding-ru\.png/);
+  assert.match(russianReadme, /quick-tour-ru\.png/);
   assert.match(russianReadme, /review-coach-ru\.png/);
+  assert.match(russianReadme, /analysis-quality-ru\.png/);
+  assert.match(russianReadme, /appearance-dark-ru\.png/);
   assert.doesNotMatch(russianReadme, /(?:daytrace-cover|timeline)-en\.png/);
 
   for (const relativePath of [
@@ -179,8 +197,22 @@ test("English and Russian READMEs use only their matching localized visuals", ()
     "docs/assets/screenshots/retention-ru.png",
     "docs/assets/screenshots/onboarding-en.png",
     "docs/assets/screenshots/onboarding-ru.png",
+    "docs/assets/screenshots/quick-tour-en.png",
+    "docs/assets/screenshots/quick-tour-ru.png",
+    "docs/assets/screenshots/quick-tour-analysis-en.png",
+    "docs/assets/screenshots/quick-tour-analysis-ru.png",
+    "docs/assets/screenshots/quick-tour-compact-en.png",
+    "docs/assets/screenshots/quick-tour-compact-ru.png",
+    "docs/assets/screenshots/quick-tour-dark-en.png",
+    "docs/assets/screenshots/quick-tour-dark-ru.png",
     "docs/assets/screenshots/review-coach-en.png",
     "docs/assets/screenshots/review-coach-ru.png",
+    "docs/assets/screenshots/analysis-quality-en.png",
+    "docs/assets/screenshots/analysis-quality-ru.png",
+    "docs/assets/screenshots/analysis-quality-dark-en.png",
+    "docs/assets/screenshots/analysis-quality-dark-ru.png",
+    "docs/assets/screenshots/appearance-dark-en.png",
+    "docs/assets/screenshots/appearance-dark-ru.png",
   ]) {
     assert.equal(fs.existsSync(path.join(root, relativePath)), true, `${relativePath} must exist`);
   }
