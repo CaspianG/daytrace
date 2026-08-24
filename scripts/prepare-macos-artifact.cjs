@@ -28,20 +28,6 @@ async function prepareUnsignedUniversalCollector(event) {
   await run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleShortVersionString 1.0.0", collectorInfo]);
   await run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleVersion 1.0.0", collectorInfo]);
 
-  // electron-builder's extraFiles can leave plain documentation executable in
-  // Contents. codesign then treats those text files as nested code and refuses
-  // to re-seal the parent after the collector changed. They are data, so make
-  // that explicit before signing the final bundle.
-  for (const fileName of ["LICENSE", "README.md", "README_RU.md"]) {
-    const dataFile = path.resolve(appPath, "Contents", fileName);
-    if (!fs.existsSync(dataFile)) continue;
-    await run("codesign", ["--remove-signature", dataFile]).catch((error) => {
-      const detail = String(error?.stderr || error?.message || error);
-      if (!detail.includes("code object is not signed at all")) throw error;
-    });
-    await fs.promises.chmod(dataFile, 0o644);
-  }
-
   // Re-seal the exact final helper, then the parent app that contains it. The
   // optional community identity is a stable non-Apple code-signing identity:
   // it does not bypass Gatekeeper, but it prevents TCC from seeing a new

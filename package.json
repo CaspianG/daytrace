@@ -95,20 +95,6 @@
       "README_RU.md",
       "package.json"
     ],
-    "extraFiles": [
-      {
-        "from": "README_RU.md",
-        "to": "README_RU.md"
-      },
-      {
-        "from": "README.md",
-        "to": "README.md"
-      },
-      {
-        "from": "LICENSE",
-        "to": "LICENSE"
-      }
-    ],
     "extraResources": [
       {
         "from": "browser-extension",
@@ -123,6 +109,20 @@
     },
     "win": {
       "icon": "build/icon.ico",
+      "extraFiles": [
+        {
+          "from": "README_RU.md",
+          "to": "README_RU.md"
+        },
+        {
+          "from": "README.md",
+          "to": "README.md"
+        },
+        {
+          "from": "LICENSE",
+          "to": "LICENSE"
+        }
+      ],
       "extraResources": [
         {
           "from": "native/windows-tracker/bin/Release/daytrace-win-x64/",

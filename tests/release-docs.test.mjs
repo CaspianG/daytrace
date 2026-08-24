@@ -65,6 +65,7 @@ test("Windows native collector remains self-contained with a lean fast-start pub
   assert.match(windowsTrackerBuild, /SatelliteResourceLanguages=en/);
   assert.match(windowsTrackerBuild, /Refusing unsafe tracker output cleanup/);
   assert.equal(pkg.build.win.extraResources[0].from, "native/windows-tracker/bin/Release/daytrace-win-x64/");
+  assert.deepEqual(pkg.build.win.extraFiles.map((item) => item.to), ["README_RU.md", "README.md", "LICENSE"]);
   assert.deepEqual(pkg.build.electronLanguages, ["en-US", "ru"]);
   assert.match(pkg.scripts["dist:win"], /electron-builder[\s\S]*npm run test:packaged:win/);
 });
@@ -128,8 +129,9 @@ test("macOS tagged releases use a stable community identity without pretending i
 });
 
 test("macOS packages and checks a named Accessibility collector with its own exact TCC identity", () => {
+  assert.equal(pkg.build.extraFiles, undefined);
   assert.deepEqual(pkg.build.mac.binaries, ["Contents/Helpers/Daytrace Activity Collector.app/Contents/MacOS/Daytrace Activity Collector"]);
-  assert.equal(pkg.build.mac.extraFiles.some((item) => item.to === "Helpers/Daytrace Activity Collector.app"), true);
+  assert.deepEqual(pkg.build.mac.extraFiles.map((item) => item.to), ["Helpers/Daytrace Activity Collector.app"]);
   assert.match(macTrackerBuild, /COLLECTOR_ID="io\.github\.caspiang\.daytrace\.collector"/);
   assert.match(macTrackerBuild, /COLLECTOR_VERSION="1\.0\.0"/);
   assert.match(macTrackerBuild, /codesign --force --sign - --options runtime --identifier "\$COLLECTOR_ID"/);
@@ -138,9 +140,6 @@ test("macOS packages and checks a named Accessibility collector with its own exa
   assert.match(prepareMacArtifact, /--identifier", "io\.github\.caspiang\.daytrace\.collector/);
   assert.match(prepareMacArtifact, /ElectronAsarIntegrity/);
   assert.match(prepareMacArtifact, /DAYTRACE_COMMUNITY_SIGNING_IDENTITY/);
-  assert.match(prepareMacArtifact, /README_RU\.md/);
-  assert.match(prepareMacArtifact, /--remove-signature/);
-  assert.match(prepareMacArtifact, /fs\.promises\.chmod\(dataFile, 0o644\)/);
   assert.match(prepareMacArtifact, /--timestamp=none/);
   assert.match(prepareMacArtifact, /--verify", "--deep", "--strict/);
   assert.match(verifyMacReleaseScript, /Contents\/Helpers\/Daytrace Activity Collector\.app/);
