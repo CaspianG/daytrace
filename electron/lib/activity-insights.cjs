@@ -1,4 +1,8 @@
 const GENERIC_TITLES = /^(?:active window|application|new tab|home|browser|активное окно|приложение|новая вкладка)$/i;
+const CONTEXT_SENSITIVE_APPS = /(?:chrome|edge|firefox|brave|opera|vivaldi|safari|browser|telegram|whatsapp|signal|discord|viber|messenger|chatgpt|claude|perplexity|copilot)/i;
+const REVIEW_UNIQUE_THRESHOLD = 5;
+const REVIEW_OCCURRENCE_THRESHOLD = 12;
+const REVIEW_DURATION_THRESHOLD_MS = 45 * 60_000;
 
 const COMPLETED_PATTERNS = /(?:^|[^\p{L}\p{N}_])(?:done|completed|finished|fixed|resolved|merged|published|deployed|sent|shipped|closed|готово|готов|заверш(?:ено|ил|ена)|исправ(?:лено|ил)|решено|слито|опубликовано|отправлено|закрыто)(?=$|[^\p{L}\p{N}_])/iu;
 const OPEN_PATTERNS = /(?:^|[^\p{L}\p{N}_])(?:todo|draft|pending|review|in progress|follow[- ]?up|question|issue|blocked|waiting|черновик|ожидает|проверить|на проверке|в процессе|вопрос|проблема|заблокирован|доделать)(?=$|[^\p{L}\p{N}_])/iu;
@@ -77,8 +81,20 @@ function annotateSessions(sessions, language = "en") {
   return sessions;
 }
 
+function reviewScope(activity) {
+  const app = clean(activity?.app || activity?.process, 120);
+  return CONTEXT_SENSITIVE_APPS.test(app) ? "context" : "application";
+}
+
+function reviewKey(activity) {
+  const scope = reviewScope(activity);
+  const app = clean(activity?.app || activity?.process, 120).toLocaleLowerCase();
+  const title = scope === "context" ? clean(activity?.title, 160).toLocaleLowerCase() : "";
+  return `${scope}|${app}|${title}`;
+}
+
 function activityId(activity) {
-  const basis = `${Number(activity?.start || 0)}|${clean(activity?.app, 80)}|${clean(activity?.title, 120)}`;
+  const basis = reviewKey(activity);
   let hash = 2166136261;
   for (let index = 0; index < basis.length; index += 1) {
     hash ^= basis.charCodeAt(index);
@@ -88,16 +104,32 @@ function activityId(activity) {
 }
 
 function buildReviewQueue(sessions, language = "en", limit = 80) {
-  return (sessions || [])
+  const grouped = new Map();
+  const candidates = (sessions || [])
     .flatMap((session) => session.activities || [])
     .filter((activity) => activity.intent === "unknown" || Number(activity.intentConfidenceScore ?? confidenceScore(activity.intentConfidence, activity.intentReason)) < 0.55)
-    .sort((a, b) => Number(b.start || 0) - Number(a.start || 0))
-    .slice(0, Math.max(1, Math.min(200, Number(limit) || 80)))
-    .map((activity) => ({
+    .sort((a, b) => Number(b.start || 0) - Number(a.start || 0));
+  for (const activity of candidates) {
+    const key = reviewKey(activity);
+    const current = grouped.get(key);
+    const durationMs = Math.max(0, Number(activity.durationMs || 0));
+    if (current) {
+      current.occurrenceCount += 1;
+      current.durationMs += durationMs;
+      current.firstSeenAt = Math.min(current.firstSeenAt, Number(activity.start || 0));
+      current.lastSeenAt = Math.max(current.lastSeenAt, Number(activity.end || activity.start || 0));
+      current.confidenceScore = Math.min(current.confidenceScore, Number(activity.intentConfidenceScore ?? confidenceScore(activity.intentConfidence, activity.intentReason)));
+      continue;
+    }
+    grouped.set(key, {
       id: activityId(activity),
+      scope: reviewScope(activity),
       start: activity.start,
       end: activity.end,
-      durationMs: activity.durationMs,
+      firstSeenAt: Number(activity.start || 0),
+      lastSeenAt: Number(activity.end || activity.start || 0),
+      durationMs,
+      occurrenceCount: 1,
       app: clean(activity.app, 120),
       title: clean(activity.title, 160),
       observedLabel: observedLabel(activity, language),
@@ -106,7 +138,31 @@ function buildReviewQueue(sessions, language = "en", limit = 80) {
       confidenceScore: Number(activity.intentConfidenceScore ?? confidenceScore(activity.intentConfidence, activity.intentReason)),
       reason: activity.intentReason,
       evidence: evidenceFor(activity, language),
-    }));
+    });
+  }
+  return [...grouped.values()]
+    .sort((a, b) => b.lastSeenAt - a.lastSeenAt)
+    .slice(0, Math.max(1, Math.min(200, Number(limit) || 80)));
+}
+
+function buildReviewBacklog(reviewQueue, settings = {}, now = Date.now()) {
+  const items = Array.isArray(reviewQueue) ? reviewQueue : [];
+  const uniqueCount = items.length;
+  const occurrenceCount = items.reduce((total, item) => total + Math.max(1, Number(item.occurrenceCount || 1)), 0);
+  const durationMs = items.reduce((total, item) => total + Math.max(0, Number(item.durationMs || 0)), 0);
+  const thresholdReached = uniqueCount >= REVIEW_UNIQUE_THRESHOLD
+    || occurrenceCount >= REVIEW_OCCURRENCE_THRESHOLD
+    || durationMs >= REVIEW_DURATION_THRESHOLD_MS;
+  const snoozedUntil = Math.max(0, Number(settings.reviewReminderSnoozedUntil || 0));
+  return {
+    uniqueCount,
+    occurrenceCount,
+    durationMs,
+    thresholdReached,
+    notificationDue: thresholdReached && Number(now) >= snoozedUntil,
+    firstExplanation: !Boolean(settings.reviewLearningExplained),
+    snoozedUntil: snoozedUntil || null,
+  };
 }
 
 function formatCompactDuration(ms, language) {
@@ -193,9 +249,15 @@ function buildDayBrief(sessions, language = "en") {
 
 module.exports = {
   annotateSessions,
+  buildReviewBacklog,
   buildDayBrief,
   buildReviewQueue,
   confidenceScore,
   evidenceFor,
   observedLabel,
+  reviewKey,
+  reviewScope,
+  REVIEW_DURATION_THRESHOLD_MS,
+  REVIEW_OCCURRENCE_THRESHOLD,
+  REVIEW_UNIQUE_THRESHOLD,
 };

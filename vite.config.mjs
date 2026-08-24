@@ -17,6 +17,11 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     allowedHosts: ["terminal.local"],
+    // On Windows a live dev watcher can hold freshly extracted Electron files
+    // open long enough to break electron-builder's atomic staging rename.
+    watch: {
+      ignored: ["**/dist/**", "**/release/**", "**/native/**/bin/**", "**/native/**/obj/**"],
+    },
     warmup: {
       clientFiles: ["./src/main.jsx"],
     },

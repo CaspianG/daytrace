@@ -2,6 +2,14 @@
 
 All notable changes to Daytrace are documented here.
 
+## [0.5.8] - 2026-08-24
+
+- Added a polished three-step RU/EN onboarding for new installs and a one-time versioned walkthrough for every existing user. It explains local privacy, how corrections are remembered, and offers Built-in, Signal pack 1.1, or Semantic model 1.0 without downloading anything silently.
+- Added a low-confidence review coach that appears only after a meaningful backlog: 5 unique contexts, 12 occurrences, or 45 minutes. Users can review now, move directly to the optional local semantic model, or snooze the reminder for seven days.
+- Repeated ambiguous activity is grouped into stable review contexts with occurrence counts and total duration. Browser, messenger, and AI-assistant corrections remain scoped to the exact visible context, while specialized native applications use an application-level rule.
+- Added a one-time explanation that each new context normally needs one decision and the correction is then reused locally. The review queue, Settings badge, guided section navigation, replayable tour, animations, reduced-motion fallback, tests, and localized README screenshots cover the full flow.
+- The local Vite preview now ignores generated desktop packaging folders, preventing its Windows file watcher from racing Electron Builder's atomic staging rename.
+
 ## [0.5.7] - 2026-08-24
 
 - Fixed the macOS permission loop by checking Accessibility through the actual native collector instead of the Electron UI process. The helper now lives under `Daytrace.app/Contents/MacOS`, the app rechecks consent when focus returns, and collector exit code 77 immediately corrects stale UI state.

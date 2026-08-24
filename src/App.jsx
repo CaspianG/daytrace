@@ -34,6 +34,8 @@ const INTENT_LABELS = {
 };
 
 const RETENTION_OPTIONS = [48, 7 * 24, 30 * 24, 90 * 24, 365 * 24];
+const CURRENT_ONBOARDING_VERSION = 2;
+const CONTEXT_SENSITIVE_APPS = /(?:chrome|edge|firefox|brave|opera|vivaldi|safari|browser|telegram|whatsapp|signal|discord|viber|messenger|chatgpt|claude|perplexity|copilot)/i;
 
 function startOfToday(hour, minute) {
   const date = new Date();
@@ -46,12 +48,13 @@ function demoLanguage() {
   return normalizeLanguage(query || navigator.language);
 }
 
-function demoState(language = demoLanguage(), onboardingComplete = true) {
+function demoState(language = demoLanguage(), onboardingComplete = new URLSearchParams(window.location.search).get("onboarding") !== "1") {
   const lang = normalizeLanguage(language);
   const t = translations[lang];
   const params = new URLSearchParams(window.location.search);
   const updatePreview = params.get("update");
   const desktopPreview = params.get("capture") === "desktop";
+  const reviewPreview = params.get("review") === "1";
   const updateStatus = ["available", "downloading", "ready", "installing", "restarting", "installer-opened", "windows-installer-opened", "error"].includes(updatePreview) ? updatePreview : "up-to-date";
   const apps = ["Visual Studio Code", "Google Chrome", "Telegram Desktop", "Visual Studio Code", "Visual Studio Code", "Google Chrome", "Figma", "Telegram Desktop", "Gmail"];
   const focuses = ["development", "planning", "communication", "development", "development", "research", "design", "communication", "communication"];
@@ -63,15 +66,20 @@ function demoState(language = demoLanguage(), onboardingComplete = true) {
     tabCount: apps[index].includes("Chrome") ? (index === 1 ? 7 : 11) : 0, clicks: 4, inputs: 18,
   }));
   const makeSession = (id, from, to, focus, intent) => ({ id, start: activities[from].start, end: activities[to].end, durationMs: activities[to].end - activities[from].start, focus, label: FOCUS_LABELS[lang][focus], intent, intentLabel: INTENT_LABELS[lang][intent], activities: activities.slice(from, to + 1) });
+  const reviewQueue = reviewPreview ? activities.slice(0, 6).map((activity, index) => ({
+    id: `demo-review-${index}`, scope: CONTEXT_SENSITIVE_APPS.test(activity.app) ? "context" : "application", start: activity.start, end: activity.end,
+    firstSeenAt: activity.start - index * 45 * 60_000, lastSeenAt: activity.end, durationMs: (index + 1) * 12 * 60_000, occurrenceCount: index + 2,
+    app: activity.app, title: activity.title, observedLabel: activity.observedLabel, intent: "unknown", confidence: "low", confidenceScore: .28 + index * .03,
+  })) : [];
   return {
-    settings: { trackingEnabled: true, retentionHours: 48, excludePrivateWindows: true, collectWindowTitles: true, collectInputCounts: true, collectBrowserTabCount: true, analysisEngine: "builtin", smartAnalysisEnabled: false, browserCompanionEnabled: false, autoStartEnabled: false, excludedApps: ["1Password", "Bitwarden", "KeePass"], intentRules: [{ id: "demo-friends", match: lang === "ru" ? "Друзья" : "Friends", intent: "personal" }], intentRulesUndo: [], language: lang, onboardingComplete, accessibilityOnboardingDismissed: false },
-    runtime: { platform: updatePreview || desktopPreview ? "win32" : "browser", trackerStatus: "running", accessibilityTrusted: true, autoStartSupported: desktopPreview, autoStartEnabled: false, capabilities: { browserTabCount: Boolean(updatePreview || desktopPreview), browserCompanion: Boolean(updatePreview || desktopPreview), smartAnalysis: true, encryptedBackup: true }, browserCompanion: { running: desktopPreview }, smartAnalysis: { engine: "builtin", installed: true, running: false, version: "built-in", signal: { installed: false, running: false, sizeBytes: 6391, updateAvailable: false, lastResult: { status: "never", candidates: 0, refined: 0, changed: 0 } }, semantic: { installed: false, running: false, downloading: false, progress: 0, sizeBytes: 49821594, version: "1.0.0", languages: ["ru", "en"], lastResult: { status: "never", candidates: 0, refined: 0, changed: 0 } } }, diagnostics: null, update: { status: updateStatus, currentVersion: "0.5.7", latestVersion: updatePreview ? "0.5.8" : "0.5.7", checkedAt: Date.now(), progress: updateStatus === "downloading" ? 64 : ["ready", "installing", "restarting"].includes(updateStatus) ? 100 : 0 } },
+    settings: { trackingEnabled: true, retentionHours: 48, excludePrivateWindows: true, collectWindowTitles: true, collectInputCounts: true, collectBrowserTabCount: true, analysisEngine: "builtin", smartAnalysisEnabled: false, browserCompanionEnabled: false, autoStartEnabled: false, excludedApps: ["1Password", "Bitwarden", "KeePass"], intentRules: [{ id: "demo-friends", match: lang === "ru" ? "Друзья" : "Friends", intent: "personal" }], intentRulesUndo: [], language: lang, onboardingComplete, onboardingVersion: onboardingComplete ? CURRENT_ONBOARDING_VERSION : Number(params.get("onboardingVersion") || 0), accessibilityOnboardingDismissed: false, reviewLearningExplained: false, reviewReminderSnoozedUntil: null, reviewReminderLastCount: 0 },
+    runtime: { platform: updatePreview || desktopPreview ? "win32" : "browser", trackerStatus: "running", accessibilityTrusted: true, autoStartSupported: desktopPreview, autoStartEnabled: false, capabilities: { browserTabCount: Boolean(updatePreview || desktopPreview), browserCompanion: Boolean(updatePreview || desktopPreview), smartAnalysis: true, encryptedBackup: true }, browserCompanion: { running: desktopPreview }, smartAnalysis: { engine: "builtin", installed: true, running: false, version: "built-in", signal: { installed: false, running: false, sizeBytes: 6391, updateAvailable: false, lastResult: { status: "never", candidates: 0, refined: 0, changed: 0 } }, semantic: { installed: false, running: false, downloading: false, progress: 0, sizeBytes: 49821594, version: "1.0.0", languages: ["ru", "en"], lastResult: { status: "never", candidates: 0, refined: 0, changed: 0 } } }, diagnostics: null, update: { status: updateStatus, currentVersion: "0.5.8", latestVersion: updatePreview ? "0.5.9" : "0.5.8", checkedAt: Date.now(), progress: updateStatus === "downloading" ? 64 : ["ready", "installing", "restarting"].includes(updateStatus) ? 100 : 0 } },
     sessions: [
       makeSession("demo-1", 0, 2, "mixed", "work"), makeSession("demo-2", 3, 6, "mixed", "work"), makeSession("demo-3", 7, 8, "communication", "mixed"),
       { id: "demo-break", start: startOfToday(12, 5), end: startOfToday(12, 20), durationMs: 15 * 60_000, focus: "break", label: FOCUS_LABELS[lang].break, intent: "unknown", intentLabel: INTENT_LABELS[lang].unknown, activities: [] },
     ],
     brief: { totalMs: 3 * 60 * 60_000, appCount: 5, narrative: t.demo.brief, themes: activities.slice(0, 3).map((activity) => ({ label: activity.title, app: activity.app, durationMs: activity.durationMs })), completed: [t.demo.completed], openLoops: [t.demo.openLoop], interruptions: [], lowConfidenceCount: 0 },
-    reviewQueue: [], eventCount: 128, retentionCutoff: Date.now() - 48 * 60 * 60_000, historyStartedAt: startOfToday(9, 5), availableDays: [dateKey(Date.now())], dataPath: t.demo.dataPath,
+    reviewQueue, reviewBacklog: { uniqueCount: reviewQueue.length, occurrenceCount: reviewQueue.reduce((total, item) => total + item.occurrenceCount, 0), durationMs: reviewQueue.reduce((total, item) => total + item.durationMs, 0), thresholdReached: reviewQueue.length >= 5, notificationDue: reviewQueue.length >= 5, firstExplanation: true, snoozedUntil: null }, eventCount: 128, retentionCutoff: Date.now() - 48 * 60 * 60_000, historyStartedAt: startOfToday(9, 5), availableDays: [dateKey(Date.now())], dataPath: t.demo.dataPath,
     skills: [
       { id: "morning-dev", title: t.demo.skills[0][0], description: t.demo.skills[0][1], apps: ["Visual Studio Code", "Google Chrome", "Telegram Desktop"], count: 3, duration: t.demo.skills[0][2] },
       { id: "requirements-sync", title: t.demo.skills[1][0], description: t.demo.skills[1][1], apps: ["Telegram Desktop", "Figma", "Gmail"], count: 2, duration: t.demo.skills[1][2] },
@@ -252,7 +260,19 @@ function useDaytrace() {
       else setState((current) => ({ ...current, settings: { ...current.settings, intentRules: current.settings.intentRulesUndo || [], intentRulesUndo: current.settings.intentRules || [] } }));
     },
     async setLanguage(nextLanguage) { const next = normalizeLanguage(nextLanguage); if (window.daytrace) setState(await window.daytrace.setLanguage(next)); else setState(demoState(next, true)); },
-    async completeOnboarding(nextLanguage) { const next = normalizeLanguage(nextLanguage); if (window.daytrace) setState(await window.daytrace.completeOnboarding(next)); else setState(demoState(next, true)); },
+    async completeOnboarding(nextLanguage, analysisEngine = "builtin") {
+      const selection = { language: normalizeLanguage(nextLanguage), analysisEngine };
+      if (window.daytrace) setState(await window.daytrace.completeOnboarding(selection));
+      else setState((current) => {
+        const completed = demoState(selection.language, true);
+        return { ...completed, settings: { ...completed.settings, analysisEngine, smartAnalysisEnabled: analysisEngine !== "builtin" }, runtime: { ...current.runtime, smartAnalysis: { ...current.runtime.smartAnalysis, engine: analysisEngine } } };
+      });
+    },
+    async restartOnboarding() { if (window.daytrace) setState(await window.daytrace.restartOnboarding()); else setState((current) => ({ ...current, settings: { ...current.settings, onboardingVersion: CURRENT_ONBOARDING_VERSION - 1 } })); },
+    async acknowledgeReviewGuidance(action) {
+      if (window.daytrace) setState(await window.daytrace.acknowledgeReviewGuidance(action));
+      else setState((current) => ({ ...current, settings: { ...current.settings, reviewLearningExplained: true, reviewReminderSnoozedUntil: Date.now() + (action === "later" ? 7 : 1) * 24 * 60 * 60_000, reviewReminderLastCount: current.reviewBacklog?.uniqueCount || 0 }, reviewBacklog: { ...current.reviewBacklog, notificationDue: false, firstExplanation: false } }));
+    },
     async deleteAll() { if (window.daytrace) setState(await window.daytrace.deleteAll()); else setState((current) => ({ ...current, sessions: [], eventCount: 0, historyStartedAt: null, availableDays: [] })); },
     async deleteSession(session) { if (window.daytrace) setState(await window.daytrace.deleteSession(session.start, session.end)); else setState((current) => ({ ...current, sessions: current.sessions.filter((item) => item.id !== session.id) })); },
     async ask(question) {
@@ -310,21 +330,102 @@ function useDaytrace() {
   return { state, actions, isDesktop, language };
 }
 
-function Onboarding({ language, onComplete }) {
+function Onboarding({ state, actions, language }) {
+  const queryStep = Number(new URLSearchParams(window.location.search).get("tourStep"));
+  const [step, setStep] = useState(Number.isInteger(queryStep) && queryStep >= 0 && queryStep <= 2 ? queryStep : 0);
   const [selected, setSelected] = useState(normalizeLanguage(language));
+  const [engine, setEngine] = useState(["builtin", "signals", "semantic"].includes(state.settings.analysisEngine) ? state.settings.analysisEngine : "builtin");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const t = translations[selected];
+  const runtime = state.runtime?.smartAnalysis || {};
+  const signal = runtime.signal || {};
+  const semantic = runtime.semantic || {};
+  const returning = Boolean(state.settings.onboardingComplete && Number(state.settings.onboardingVersion || 0) > 0);
+  const semanticSize = semantic.sizeBytes
+    ? `${new Intl.NumberFormat(t.locale, { maximumFractionDigits: 1 }).format(semantic.sizeBytes / (1024 * 1024))} ${t.settings.megabytes}`
+    : t.settings.semanticApproxSize;
+  const modes = [
+    { id: "builtin", icon: Compass, title: t.settings.analysisBuiltin, description: t.settings.analysisBuiltinText, size: t.settings.analysisNoDownload, installed: true },
+    { id: "signals", icon: Robot, title: t.settings.analysisSignals, description: t.settings.analysisSignalsText, size: t.settings.analysisSignalsSize, installed: Boolean(signal.installed) },
+    { id: "semantic", icon: Brain, title: t.settings.analysisSemantic, description: t.settings.analysisSemanticText, size: semanticSize, installed: Boolean(semantic.installed), recommended: true },
+  ];
+  const finish = async (requestedEngine = engine, install = true) => {
+    setBusy(true);
+    setError("");
+    try {
+      let finalEngine = requestedEngine;
+      if (install && requestedEngine === "signals" && !signal.installed) await actions.downloadSmartModel();
+      if (install && requestedEngine === "semantic" && !semantic.installed) await actions.downloadSemanticModel();
+      if (!install && !modes.find((mode) => mode.id === requestedEngine)?.installed) finalEngine = "builtin";
+      await actions.completeOnboarding(selected, finalEngine);
+    } catch {
+      setError(t.onboarding.installError);
+    } finally { setBusy(false); }
+  };
+  const next = () => { setError(""); setStep((value) => Math.min(2, value + 1)); };
+  const back = () => { setError(""); setStep((value) => Math.max(0, value - 1)); };
+  const finishLabel = engine === "semantic" && !semantic.installed
+    ? t.onboarding.installSemantic
+    : engine === "signals" && !signal.installed ? t.onboarding.installSignals : t.onboarding.start;
   return <main className="onboarding-shell">
-    <section className="onboarding-card">
-      <div className="onboarding-logo"><Compass size={36} weight="fill" /></div>
-      <span className="eyebrow">{t.onboarding.eyebrow}</span>
-      <h1>{t.onboarding.title}</h1>
-      <p className="onboarding-subtitle">{t.onboarding.subtitle}</p>
-      <div className="language-grid" role="radiogroup" aria-label={t.onboarding.title}>
-        <button className={selected === "en" ? "selected" : ""} onClick={() => setSelected("en")} role="radio" aria-checked={selected === "en"}><span>EN</span><div><strong>{t.onboarding.english}</strong><small>{t.onboarding.englishDetail}</small></div>{selected === "en" && <Check size={20} weight="bold" />}</button>
-        <button className={selected === "ru" ? "selected" : ""} onClick={() => setSelected("ru")} role="radio" aria-checked={selected === "ru"}><span>RU</span><div><strong>{t.onboarding.russian}</strong><small>{t.onboarding.russianDetail}</small></div>{selected === "ru" && <Check size={20} weight="bold" />}</button>
+    <section className="onboarding-card guided-onboarding-card">
+      <header className="onboarding-topline">
+        <div className="onboarding-logo"><Compass size={34} weight="fill" /></div>
+        <div className="onboarding-progress" aria-label={text(t.onboarding.progress, { current: step + 1, total: 3 })}>
+          {[0, 1, 2].map((item) => <span className={item <= step ? "active" : ""} key={item} />)}
+        </div>
+        <small>{text(t.onboarding.progress, { current: step + 1, total: 3 })}</small>
+      </header>
+      <div className="onboarding-stage" key={`${step}-${selected}`}>
+        {step === 0 && <>
+          <span className="eyebrow">{returning ? t.onboarding.returningEyebrow : t.onboarding.eyebrow}</span>
+          <h1>{returning ? t.onboarding.returningTitle : t.onboarding.title}</h1>
+          <p className="onboarding-subtitle">{returning ? t.onboarding.returningSubtitle : t.onboarding.subtitle}</p>
+          <div className="language-grid" role="radiogroup" aria-label={t.onboarding.languageTitle}>
+            <button className={selected === "en" ? "selected" : ""} onClick={() => setSelected("en")} role="radio" aria-checked={selected === "en"}><span>EN</span><div><strong>{t.onboarding.english}</strong><small>{t.onboarding.englishDetail}</small></div>{selected === "en" && <Check size={20} weight="bold" />}</button>
+            <button className={selected === "ru" ? "selected" : ""} onClick={() => setSelected("ru")} role="radio" aria-checked={selected === "ru"}><span>RU</span><div><strong>{t.onboarding.russian}</strong><small>{t.onboarding.russianDetail}</small></div>{selected === "ru" && <Check size={20} weight="bold" />}</button>
+          </div>
+          <div className="onboarding-facts">
+            <span><EyeSlash size={19} /><strong>{t.onboarding.noScreenshots}</strong></span>
+            <span><Key size={19} /><strong>{t.onboarding.noTypedText}</strong></span>
+            <span><LockKey size={19} /><strong>{t.onboarding.privateExcluded}</strong></span>
+          </div>
+          <div className="onboarding-privacy"><LockKey size={25} /><div><strong>{t.onboarding.privacyTitle}</strong><span>{t.onboarding.privacyText}</span></div></div>
+        </>}
+        {step === 1 && <>
+          <span className="eyebrow">{t.onboarding.learnEyebrow}</span>
+          <h1>{t.onboarding.learnTitle}</h1>
+          <p className="onboarding-subtitle">{t.onboarding.learnSubtitle}</p>
+          <div className="onboarding-flow">
+            <article><span><Eye size={22} /></span><div><strong>{t.onboarding.observeTitle}</strong><p>{t.onboarding.observeText}</p></div></article>
+            <ArrowRight size={18} />
+            <article><span><Brain size={22} /></span><div><strong>{t.onboarding.inferTitle}</strong><p>{t.onboarding.inferText}</p></div></article>
+            <ArrowRight size={18} />
+            <article><span><Sparkle size={22} /></span><div><strong>{t.onboarding.rememberTitle}</strong><p>{t.onboarding.rememberText}</p></div></article>
+          </div>
+          <div className="onboarding-learning-note"><CheckCircle size={23} /><div><strong>{t.onboarding.onceTitle}</strong><span>{t.onboarding.onceText}</span></div></div>
+        </>}
+        {step === 2 && <>
+          <span className="eyebrow">{t.onboarding.modelEyebrow}</span>
+          <h1>{t.onboarding.modelTitle}</h1>
+          <p className="onboarding-subtitle">{t.onboarding.modelSubtitle}</p>
+          <div className="onboarding-model-grid" role="radiogroup" aria-label={t.settings.analysisMode}>
+            {modes.map((mode) => { const Icon = mode.icon; return <button type="button" className={`onboarding-model-card ${engine === mode.id ? "selected" : ""}`} key={mode.id} onClick={() => setEngine(mode.id)} role="radio" aria-checked={engine === mode.id} disabled={busy}><span className="analysis-mode-icon"><Icon size={20} /></span><span><strong>{mode.title}</strong>{mode.recommended && <em>{t.onboarding.recommended}</em>}<small>{mode.description}</small><b>{mode.size}</b></span>{mode.installed && <CheckCircle size={19} />}</button>; })}
+          </div>
+          <div className="onboarding-llm-note"><Info size={20} /><div><strong>{t.onboarding.llmTitle}</strong><span>{t.onboarding.llmText}</span></div></div>
+          {(busy && (semantic.downloading || engine === "semantic")) && <div className="onboarding-download"><span><strong>{t.onboarding.downloading}</strong><small>{text(t.onboarding.downloadProgress, { progress: Math.round(Number(semantic.progress || 0)) })}</small></span><div><i style={{ width: `${Math.max(3, Number(semantic.progress || 0))}%` }} /></div></div>}
+          {error && <div className="onboarding-error" role="alert"><WarningCircle size={19} /><span>{error}</span><button onClick={() => finish("builtin", false)}>{t.onboarding.continueBuiltin}</button></div>}
+        </>}
       </div>
-      <div className="onboarding-privacy"><LockKey size={25} /><div><strong>{t.onboarding.privacyTitle}</strong><span>{t.onboarding.privacyText}</span></div></div>
-      <button className="onboarding-continue" onClick={() => onComplete(selected)}>{t.onboarding.continue}<ArrowRight size={19} /></button>
+      <footer className="onboarding-actions">
+        <button className="onboarding-skip" disabled={busy} onClick={() => finish(state.settings.analysisEngine || "builtin", false)}>{t.onboarding.skip}</button>
+        <span />
+        {step > 0 && <button className="onboarding-back" disabled={busy} onClick={back}><CaretLeft size={18} />{t.onboarding.back}</button>}
+        {step < 2
+          ? <button className="onboarding-continue compact" onClick={next}>{t.onboarding.next}<ArrowRight size={19} /></button>
+          : <button className="onboarding-continue compact" disabled={busy} onClick={() => finish()}>{busy ? <ArrowClockwise className="spin" size={18} /> : <DownloadSimple size={18} />}{busy ? t.onboarding.preparing : finishLabel}</button>}
+      </footer>
     </section>
   </main>;
 }
@@ -391,15 +492,39 @@ function SidebarUpdateStatus({ update, actions, setPage, t }) {
   </button>;
 }
 
+function ReviewCoach({ state, onReview, onModel, onLater, language, t }) {
+  const backlog = state.reviewBacklog || {};
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    if (!backlog.notificationDue) { setVisible(false); return undefined; }
+    const timer = setTimeout(() => setVisible(true), 650);
+    return () => clearTimeout(timer);
+  }, [backlog.notificationDue, backlog.uniqueCount, backlog.occurrenceCount]);
+  if (!visible || !backlog.notificationDue) return null;
+  const firstExplanation = Boolean(backlog.firstExplanation);
+  return <aside className="review-coach" role="status" aria-live="polite">
+    <button className="review-coach-close" onClick={onLater} aria-label={t.reviewCoach.later}><X size={16} /></button>
+    <div className="review-coach-icon"><Sparkle size={23} weight="fill" /></div>
+    <div className="review-coach-copy">
+      <span className="eyebrow">{t.reviewCoach.eyebrow}</span>
+      <h2>{text(t.reviewCoach.title, { count: backlog.uniqueCount })}</h2>
+      <p>{text(t.reviewCoach.text, { occurrences: backlog.occurrenceCount, duration: formatDuration(backlog.durationMs || 0, language) })}</p>
+      {firstExplanation && <div className="review-coach-learning"><CheckCircle size={18} /><span><strong>{t.reviewCoach.onceTitle}</strong>{t.reviewCoach.onceText}</span></div>}
+      <div className="review-coach-actions"><button onClick={onReview}><CheckCircle size={17} />{t.reviewCoach.review}</button><button onClick={onModel}><Brain size={17} />{t.reviewCoach.model}</button><button onClick={onLater}>{t.reviewCoach.later}</button></div>
+    </div>
+  </aside>;
+}
+
 function Sidebar({ page, setPage, state, actions, language, t }) {
   const historyStartedAt = state.historyStartedAt ? new Date(state.historyStartedAt) : null;
   const historyStart = historyStartedAt && Number.isFinite(historyStartedAt.getTime())
     ? text(t.status.historyStart, { time: new Intl.DateTimeFormat(t.locale, { dateStyle: "short", timeStyle: "short" }).format(historyStartedAt) })
     : t.status.historyEmpty;
   const update = state.runtime?.update || {};
+  const reviewCount = state.reviewBacklog?.notificationDue ? Number(state.reviewBacklog.uniqueCount || 0) : 0;
   return <aside className="sidebar">
     <div className="brand-mark"><Compass size={29} weight="fill" /></div>
-    <nav className="main-nav" aria-label={language === "ru" ? "Разделы" : "Sections"}>{NAVIGATION.map(({ id, icon: Icon, separated }) => <button key={id} className={`${page === id ? "active" : ""} ${separated ? "separated" : ""}`} onClick={() => setPage(id)}><Icon size={25} weight={page === id ? "fill" : "regular"} /><span>{t.nav[id]}</span></button>)}</nav>
+    <nav className="main-nav" aria-label={language === "ru" ? "Разделы" : "Sections"}>{NAVIGATION.map(({ id, icon: Icon, separated }) => <button key={id} className={`${page === id ? "active" : ""} ${separated ? "separated" : ""}`} onClick={() => setPage(id)}><Icon size={25} weight={page === id ? "fill" : "regular"} /><span>{t.nav[id]}</span>{id === "settings" && reviewCount > 0 && <em className="nav-review-count" aria-label={text(t.reviewCoach.navCount, { count: reviewCount })}>{reviewCount}</em>}</button>)}</nav>
     <div className="sidebar-status"><div className="status-row"><span className={`status-dot ${state.settings.trackingEnabled ? "on" : "off"}`} /><span>{state.settings.trackingEnabled ? t.common.local : t.status.paused}</span></div><div className="status-row muted"><Database size={18} /><span>{text(t.status.retention, { period: formatRetention(state.settings.retentionHours, t) })}</span></div><div className="expiry">{historyStart}</div></div>
     <SidebarUpdateStatus update={update} actions={actions} setPage={setPage} t={t} />
     <button className={`tracking-button ${state.settings.trackingEnabled ? "pause" : "resume"}`} onClick={() => actions.setTracking(!state.settings.trackingEnabled)}>{state.settings.trackingEnabled ? <Pause size={22} weight="fill" /> : <Play size={22} weight="fill" />}{state.settings.trackingEnabled ? t.status.pause : t.status.resume}</button>
@@ -581,7 +706,7 @@ function HistoryPage({ state, actions, setPage, selectedDay, language, t }) {
     setLoadedDay(await actions.loadDay(selectedDay));
   };
   const reviewCount = loadedDay?.reviewQueue?.length || 0;
-  return <div className="history-page"><QuestionBar t={t} onAsk={async (question) => setResult(await actions.ask(question))} />{showUndo && <div className="undo-banner"><Check size={17} /><span>{t.intent.ruleApplied}</span><button onClick={undoRule}><ArrowCounterClockwise size={16} /> {t.intent.undo}</button><button className="icon-button" onClick={() => setShowUndo(false)} aria-label={t.common.cancel}><X size={15} /></button></div>}<div className="history-layout"><main className="timeline-column"><DayOverview stats={stats} language={language} t={t} capabilities={state.runtime?.capabilities} />{reviewCount > 0 && <button className="review-banner" onClick={() => setPage("settings")}><WarningCircle size={18} /><span><strong>{text(t.intent.reviewCount, { count: reviewCount })}</strong><small>{t.intent.reviewHint}</small></span><ArrowRight size={17} /></button>}<div className="section-title timeline-title"><h2>{t.history.title}</h2><span>{t.history.newestFirst}</span></div>{sessions.length ? <div className="timeline reverse-timeline">{sessions.map((session) => <Session key={session.id} session={session} onDelete={removeSession} onClassify={classify} language={language} t={t} />)}</div> : <div className="empty-state"><Clock size={34} /><h3>{t.history.emptyTitle}</h3><p>{t.history.emptyText}</p><button onClick={() => setPage("settings")}>{t.history.checkSettings} <ArrowRight size={17} /></button></div>}</main><Summary result={result} sessions={sessions} stats={stats} brief={loadedDay?.brief || state.brief} language={language} t={t} /></div><RulePreviewDialog preview={rulePreview} busy={applyingRule} onConfirm={confirmRule} onCancel={() => setRulePreview(null)} language={language} t={t} /></div>;
+  return <div className="history-page"><QuestionBar t={t} onAsk={async (question) => setResult(await actions.ask(question))} />{showUndo && <div className="undo-banner"><Check size={17} /><span>{t.intent.ruleApplied}</span><button onClick={undoRule}><ArrowCounterClockwise size={16} /> {t.intent.undo}</button><button className="icon-button" onClick={() => setShowUndo(false)} aria-label={t.common.cancel}><X size={15} /></button></div>}<div className="history-layout"><main className="timeline-column"><DayOverview stats={stats} language={language} t={t} capabilities={state.runtime?.capabilities} />{reviewCount > 0 && <button className="review-banner" onClick={() => setPage("settings", "review")}><WarningCircle size={18} /><span><strong>{text(t.intent.reviewCount, { count: reviewCount })}</strong><small>{t.intent.reviewHint}</small></span><ArrowRight size={17} /></button>}<div className="section-title timeline-title"><h2>{t.history.title}</h2><span>{t.history.newestFirst}</span></div>{sessions.length ? <div className="timeline reverse-timeline">{sessions.map((session) => <Session key={session.id} session={session} onDelete={removeSession} onClassify={classify} language={language} t={t} />)}</div> : <div className="empty-state"><Clock size={34} /><h3>{t.history.emptyTitle}</h3><p>{t.history.emptyText}</p><button onClick={() => setPage("settings")}>{t.history.checkSettings} <ArrowRight size={17} /></button></div>}</main><Summary result={result} sessions={sessions} stats={stats} brief={loadedDay?.brief || state.brief} language={language} t={t} /></div><RulePreviewDialog preview={rulePreview} busy={applyingRule} onConfirm={confirmRule} onCancel={() => setRulePreview(null)} language={language} t={t} /></div>;
 }
 
 function AskPage({ actions, setPage, language, retentionHours, t }) {
@@ -637,8 +762,8 @@ function RetentionSettings({ hours, actions, pending, run, t }) {
   return <div className="retention-settings"><div className="retention-copy"><Database size={21} /><span><strong>{t.settings.retentionTitle}</strong><small>{t.settings.retentionText}</small></span></div><div className="retention-options" role="radiogroup" aria-label={t.settings.retentionTitle}>{RETENTION_OPTIONS.map((option) => <button type="button" key={option} className={hours === option ? "active" : ""} role="radio" aria-checked={hours === option} disabled={Boolean(pending)} onClick={() => run("retention", () => actions.setRetention(option))}>{formatRetention(option, t)}</button>)}</div><p>{t.settings.retentionWarning}</p></div>;
 }
 
-function ReviewQueue({ items, onClassify, t }) {
-  return <div className="review-queue"><div className="review-heading"><div><strong>{t.settings.reviewTitle}</strong><p>{t.settings.reviewText}</p></div><span>{items.length}</span></div>{items.length ? <div className="review-list">{items.slice(0, 8).map((item) => <article key={item.id}><div><strong>{item.observedLabel || item.title || item.app}</strong><small>{item.app} · {text(t.intent.confidence, { percent: Math.round(Number(item.confidenceScore || 0) * 100) })}</small></div><select value={item.intent || "unknown"} onChange={(event) => onClassify(item, event.target.value)} aria-label={t.intent.classify}>{Object.entries(t.intent.labels).filter(([key]) => key !== "mixed").map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select></article>)}</div> : <div className="review-empty"><CheckCircle size={20} /><span>{t.settings.reviewEmpty}</span></div>}</div>;
+function ReviewQueue({ items, onClassify, learningExplained, onAcknowledge, t }) {
+  return <div className="review-queue" id="review-settings"><div className="review-heading"><div><strong>{t.settings.reviewTitle}</strong><p>{t.settings.reviewText}</p></div><span>{items.length}</span></div>{items.length > 0 && !learningExplained && <div className="review-learning-note"><Sparkle size={20} /><span><strong>{t.settings.reviewLearnTitle}</strong><small>{t.settings.reviewLearnText}</small></span><button onClick={onAcknowledge}>{t.settings.reviewUnderstood}</button></div>}{items.length ? <div className="review-list">{items.slice(0, 8).map((item) => <article key={item.id}><div><strong>{item.observedLabel || item.title || item.app}</strong><small>{item.app} · {text(t.intent.confidence, { percent: Math.round(Number(item.confidenceScore || 0) * 100) })}</small><em>{text(t.settings.reviewOccurrences, { count: item.occurrenceCount || 1 })}</em></div><select value={item.intent || "unknown"} onChange={(event) => { onAcknowledge?.(); onClassify(item, event.target.value); }} aria-label={t.intent.classify}>{Object.entries(t.intent.labels).filter(([key]) => key !== "mixed").map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select></article>)}</div> : <div className="review-empty"><CheckCircle size={20} /><span>{t.settings.reviewEmpty}</span></div>}</div>;
 }
 
 function SmartAnalysisSettings({ state, actions, pending, run, t }) {
@@ -665,6 +790,7 @@ function SmartAnalysisSettings({ state, actions, pending, run, t }) {
     {engine === "semantic" && <div className="analysis-detail"><div className="feature-status"><span className={`status-dot ${semantic.installed ? "on" : "off"}`} />{semantic.installed ? text(t.settings.semanticInstalled, { version: semantic.version || "1.0", size: semanticSize }) : text(t.settings.semanticNotInstalled, { size: semanticSize })}{(semantic.downloading || semantic.running) && <em>{semantic.downloading ? t.settings.semanticDownloading : t.settings.smartRunning}</em>}</div>{(semantic.downloading || semantic.running) && <div className="analysis-progress" aria-label={t.settings.semanticProgress}><span style={{ width: `${Math.max(2, Number(semantic.progress || 0))}%` }} /></div>}<div className="feature-actions">{!semantic.installed && <button className="secondary-button" disabled={Boolean(pending) || semantic.downloading} onClick={() => run("semantic-download", actions.downloadSemanticModel)}><DownloadSimple size={17} /> {t.settings.semanticDownload}</button>}{semantic.installed && <button className="secondary-button" disabled={Boolean(pending) || semantic.running} onClick={() => run("semantic-run", actions.runSelectedAnalysis)}><Sparkle size={17} /> {t.settings.smartRun}</button>}{semantic.installed && <button className="text-button" disabled={Boolean(pending) || semantic.running} onClick={() => run("semantic-remove", actions.removeSemanticModel)}>{t.settings.semanticRemove}</button>}</div>{semantic.error && <small className="analysis-error">{semantic.error}</small>}<p>{t.settings.semanticPrivacy}</p></div>}
     {engine === "builtin" && <p className="analysis-footnote">{t.settings.analysisBuiltinPrivacy}</p>}
     {lastResult.status && lastResult.status !== "never" && <div className="analysis-result"><CheckCircle size={18} /><span><strong>{t.settings.analysisLastResult}</strong><small>{text(t.settings.analysisResultMetrics, { candidates: lastResult.candidates || 0, refined: lastResult.refined || 0, changed: lastResult.changed || 0 })}</small></span></div>}
+    <div className="analysis-tour-link"><span><strong>{t.settings.tourTitle}</strong><small>{t.settings.tourText}</small></span><button className="secondary-button" disabled={Boolean(pending)} onClick={() => run("restart-onboarding", actions.restartOnboarding)}><Compass size={17} />{t.settings.tourAction}</button></div>
   </div>;
 }
 
@@ -694,11 +820,22 @@ function DataPortability({ actions, pending, run, t }) {
   return <div className="data-portability"><div className="portability-actions"><button className="secondary-button" disabled={Boolean(pending)} onClick={() => exportFile("json")}><UploadSimple size={17} /> JSON</button><button className="secondary-button" disabled={Boolean(pending)} onClick={() => exportFile("csv")}><FileCsv size={17} /> CSV</button><button className="secondary-button" disabled={Boolean(pending)} onClick={() => setMode("backup")}><LockKey size={17} /> {t.settings.backup}</button><button className="secondary-button" disabled={Boolean(pending)} onClick={() => setMode("restore")}><ArrowCounterClockwise size={17} /> {t.settings.restore}</button></div><p>{t.settings.backupText}</p>{mode && <div className="passphrase-panel"><Key size={20} /><div><strong>{mode === "backup" ? t.settings.backupTitle : t.settings.restoreTitle}</strong><input autoFocus type="password" value={passphrase} onChange={(event) => setPassphrase(event.target.value)} onKeyDown={(event) => event.key === "Enter" && submit()} placeholder={t.settings.passphrase} minLength={8} maxLength={512} /><small>{t.settings.passphraseText}</small></div><button className="primary-update-button" onClick={submit} disabled={passphrase.length < 8 || Boolean(pending)}>{mode === "backup" ? t.settings.backup : t.settings.restore}</button><button className="icon-button" onClick={() => { setMode(""); setPassphrase(""); }} aria-label={t.common.cancel}><X size={17} /></button></div>}{result && <div className="portability-result"><Check size={17} /> {text(t.settings.fileReady, { path: result })}</div>}</div>;
 }
 
-function SettingsPage({ state, actions, isDesktop, language, t }) {
+function SettingsPage({ state, actions, isDesktop, language, focusSection, t }) {
   const [confirming, setConfirming] = useState(false);
   const [pending, setPending] = useState("");
   const [actionError, setActionError] = useState("");
   const [rulePreview, setRulePreview] = useState(null);
+  useEffect(() => {
+    if (!focusSection) return undefined;
+    let pulseTimer;
+    const timer = setTimeout(() => {
+      const target = document.getElementById(focusSection === "smart" ? "smart-analysis-settings" : "review-settings");
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+      target?.classList.add("settings-focus-pulse");
+      pulseTimer = setTimeout(() => target?.classList.remove("settings-focus-pulse"), 1_500);
+    }, 80);
+    return () => { clearTimeout(timer); clearTimeout(pulseTimer); };
+  }, [focusSection]);
   const run = async (key, action) => {
     setPending(key);
     setActionError("");
@@ -729,7 +866,7 @@ function SettingsPage({ state, actions, isDesktop, language, t }) {
     if (intent === activity.intent) return;
     const app = String(activity.app || "").trim();
     const title = String(activity.title || "").trim();
-    const contextSensitive = /(?:chrome|edge|firefox|brave|opera|vivaldi|safari|telegram|whatsapp|signal|discord|browser)/i.test(app);
+    const contextSensitive = CONTEXT_SENSITIVE_APPS.test(app);
     const scope = contextSensitive ? "context" : "application";
     const rules = (state.settings.intentRules || []).filter((rule) => !(rule.scope === scope && String(rule.app || "").toLowerCase() === app.toLowerCase() && (scope !== "context" || String(rule.title || "").toLowerCase() === title.toLowerCase())));
     void proposeRules([...rules, { id: `${Date.now()}`, scope, app, title: scope === "context" ? title : undefined, match: scope === "context" ? title : app, intent }]);
@@ -792,9 +929,9 @@ function SettingsPage({ state, actions, isDesktop, language, t }) {
         <h3>{t.settings.analysis}</h3>
         <IntentRuleEditor rules={state.settings.intentRules || []} onPropose={proposeRules} t={t} />
         {(state.settings.intentRulesUndo || []).length > 0 && <button className="secondary-button rule-undo" disabled={Boolean(pending)} onClick={() => run("undo-rules", actions.undoIntentRules)}><ArrowCounterClockwise size={17} /> {t.intent.undoLastRuleChange}</button>}
-        <ReviewQueue items={state.reviewQueue || []} onClassify={classifyReview} t={t} />
+        <ReviewQueue items={state.reviewQueue || []} onClassify={classifyReview} learningExplained={Boolean(state.settings.reviewLearningExplained)} onAcknowledge={() => actions.acknowledgeReviewGuidance("understood")} t={t} />
       </div>
-      <div className="settings-section smart-analysis-section">
+      <div className="settings-section smart-analysis-section" id="smart-analysis-settings">
         <h3>{t.settings.smartAnalysis}</h3>
         <SmartAnalysisSettings state={state} actions={actions} pending={pending} run={run} t={t} />
       </div>
@@ -835,6 +972,7 @@ function SettingsPage({ state, actions, isDesktop, language, t }) {
 export function App() {
   const { state, actions, isDesktop, language } = useDaytrace();
   const [page, setPage] = useState("history");
+  const [settingsFocus, setSettingsFocus] = useState("");
   const [selectedDay, setSelectedDay] = useState(() => startOfLocalDay(Date.now()));
   const t = translations[language];
   const today = startOfLocalDay(Date.now());
@@ -842,9 +980,10 @@ export function App() {
   const date = useMemo(() => formatDay(displayDay, language), [displayDay, language]);
   const isToday = displayDay === today;
   const firstRetainedDay = startOfLocalDay(state.retentionCutoff);
+  const navigate = (nextPage, focus = "") => { setPage(nextPage); setSettingsFocus(nextPage === "settings" ? focus : ""); };
   useEffect(() => { document.documentElement.lang = language; document.title = "Daytrace"; }, [language]);
   useEffect(() => { if (selectedDay < firstRetainedDay) setSelectedDay(firstRetainedDay); }, [firstRetainedDay, selectedDay]);
-  if (!state.settings.onboardingComplete) return <Onboarding language={language} onComplete={actions.completeOnboarding} />;
+  if (!state.settings.onboardingComplete || Number(state.settings.onboardingVersion || 0) < CURRENT_ONBOARDING_VERSION) return <Onboarding state={state} actions={actions} language={language} />;
   if (isDesktop && state.runtime?.platform === "darwin" && !state.runtime.accessibilityTrusted && !state.settings.accessibilityOnboardingDismissed) return <MacPermissionOnboarding actions={actions} onContinue={actions.dismissAccessibilityOnboarding} runtime={state.runtime} t={t} />;
-  return <div className="app-shell"><Sidebar page={page} setPage={setPage} state={state} actions={actions} language={language} t={t} /><div className="app-main"><header className="date-header"><div className="date-copy" key={`${displayDay}-${language}`}><h1>{isToday ? `${t.common.today}, ${date.date}` : date.date}</h1><span>{date.weekday}</span></div>{page === "history" && <DateNavigation selectedDay={selectedDay} minDay={firstRetainedDay} maxDay={today} availableDays={state.availableDays || []} language={language} onSelect={setSelectedDay} t={t} />}</header>{page === "history" && <HistoryPage key={selectedDay} state={state} actions={actions} setPage={setPage} selectedDay={selectedDay} language={language} t={t} />}{page === "ask" && <AskPage actions={actions} setPage={setPage} language={language} retentionHours={state.settings.retentionHours} t={t} />}{page === "skills" && <SkillsPage state={state} actions={actions} t={t} />}{page === "settings" && <SettingsPage state={state} actions={actions} isDesktop={isDesktop} language={language} t={t} />}{page === "exclusions" && <ExclusionsPage state={state} actions={actions} t={t} />}</div></div>;
+  return <><div className="app-shell"><Sidebar page={page} setPage={navigate} state={state} actions={actions} language={language} t={t} /><div className="app-main"><header className="date-header"><div className="date-copy" key={`${displayDay}-${language}`}><h1>{isToday ? `${t.common.today}, ${date.date}` : date.date}</h1><span>{date.weekday}</span></div>{page === "history" && <DateNavigation selectedDay={selectedDay} minDay={firstRetainedDay} maxDay={today} availableDays={state.availableDays || []} language={language} onSelect={setSelectedDay} t={t} />}</header>{page === "history" && <HistoryPage key={selectedDay} state={state} actions={actions} setPage={navigate} selectedDay={selectedDay} language={language} t={t} />}{page === "ask" && <AskPage actions={actions} setPage={navigate} language={language} retentionHours={state.settings.retentionHours} t={t} />}{page === "skills" && <SkillsPage state={state} actions={actions} t={t} />}{page === "settings" && <SettingsPage state={state} actions={actions} isDesktop={isDesktop} language={language} focusSection={settingsFocus} t={t} />}{page === "exclusions" && <ExclusionsPage state={state} actions={actions} t={t} />}</div></div><ReviewCoach state={state} language={language} t={t} onReview={async () => { await actions.acknowledgeReviewGuidance("review"); navigate("settings", "review"); }} onModel={async () => { await actions.acknowledgeReviewGuidance("model"); navigate("settings", "smart"); }} onLater={() => actions.acknowledgeReviewGuidance("later")} /></>;
 }

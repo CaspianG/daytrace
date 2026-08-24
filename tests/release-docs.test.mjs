@@ -24,6 +24,7 @@ const windowsTrackerBuild = fs.readFileSync(path.join(root, "scripts", "build-wi
 const windowsUpdateService = fs.readFileSync(path.join(root, "electron", "lib", "windows-update-service.cjs"), "utf8");
 const packagedWindowsSmoke = fs.readFileSync(path.join(root, "scripts", "run-packaged-windows-smoke.cjs"), "utf8");
 const windowsInstallerInclude = fs.readFileSync(path.join(root, "build", "installer.nsh"), "utf8");
+const viteConfig = fs.readFileSync(path.join(root, "vite.config.mjs"), "utf8");
 
 test("release metadata and both READMEs name the same current version", () => {
   const version = pkg.version;
@@ -56,6 +57,13 @@ test("Windows native collector remains self-contained with a lean fast-start pub
   assert.equal(pkg.build.win.extraResources[0].from, "native/windows-tracker/bin/Release/daytrace-win-x64/");
   assert.deepEqual(pkg.build.electronLanguages, ["en-US", "ru"]);
   assert.match(pkg.scripts["dist:win"], /electron-builder[\s\S]*npm run test:packaged:win/);
+});
+
+test("local preview cannot lock generated desktop packaging folders", () => {
+  assert.match(viteConfig, /watch:\s*\{/);
+  assert.match(viteConfig, /\*\*\/release\/\*\*/);
+  assert.match(viteConfig, /\*\*\/dist\/\*\*/);
+  assert.match(viteConfig, /\*\*\/native\/\*\*\/bin\/\*\*/);
 });
 
 test("Windows installer offers the documented Desktop shortcut choice and cleans native-host registration", () => {

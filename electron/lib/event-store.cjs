@@ -4,7 +4,9 @@ const { shouldRecord } = require("./privacy.cjs");
 const { sessionize } = require("./sessionizer.cjs");
 const { answerQuestion, questionWindow, suggestSkills } = require("./local-answer.cjs");
 const { normalizeIntentRules } = require("./intent-classifier.cjs");
-const { buildDayBrief, buildReviewQueue } = require("./activity-insights.cjs");
+const { buildDayBrief, buildReviewBacklog, buildReviewQueue } = require("./activity-insights.cjs");
+
+const CURRENT_ONBOARDING_VERSION = 2;
 
 const DEFAULT_SETTINGS = {
   trackingEnabled: true,
@@ -23,7 +25,11 @@ const DEFAULT_SETTINGS = {
   browserCompanionEnabled: false,
   language: "en",
   onboardingComplete: false,
+  onboardingVersion: 0,
   accessibilityOnboardingDismissed: false,
+  reviewLearningExplained: false,
+  reviewReminderSnoozedUntil: null,
+  reviewReminderLastCount: 0,
 };
 
 const MIN_RETENTION_HOURS = 48;
@@ -63,6 +69,11 @@ function normalizeAnalysisEngine(value, fallback = "builtin") {
   return ["builtin", "signals", "semantic"].includes(fallback) ? fallback : "builtin";
 }
 
+function normalizeOptionalTimestamp(value) {
+  const timestamp = Math.round(Number(value));
+  return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : null;
+}
+
 function normalizeSettings(value, defaults = DEFAULT_SETTINGS) {
   const source = value && typeof value === "object" ? value : {};
   const merged = { ...defaults, ...source };
@@ -70,6 +81,13 @@ function normalizeSettings(value, defaults = DEFAULT_SETTINGS) {
     ? source.analysisEngine
     : normalizeBoolean(source.smartAnalysisEnabled, defaults.smartAnalysisEnabled) ? "signals" : defaults.analysisEngine;
   const analysisEngine = normalizeAnalysisEngine(migratedEngine, defaults.analysisEngine);
+  const onboardingComplete = normalizeBoolean(merged.onboardingComplete, defaults.onboardingComplete);
+  const onboardingVersionValue = Object.hasOwn(source, "onboardingVersion")
+    ? Math.floor(Number(source.onboardingVersion))
+    : Number.NaN;
+  const onboardingVersion = Number.isFinite(onboardingVersionValue) && onboardingVersionValue >= 0
+    ? Math.min(100, onboardingVersionValue)
+    : onboardingComplete ? 1 : 0;
   return {
     trackingEnabled: normalizeBoolean(merged.trackingEnabled, defaults.trackingEnabled),
     retentionHours: normalizeRetentionHours(merged.retentionHours, defaults.retentionHours),
@@ -86,8 +104,12 @@ function normalizeSettings(value, defaults = DEFAULT_SETTINGS) {
     smartAnalysisEnabled: analysisEngine !== "builtin",
     browserCompanionEnabled: normalizeBoolean(merged.browserCompanionEnabled, defaults.browserCompanionEnabled),
     language: normalizeLanguage(merged.language),
-    onboardingComplete: normalizeBoolean(merged.onboardingComplete, defaults.onboardingComplete),
+    onboardingComplete,
+    onboardingVersion,
     accessibilityOnboardingDismissed: normalizeBoolean(merged.accessibilityOnboardingDismissed, defaults.accessibilityOnboardingDismissed),
+    reviewLearningExplained: normalizeBoolean(merged.reviewLearningExplained, defaults.reviewLearningExplained),
+    reviewReminderSnoozedUntil: normalizeOptionalTimestamp(merged.reviewReminderSnoozedUntil),
+    reviewReminderLastCount: Math.max(0, Math.min(200, Math.floor(Number(merged.reviewReminderLastCount)) || 0)),
   };
 }
 
@@ -483,11 +505,13 @@ class EventStore {
     const analysisStart = Math.max(now - 48 * 60 * 60_000, retentionCutoff);
     const events = this.loadEventsRange(analysisStart, now + 1);
     const sessions = sessionize(events, now, this.settings.language, this.analysisRules());
+    const reviewQueue = buildReviewQueue(sessions, this.settings.language);
     this.stateCache = {
       settings: this.settings,
       sessions,
       brief: buildDayBrief(sessions, this.settings.language),
-      reviewQueue: buildReviewQueue(sessions, this.settings.language),
+      reviewQueue,
+      reviewBacklog: buildReviewBacklog(reviewQueue, this.settings, now),
       eventCount: events.length,
       lastEventAt: events.length ? events.at(-1).at : null,
       skills: suggestSkills(events, new Date(), this.settings.language, this.analysisRules()),
@@ -530,4 +554,4 @@ class EventStore {
   }
 }
 
-module.exports = { DEFAULT_SETTINGS, EventStore, normalizeAnalysisEngine, normalizeExcludedApps, normalizeLanguage, normalizeRetentionHours, normalizeSettings };
+module.exports = { CURRENT_ONBOARDING_VERSION, DEFAULT_SETTINGS, EventStore, normalizeAnalysisEngine, normalizeExcludedApps, normalizeLanguage, normalizeRetentionHours, normalizeSettings };

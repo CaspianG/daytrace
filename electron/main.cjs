@@ -6,7 +6,7 @@ const { spawn } = require("node:child_process");
 const readline = require("node:readline");
 const { Readable, Transform } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
-const { EventStore, normalizeAnalysisEngine } = require("./lib/event-store.cjs");
+const { CURRENT_ONBOARDING_VERSION, EventStore, normalizeAnalysisEngine } = require("./lib/event-store.cjs");
 const { createAccessibilityService } = require("./lib/accessibility-service.cjs");
 const { getMacInstallInfo } = require("./lib/mac-install-service.cjs");
 const { confirmMacUpdateReady, findStaleMacDuplicates, getMacUpdateReadyRequest, prepareMacUpdate } = require("./lib/mac-update-service.cjs");
@@ -94,6 +94,8 @@ const RELEASES_API = "https://api.github.com/repos/CaspianG/daytrace/releases/la
 const RELEASES_FEED = "https://github.com/CaspianG/daytrace/releases.atom";
 const UPDATE_INTERVAL_MS = 6 * 60 * 60_000;
 const OFFLINE_RETRY_MS = 30 * 60_000;
+const REVIEW_ACTION_SNOOZE_MS = 24 * 60 * 60_000;
+const REVIEW_LATER_SNOOZE_MS = 7 * 24 * 60 * 60_000;
 const RENDERER_FILE = path.join(__dirname, "..", "dist", "client", "index.html");
 const DEV_RENDERER_ORIGIN = "http://127.0.0.1:5173";
 const USE_LOCAL_RENDERER = app.isPackaged || SMOKE_TEST;
@@ -786,7 +788,33 @@ function registerIpc() {
   handleIpc("daytrace:set-intent-rules", (rules) => store.applyIntentRules(Array.isArray(rules) ? rules : []));
   handleIpc("daytrace:undo-intent-rules", () => store.undoIntentRules());
   handleIpc("daytrace:set-language", (language) => { store.updateSettings({ language: String(language || "").toLowerCase().startsWith("ru") ? "ru" : "en" }); if (tray) tray.setToolTip(mainText().tooltip); updateTrayMenu(); return state(); });
-  handleIpc("daytrace:complete-onboarding", (language) => { store.updateSettings({ language: String(language || "").toLowerCase().startsWith("ru") ? "ru" : "en", onboardingComplete: true }); updateTrayMenu(); return state(); });
+  handleIpc("daytrace:complete-onboarding", (selection) => {
+    const input = selection && typeof selection === "object" ? selection : { language: selection };
+    const language = String(input.language || "").toLowerCase().startsWith("ru") ? "ru" : "en";
+    const analysisEngine = normalizeAnalysisEngine(input.analysisEngine || store.settings.analysisEngine);
+    if (analysisEngine === "signals" && !smartAnalysis?.status().installed) throw new Error("Install the signal pack before selecting it during onboarding");
+    if (analysisEngine === "semantic" && !semanticAnalysis?.status().installed) throw new Error("Install the semantic model before selecting it during onboarding");
+    store.updateSettings({ language, analysisEngine, onboardingComplete: true, onboardingVersion: CURRENT_ONBOARDING_VERSION });
+    updateTrayMenu();
+    if (analysisEngine === "signals") setTimeout(() => void runSmartAnalysis(true).catch(() => {}), 50).unref();
+    if (analysisEngine === "semantic") setTimeout(requestSemanticAnalysis, 50).unref();
+    return state();
+  });
+  handleIpc("daytrace:restart-onboarding", () => {
+    store.updateSettings({ onboardingVersion: Math.max(0, CURRENT_ONBOARDING_VERSION - 1) });
+    return state();
+  });
+  handleIpc("daytrace:acknowledge-review-guidance", (action) => {
+    const normalized = ["review", "model", "later", "understood"].includes(String(action)) ? String(action) : "later";
+    const delay = normalized === "later" ? REVIEW_LATER_SNOOZE_MS : REVIEW_ACTION_SNOOZE_MS;
+    const backlog = store.state().reviewBacklog || {};
+    store.updateSettings({
+      reviewLearningExplained: true,
+      reviewReminderSnoozedUntil: Date.now() + delay,
+      reviewReminderLastCount: Math.max(0, Number(backlog.uniqueCount || 0)),
+    });
+    return state();
+  });
   handleIpc("daytrace:delete-all", () => { store.deleteAll(); return state(); });
   handleIpc("daytrace:delete-session", (start, end) => { store.deleteRange(start, end); return state(); });
   handleIpc("daytrace:export-skill", (skill) => store.exportSkill(skill));
