@@ -65,9 +65,22 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with: { path: release, merge-multiple: true }
       - name: Stage the optional version-pinned local classifier pack
-        run: cp models/daytrace-smart-v1.json models/daytrace-smart-v1.json.sha256 release/
+        run: |
+          cp models/daytrace-smart-v1.json models/daytrace-smart-v1.json.sha256 release/
+          cp models/semantic/config.json release/daytrace-semantic-ru-config.json
+          cp models/semantic/tokenizer.json release/daytrace-semantic-ru-tokenizer.json
+          cp models/semantic/tokenizer_config.json release/daytrace-semantic-ru-tokenizer-config.json
+          cp models/semantic/special_tokens_map.json release/daytrace-semantic-ru-special-tokens.json
+          cp models/semantic/onnx/model_quantized.onnx release/daytrace-semantic-ru-int8.onnx
+          cp models/semantic/LICENSE.txt release/daytrace-semantic-ru-LICENSE.txt
+          cp models/semantic-en/config.json release/daytrace-semantic-en-config.json
+          cp models/semantic-en/tokenizer.json release/daytrace-semantic-en-tokenizer.json
+          cp models/semantic-en/tokenizer_config.json release/daytrace-semantic-en-tokenizer-config.json
+          cp models/semantic-en/special_tokens_map.json release/daytrace-semantic-en-special-tokens.json
+          cp models/semantic-en/onnx/model_quantized.onnx release/daytrace-semantic-en-int8.onnx
+          cp models/semantic-en/LICENSE.txt release/daytrace-semantic-en-LICENSE.txt
       - name: Publish SHA-256 manifest for verified in-app updates
-        run: cd release && sha256sum Daytrace-* > SHA256SUMS.txt
+        run: cd release && sha256sum Daytrace-* daytrace-* > SHA256SUMS.txt
       - uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
           generate_release_notes: true

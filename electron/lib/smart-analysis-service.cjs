@@ -5,7 +5,8 @@ const { Worker } = require("node:worker_threads");
 const { loadModel } = require("./smart-analysis-worker.cjs");
 
 const MODEL_NAME = "daytrace-smart-v1.json";
-const MODEL_SHA256 = "e4174c17c689e2dcf2fe427f6544917581cb0c502fe00b5d6498342577dc1e35";
+const MODEL_VERSION = "1.1.0";
+const MODEL_SHA256 = "5cae2963db2fd88ccac1117a789d5bf3b78c0d63caf6273d55c9e509cf7e1beb";
 const MAX_MODEL_BYTES = 2 * 1024 * 1024;
 
 function modelUrlsForVersion(version) {
@@ -30,6 +31,17 @@ function parseChecksum(text) {
   return match[1].toLowerCase();
 }
 
+function isVersionOlder(version, currentVersion = MODEL_VERSION) {
+  const parse = (value) => /^\d+\.\d+\.\d+$/.test(String(value || "")) ? String(value).split(".").map(Number) : null;
+  const left = parse(version);
+  const right = parse(currentVersion);
+  if (!left || !right) return false;
+  for (let index = 0; index < 3; index += 1) {
+    if (left[index] !== right[index]) return left[index] < right[index];
+  }
+  return false;
+}
+
 async function responseBuffer(response, limit = MAX_MODEL_BYTES) {
   if (!response?.ok) throw new Error(`Smart model download failed (${response?.status || "network"})`);
   const contentLength = Number(response.headers?.get?.("content-length") || 0);
@@ -46,25 +58,31 @@ class SmartAnalysisService {
     this.modelPath = path.join(this.modelDir, MODEL_NAME);
     this.workerPath = options.workerPath || path.join(__dirname, "smart-analysis-worker.cjs");
     this.fetch = options.fetch || globalThis.fetch;
-    const urls = modelUrlsForVersion(options.version || "0.5.6");
+    const urls = modelUrlsForVersion(options.version || "0.5.7");
     this.modelUrl = options.modelUrl || urls.modelUrl;
     this.checksumUrl = options.checksumUrl || urls.checksumUrl;
     this.expectedChecksum = String(options.expectedChecksum || MODEL_SHA256).toLowerCase();
     this.running = false;
     this.lastRunAt = null;
     this.lastError = "";
+    this.lastResult = { status: "never", candidates: 0, refined: 0, changed: 0, totalRules: 0 };
     fs.mkdirSync(this.modelDir, { recursive: true, mode: 0o700 });
     secureMode(this.modelDir, 0o700);
   }
 
   status() {
     let model = null;
+    let sizeBytes = 0;
     try { if (fs.existsSync(this.modelPath)) model = loadModel(this.modelPath); } catch (error) { this.lastError = String(error?.message || error); }
+    try { if (model) sizeBytes = fs.statSync(this.modelPath).size; } catch { sizeBytes = 0; }
     return {
       installed: Boolean(model),
       version: model?.version || "",
+      updateAvailable: Boolean(model && isVersionOlder(model.version)),
+      sizeBytes,
       running: this.running,
       lastRunAt: this.lastRunAt,
+      lastResult: { ...this.lastResult },
       error: this.lastError,
       downloadBytesMaximum: MAX_MODEL_BYTES,
       dataPolicy: "safe-window-metadata-only",
@@ -130,7 +148,8 @@ class SmartAnalysisService {
         .map((activity) => ({ app: activity.app, title: activity.title, domain: activity.domain || "" }));
     if (!activities.length) {
       this.lastRunAt = Date.now();
-      return Promise.resolve({ status: "nothing-to-review", rules: [] });
+      this.lastResult = { status: "nothing-to-review", candidates: 0, refined: 0, changed: 0, totalRules: Array.isArray(store.smartRules) ? store.smartRules.length : 0 };
+      return Promise.resolve({ ...this.lastResult, rules: [] });
     }
     this.running = true;
     this.lastError = "";
@@ -153,10 +172,24 @@ class SmartAnalysisService {
           reject(failure);
           return;
         }
-        const merged = new Map(store.smartRules.map((rule) => [rule.id, rule]));
-        for (const rule of result.rules || []) merged.set(rule.id, rule);
-        store.replaceSmartRules([...merged.values()].slice(-2_000));
-        resolve({ status: "complete", version: result.version, rules: result.rules || [] });
+        const previousRules = Array.isArray(store.smartRules) ? store.smartRules : [];
+        const merged = new Map(previousRules.map((rule) => [rule.id, rule]));
+        let changed = 0;
+        for (const rule of result.rules || []) {
+          const previous = merged.get(rule.id);
+          if (!previous || previous.intent !== rule.intent || previous.confidenceScore !== rule.confidenceScore || previous.evidence !== rule.evidence) changed += 1;
+          merged.set(rule.id, rule);
+        }
+        const persisted = [...merged.values()].slice(-2_000);
+        store.replaceSmartRules(persisted);
+        this.lastResult = {
+          status: "complete",
+          candidates: activities.length,
+          refined: (result.rules || []).length,
+          changed,
+          totalRules: persisted.length,
+        };
+        resolve({ ...this.lastResult, version: result.version, rules: result.rules || [] });
       };
       worker.once("message", (message) => finish(null, message));
       worker.once("error", (error) => finish(error));
@@ -168,9 +201,11 @@ class SmartAnalysisService {
 module.exports = {
   MAX_MODEL_BYTES,
   MODEL_NAME,
+  MODEL_VERSION,
   MODEL_SHA256,
   SmartAnalysisService,
   checksum,
+  isVersionOlder,
   modelUrlsForVersion,
   parseChecksum,
 };

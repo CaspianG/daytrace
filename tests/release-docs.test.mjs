@@ -18,6 +18,8 @@ const macGuide = fs.readFileSync(path.join(root, "docs", "MACOS_INSTALL.md"), "u
 const macGuideRu = fs.readFileSync(path.join(root, "docs", "MACOS_INSTALL_RU.md"), "utf8");
 const bundledMacGuide = fs.readFileSync(path.join(root, "MACOS_INSTALL.txt"), "utf8");
 const bundleMacGuideScript = fs.readFileSync(path.join(root, "scripts", "bundle-macos-install-guide.sh"), "utf8");
+const verifyMacReleaseScript = fs.readFileSync(path.join(root, "scripts", "verify-macos-release.sh"), "utf8");
+const electronMain = fs.readFileSync(path.join(root, "electron", "main.cjs"), "utf8");
 const windowsTrackerBuild = fs.readFileSync(path.join(root, "scripts", "build-windows-tracker.cjs"), "utf8");
 const windowsUpdateService = fs.readFileSync(path.join(root, "electron", "lib", "windows-update-service.cjs"), "utf8");
 const packagedWindowsSmoke = fs.readFileSync(path.join(root, "scripts", "run-packaged-windows-smoke.cjs"), "utf8");
@@ -88,8 +90,18 @@ test("macOS tagged releases remain publishable without unavailable Apple credent
   assert.match(pkg.scripts["dist:mac"], /mac\.notarize=false/);
   assert.match(pkg.scripts["dist:mac"], /bundle-macos-install-guide\.sh/);
   assert.equal(pkg.build.dmg.contents.some((item) => item.path === "MACOS_INSTALL.txt"), true);
-  assert.match(bundleMacGuideScript, /READ BEFORE INSTALLING\.txt/);
+  assert.equal(pkg.build.dmg.contents.some((item) => item.name === "IF MAC BLOCKS DAYTRACE - OPEN THIS.txt"), true);
+  assert.match(bundleMacGuideScript, /IF MAC BLOCKS DAYTRACE - OPEN THIS\.txt/);
   assert.match(bundleMacGuideScript, /unzip -tq/);
+});
+
+test("macOS packages and checks the real Accessibility collector under the app identity", () => {
+  assert.deepEqual(pkg.build.mac.binaries, ["Contents/MacOS/daytrace-tracker"]);
+  assert.equal(pkg.build.mac.extraFiles.some((item) => item.to === "MacOS/daytrace-tracker"), true);
+  assert.match(verifyMacReleaseScript, /Contents\/MacOS\/daytrace-tracker/);
+  assert.match(electronMain, /path\.join\(path\.dirname\(process\.execPath\), "daytrace-tracker"\)/);
+  assert.match(electronMain, /--check-accessibility/);
+  assert.match(electronMain, /probeTrusted: process\.platform === "darwin" \? probeTrackerAccessibility : null/);
 });
 
 test("strict signed and notarized macOS build remains available for future credentials", () => {
@@ -128,4 +140,26 @@ test("repository automation uses least privilege and continuous security checks"
   assert.match(ciWorkflow, /npx --yes npm@11\.6\.2 audit --audit-level=high/);
   assert.match(dependabot, /package-ecosystem: npm/);
   assert.match(dependabot, /package-ecosystem: github-actions/);
+});
+
+test("optional semantic weights are separate checksum-pinned release assets", () => {
+  assert.equal(pkg.build.files.some((entry) => String(entry).includes("models/semantic")), false);
+  assert.equal(pkg.build.extraResources.some((entry) => String(entry.from || "").includes("models/semantic")), false);
+  for (const name of [
+    "daytrace-semantic-ru-config.json",
+    "daytrace-semantic-ru-tokenizer.json",
+    "daytrace-semantic-ru-tokenizer-config.json",
+    "daytrace-semantic-ru-special-tokens.json",
+    "daytrace-semantic-ru-int8.onnx",
+    "daytrace-semantic-ru-LICENSE.txt",
+    "daytrace-semantic-en-config.json",
+    "daytrace-semantic-en-tokenizer.json",
+    "daytrace-semantic-en-tokenizer-config.json",
+    "daytrace-semantic-en-special-tokens.json",
+    "daytrace-semantic-en-int8.onnx",
+    "daytrace-semantic-en-LICENSE.txt",
+  ]) assert.match(releaseWorkflow, new RegExp(name.replaceAll(".", "\\.")));
+  assert.match(releaseWorkflow, /sha256sum Daytrace-\* daytrace-\*/);
+  assert.match(pkg.scripts.test, /semantic-model\.test\.mjs/);
+  assert.match(pkg.scripts["test:desktop"], /run-semantic-desktop-smoke\.cjs/);
 });

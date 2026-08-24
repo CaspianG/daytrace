@@ -1,6 +1,6 @@
 # Daytrace Browser Companion
 
-This optional unpacked extension sends only the foreground tab title, domain and URL path to the Daytrace native-messaging host on the same computer.
+This optional unpacked extension sends only the foreground tab title, domain and URL path to the Daytrace native-messaging host on the same computer. It checks that the browser window itself is focused, so a background tab update cannot be recorded as active work.
 
 - Query strings, fragments, credentials and page contents are never sent.
 - Incognito/private use is disabled by the manifest and rejected again by Daytrace.

@@ -29,7 +29,8 @@ function isSafeExternalUrl(value) {
 
 function assertTrustedIpcSender(event, { expectedWebContents, packaged, rendererFile, devOrigin } = {}) {
   const senderUrl = event?.senderFrame?.url || event?.sender?.getURL?.() || "";
-  if (!expectedWebContents || event?.sender !== expectedWebContents || !isTrustedRendererUrl(senderUrl, { packaged, rendererFile, devOrigin })) {
+  const expected = Array.isArray(expectedWebContents) ? expectedWebContents : [expectedWebContents];
+  if (!expectedWebContents || !expected.includes(event?.sender) || !isTrustedRendererUrl(senderUrl, { packaged, rendererFile, devOrigin })) {
     throw new Error("Untrusted IPC sender");
   }
 }

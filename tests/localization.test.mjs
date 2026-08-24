@@ -47,17 +47,19 @@ test("sessions and local answers are fully localized", () => {
   assert.equal(russian.points[0].duration.includes("мин") || russian.points[0].duration.includes("ч"), true);
 });
 
-test("first run follows the OS language and persists onboarding choice", (t) => {
+test("first run follows the OS language and persists onboarding choices", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "daytrace-i18n-test-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const store = new storeModule.EventStore(root, () => {}, { defaultLanguage: "ru-RU" });
   assert.equal(store.settings.language, "ru");
   assert.equal(store.settings.onboardingComplete, false);
-  store.updateSettings({ language: "en", onboardingComplete: true });
+  assert.equal(store.settings.accessibilityOnboardingDismissed, false);
+  store.updateSettings({ language: "en", onboardingComplete: true, accessibilityOnboardingDismissed: true });
 
   const reopened = new storeModule.EventStore(root, () => {}, { defaultLanguage: "ru-RU" });
   assert.equal(reopened.settings.language, "en");
   assert.equal(reopened.settings.onboardingComplete, true);
+  assert.equal(reopened.settings.accessibilityOnboardingDismissed, true);
 });
 
 test("local answers use browser and Telegram context without message content", () => {

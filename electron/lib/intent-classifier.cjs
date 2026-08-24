@@ -97,13 +97,17 @@ function normalizeIntentRules(value, limit = 100) {
     if (item?.scope === "context" || item?.scope === "application") {
       const app = String(item?.app || "").replace(/\s+/g, " ").trim().slice(0, 120);
       const title = String(item?.title || "").replace(/\s+/g, " ").trim().slice(0, 140);
+      const domain = String(item?.domain || "").replace(/\s+/g, " ").trim().toLowerCase().slice(0, 180);
       if (!app) continue;
       rule.scope = item.scope;
       rule.app = app;
-      if (item.scope === "context") rule.title = title;
+      if (item.scope === "context") {
+        rule.title = title;
+        if (domain) rule.domain = domain;
+      }
     }
-    if (item?.source === "smart-model") {
-      rule.source = "smart-model";
+    if (item?.source === "smart-model" || item?.source === "semantic-model") {
+      rule.source = item.source;
       rule.confidenceScore = Math.max(0.5, Math.min(0.99, Number(item.confidenceScore) || 0.5));
       rule.evidence = String(item?.evidence || match).replace(/\s+/g, " ").trim().slice(0, 120);
     }
@@ -169,10 +173,11 @@ function inferIntentDetails(activity, rules = []) {
     if (rule.scope !== "context") return combined.includes(rule.match.toLowerCase());
     const ruleApp = rule.app.toLowerCase().replace(/\s+/g, " ").trim();
     const ruleTitle = rule.title.toLowerCase().replace(/\s+/g, " ").trim();
-    return exactApp === ruleApp && title === ruleTitle;
+    const ruleDomain = String(rule.domain || "").toLowerCase().replace(/\s+/g, " ").trim();
+    return exactApp === ruleApp && title === ruleTitle && (!ruleDomain || domain === ruleDomain);
   });
-  if (custom) return custom.source === "smart-model"
-    ? { intent: custom.intent, confidence: custom.confidenceScore >= 0.82 ? "high" : "medium", reason: "smart-model", evidence: custom.evidence || custom.match, score: custom.confidenceScore }
+  if (custom) return custom.source === "smart-model" || custom.source === "semantic-model"
+    ? { intent: custom.intent, confidence: custom.confidenceScore >= 0.82 ? "high" : "medium", reason: custom.source, evidence: custom.evidence || custom.match, score: custom.confidenceScore }
     : { intent: custom.intent, confidence: "high", reason: "custom-rule", evidence: custom.match, score: 1 };
 
   const visibleContext = `${title} ${domain} ${urlPath}`.trim();

@@ -10,6 +10,6 @@ fi
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 spctl --assess --verbose=2 --type exec "$APP_PATH"
 xcrun stapler validate "$APP_PATH"
-codesign --verify --strict --verbose=2 "$APP_PATH/Contents/Resources/tracker/macos/daytrace-tracker"
+codesign --verify --strict --verbose=2 "$APP_PATH/Contents/MacOS/daytrace-tracker"
 
 echo "Verified signed and notarized macOS app: $APP_PATH"

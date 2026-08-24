@@ -28,6 +28,8 @@ test("browser context strips secrets and rejects private or untrusted contexts",
 test("browser companion is event-driven and leaves no second Electron process resident", () => {
   assert.match(extensionWorker, /sendNativeMessage/);
   assert.match(extensionWorker, /setTimeout\(\(\) => void sendActiveTab\(force\), 250\)/);
+  assert.match(extensionWorker, /chrome\.windows\.get\(tab\.windowId\)/);
+  assert.match(extensionWorker, /browserWindow\?\.focused/);
   assert.doesNotMatch(extensionWorker, /connectNative/);
   assert.doesNotMatch(extensionWorker, /setInterval/);
 });

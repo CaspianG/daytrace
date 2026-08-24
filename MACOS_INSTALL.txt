@@ -21,6 +21,13 @@ missing paid Apple certificate; it is not a malware detection result.
    the permission. This second permission is required for local activity
    tracking and is separate from Gatekeeper.
 
+If Accessibility is already enabled but Daytrace still asks for it, remove all
+old Daytrace and Daytrace 2 entries with the minus button, click plus, choose
+exactly /Applications/Daytrace.app, enable it, return to Daytrace, and click
+Check again. The current build checks the same native collector that records
+events. Open Daytrace without tracking remains available so the setup screen
+cannot lock you out of the application.
+
 From v0.5.4 onward, the in-app Update button verifies the DMG, replaces the
 installed app, repairs a numbered copy such as Daytrace 2.app, and relaunches
 Daytrace automatically. Updating from v0.5.3 or older requires this manual DMG
@@ -58,6 +65,13 @@ Gatekeeper из-за отсутствия платного сертификат�
 5. Запустите Daytrace и выдайте «Универсальный доступ», когда приложение объяснит
    разрешение. Оно нужно для локального сбора активности и не связано с
    предупреждением Gatekeeper.
+
+Если доступ уже включён, но Daytrace продолжает его просить, удалите кнопкой «−»
+все старые записи Daytrace и Daytrace 2, нажмите «+», выберите именно
+/Applications/Daytrace.app, включите её, вернитесь в Daytrace и нажмите
+«Проверить снова». Актуальная версия проверяет тот же нативный сборщик, который
+записывает события. Кнопка «Открыть Daytrace без сбора» остаётся доступной, чтобы
+экран настройки не блокировал вход в приложение.
 
 Начиная с v0.5.4 кнопка обновления сама проверяет DMG, заменяет установленное
 приложение, исправляет номерную копию вроде Daytrace 2.app и перезапускает

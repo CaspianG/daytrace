@@ -29,6 +29,8 @@ async function sendActiveTab(force = false) {
   try {
     const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
     if (!tab || tab.incognito) return;
+    const browserWindow = await chrome.windows.get(tab.windowId);
+    if (!browserWindow?.focused) return;
     const location = safeLocation(tab.url);
     if (!location) return;
     const message = {

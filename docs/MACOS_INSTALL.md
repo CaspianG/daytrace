@@ -33,7 +33,16 @@ You normally need this exception only for the first launch of that downloaded bu
 
 After the app itself opens, Daytrace presents a separate Accessibility setup. This permission lets the native local collector observe the active application and visible active-window metadata. It does not grant cloud access and is unrelated to the Gatekeeper warning.
 
-Choose **Open Accessibility Settings**, enable Daytrace under **System Settings → Privacy & Security → Accessibility**, then return to Daytrace. Keep exactly one installed copy named `/Applications/Daytrace.app`; when updating, choose **Replace**, not **Keep Both**, so macOS does not create `Daytrace 2.app` with a separate permission record. If macOS does not apply the new grant immediately, use **Restart Daytrace** in the app. You can continue without permission, but the timeline remains empty until it is granted.
+Choose **Open Accessibility Settings**, enable Daytrace under **System Settings → Privacy & Security → Accessibility**, then return to Daytrace. Daytrace checks the native collector automatically; use **Check again** if needed. Keep exactly one installed copy named `/Applications/Daytrace.app`; when updating, choose **Replace**, not **Keep Both**, so macOS does not create `Daytrace 2.app` with a separate permission record. You can continue without permission, but the timeline remains empty until it is granted.
+
+If the switch is already on but Daytrace still shows the permission screen:
+
+1. In Accessibility, select every old **Daytrace** and **Daytrace 2** entry and remove it with the **minus** button.
+2. Click **plus**, choose exactly `/Applications/Daytrace.app`, and enable the newly added entry.
+3. Return to the app and click **Check again**. Daytrace checks access through the same native collector that records events, so a normal restart should no longer be required.
+4. To enter the interface immediately and repair access later, choose **Open Daytrace without tracking**. Settings and existing local data remain available; collection begins after permission is granted.
+
+In the current build the native collector lives inside `Daytrace.app/Contents/MacOS` and is associated with the installed application. Do not grant access to a copy running from the DMG, Downloads, or a `Daytrace 2.app` duplicate because macOS stores separate records for those copies.
 
 ## Updates after installation
 
