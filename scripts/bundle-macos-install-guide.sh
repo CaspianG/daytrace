@@ -28,7 +28,7 @@ cleanup() {
 trap cleanup EXIT
 
 /usr/bin/ditto -x -k "$archive" "$stage"
-/usr/bin/ditto "$guide" "$stage/READ BEFORE INSTALLING.txt"
+/usr/bin/ditto "$guide" "$stage/IF MAC BLOCKS DAYTRACE - OPEN THIS.txt"
 /usr/bin/ditto -c -k --sequesterRsrc --rsrc "$stage" "$rebuilt"
 /usr/bin/unzip -tq "$rebuilt"
 mv -f "$rebuilt" "$archive"

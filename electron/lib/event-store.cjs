@@ -18,10 +18,12 @@ const DEFAULT_SETTINGS = {
   intentRules: [],
   intentRulesUndo: [],
   intentRulesChangedAt: null,
+  analysisEngine: "builtin",
   smartAnalysisEnabled: false,
   browserCompanionEnabled: false,
   language: "en",
   onboardingComplete: false,
+  accessibilityOnboardingDismissed: false,
 };
 
 const MIN_RETENTION_HOURS = 48;
@@ -55,9 +57,19 @@ function normalizeBoolean(value, fallback) {
   return typeof value === "boolean" ? value : Boolean(fallback);
 }
 
+function normalizeAnalysisEngine(value, fallback = "builtin") {
+  const normalized = String(value || "").toLowerCase();
+  if (["builtin", "signals", "semantic"].includes(normalized)) return normalized;
+  return ["builtin", "signals", "semantic"].includes(fallback) ? fallback : "builtin";
+}
+
 function normalizeSettings(value, defaults = DEFAULT_SETTINGS) {
   const source = value && typeof value === "object" ? value : {};
   const merged = { ...defaults, ...source };
+  const migratedEngine = Object.hasOwn(source, "analysisEngine")
+    ? source.analysisEngine
+    : normalizeBoolean(source.smartAnalysisEnabled, defaults.smartAnalysisEnabled) ? "signals" : defaults.analysisEngine;
+  const analysisEngine = normalizeAnalysisEngine(migratedEngine, defaults.analysisEngine);
   return {
     trackingEnabled: normalizeBoolean(merged.trackingEnabled, defaults.trackingEnabled),
     retentionHours: normalizeRetentionHours(merged.retentionHours, defaults.retentionHours),
@@ -70,10 +82,12 @@ function normalizeSettings(value, defaults = DEFAULT_SETTINGS) {
     intentRules: normalizeIntentRules(merged.intentRules),
     intentRulesUndo: normalizeIntentRules(merged.intentRulesUndo),
     intentRulesChangedAt: Number.isFinite(Number(merged.intentRulesChangedAt)) ? Number(merged.intentRulesChangedAt) : null,
-    smartAnalysisEnabled: normalizeBoolean(merged.smartAnalysisEnabled, defaults.smartAnalysisEnabled),
+    analysisEngine,
+    smartAnalysisEnabled: analysisEngine !== "builtin",
     browserCompanionEnabled: normalizeBoolean(merged.browserCompanionEnabled, defaults.browserCompanionEnabled),
     language: normalizeLanguage(merged.language),
     onboardingComplete: normalizeBoolean(merged.onboardingComplete, defaults.onboardingComplete),
+    accessibilityOnboardingDismissed: normalizeBoolean(merged.accessibilityOnboardingDismissed, defaults.accessibilityOnboardingDismissed),
   };
 }
 
@@ -111,12 +125,13 @@ class EventStore {
     this.onChange = onChange;
     this.eventsCache = null;
     this.stateCache = null;
+    this.historyStartedAtCache = undefined;
     ensurePrivateDirectory(this.root);
     ensurePrivateDirectory(this.eventsDir);
     ensurePrivateDirectory(this.skillsDir);
     const defaults = { ...DEFAULT_SETTINGS, language: normalizeLanguage(options.defaultLanguage || DEFAULT_SETTINGS.language) };
     this.settings = normalizeSettings(readJson(this.settingsFile, {}), defaults);
-    this.smartRules = normalizeIntentRules(readJson(this.smartContextsFile, []), 2_000).filter((rule) => rule.source === "smart-model");
+    this.smartRules = normalizeIntentRules(readJson(this.smartContextsFile, []), 2_000).filter((rule) => rule.source === "smart-model" || rule.source === "semantic-model");
     this.saveSettings();
     this.prune();
   }
@@ -146,13 +161,13 @@ class EventStore {
   }
 
   analysisRules(manualRules = this.settings.intentRules) {
-    return this.settings.smartAnalysisEnabled
-      ? [...this.smartRules, ...normalizeIntentRules(manualRules)]
-      : normalizeIntentRules(manualRules);
+    const selectedSource = this.settings.analysisEngine === "semantic" ? "semantic-model" : this.settings.analysisEngine === "signals" ? "smart-model" : "";
+    const selectedRules = selectedSource ? this.smartRules.filter((rule) => rule.source === selectedSource) : [];
+    return [...selectedRules, ...normalizeIntentRules(manualRules)];
   }
 
   replaceSmartRules(value) {
-    this.smartRules = normalizeIntentRules(value, 2_000).filter((rule) => rule.source === "smart-model");
+    this.smartRules = normalizeIntentRules(value, 2_000).filter((rule) => rule.source === "smart-model" || rule.source === "semantic-model");
     const temporary = `${this.smartContextsFile}.tmp`;
     fs.writeFileSync(temporary, JSON.stringify(this.smartRules, null, 2), { encoding: "utf8", mode: 0o600 });
     fs.renameSync(temporary, this.smartContextsFile);
@@ -175,7 +190,7 @@ class EventStore {
       for (const activity of sessions.flatMap((session) => session.activities || [])) {
         if (activity.intent !== "unknown" && Number(activity.intentConfidenceScore || 0) >= 0.55) continue;
         const key = `${String(activity.app || "").toLowerCase()}|${String(activity.title || "").toLowerCase()}|${String(activity.domain || "").toLowerCase()}`;
-        if (!candidates.has(key)) candidates.set(key, { app: activity.app, title: activity.title, domain: activity.domain || "" });
+        if (!candidates.has(key)) candidates.set(key, { app: activity.app, title: activity.title, domain: activity.domain || "", intentReason: activity.intentReason || "", language: this.settings.language });
         if (candidates.size >= safeLimit) return [...candidates.values()];
       }
     }
@@ -216,6 +231,12 @@ class EventStore {
     fs.appendFileSync(eventFile, `${JSON.stringify(normalized)}\n`, { encoding: "utf8", mode: 0o600 });
     secureMode(eventFile, 0o600);
     if (this.eventsCache) this.eventsCache.push(normalized);
+    const normalizedAt = new Date(normalized.at).getTime();
+    const retentionCutoff = Date.now() - this.settings.retentionHours * 60 * 60_000;
+    if (normalizedAt >= retentionCutoff && this.historyStartedAtCache !== undefined
+      && (this.historyStartedAtCache === null || normalizedAt < this.historyStartedAtCache)) {
+      this.historyStartedAtCache = normalizedAt;
+    }
     this.invalidate();
     this.onChange();
     return true;
@@ -280,6 +301,35 @@ class EventStore {
       .filter((day) => new Date(`${day}T00:00:00`).getTime() >= cutoffDay.getTime()))]
       .sort()
       .reverse();
+  }
+
+  historyStartedAt(cutoff = Date.now() - this.settings.retentionHours * 60 * 60_000) {
+    if (this.historyStartedAtCache !== undefined
+      && (this.historyStartedAtCache === null || this.historyStartedAtCache >= cutoff)) return this.historyStartedAtCache;
+    this.historyStartedAtCache = undefined;
+    const names = fs.readdirSync(this.eventsDir)
+      .filter((name) => /^\d{4}-\d{2}-\d{2}-\d{2}\.jsonl$/.test(name))
+      .sort();
+    for (const name of names) {
+      const bounds = hourlyFileBounds(name);
+      if (!bounds || bounds.end <= cutoff) continue;
+      let earliest = null;
+      try {
+        const lines = fs.readFileSync(path.join(this.eventsDir, name), "utf8").split(/\r?\n/).filter(Boolean);
+        for (const line of lines) {
+          try {
+            const at = new Date(JSON.parse(line).at).getTime();
+            if (Number.isFinite(at) && at >= cutoff && (earliest === null || at < earliest)) earliest = at;
+          } catch { /* A malformed or truncated line cannot define the history start. */ }
+        }
+      } catch { /* The file may have disappeared between the directory scan and read. */ }
+      if (earliest !== null) {
+        this.historyStartedAtCache = earliest;
+        return earliest;
+      }
+    }
+    this.historyStartedAtCache = null;
+    return null;
   }
 
   dayState(value) {
@@ -389,12 +439,14 @@ class EventStore {
       } catch { /* File may have disappeared between scans. */ }
     }
     if (this.eventsCache) this.eventsCache = this.eventsCache.filter((event) => new Date(event.at).getTime() >= cutoff);
+    this.historyStartedAtCache = undefined;
     this.invalidate();
   }
 
   deleteAll() {
     for (const name of fs.readdirSync(this.eventsDir)) fs.rmSync(path.join(this.eventsDir, name), { force: true });
     this.eventsCache = [];
+    this.historyStartedAtCache = null;
     this.invalidate();
     this.onChange();
   }
@@ -419,6 +471,7 @@ class EventStore {
       const at = new Date(event.at).getTime();
       return at < min || at > max;
     });
+    this.historyStartedAtCache = undefined;
     this.invalidate();
     this.onChange();
   }
@@ -426,7 +479,8 @@ class EventStore {
   state() {
     if (this.stateCache) return this.stateCache;
     const now = Date.now();
-    const analysisStart = Math.max(now - 48 * 60 * 60_000, now - this.settings.retentionHours * 60 * 60_000);
+    const retentionCutoff = now - this.settings.retentionHours * 60 * 60_000;
+    const analysisStart = Math.max(now - 48 * 60 * 60_000, retentionCutoff);
     const events = this.loadEventsRange(analysisStart, now + 1);
     const sessions = sessionize(events, now, this.settings.language, this.analysisRules());
     this.stateCache = {
@@ -438,7 +492,8 @@ class EventStore {
       lastEventAt: events.length ? events.at(-1).at : null,
       skills: suggestSkills(events, new Date(), this.settings.language, this.analysisRules()),
       dataPath: this.root,
-      retentionCutoff: now - this.settings.retentionHours * 60 * 60_000,
+      retentionCutoff,
+      historyStartedAt: this.historyStartedAt(retentionCutoff),
       availableDays: this.availableDays(),
     };
     return this.stateCache;
@@ -475,4 +530,4 @@ class EventStore {
   }
 }
 
-module.exports = { DEFAULT_SETTINGS, EventStore, normalizeExcludedApps, normalizeLanguage, normalizeRetentionHours, normalizeSettings };
+module.exports = { DEFAULT_SETTINGS, EventStore, normalizeAnalysisEngine, normalizeExcludedApps, normalizeLanguage, normalizeRetentionHours, normalizeSettings };

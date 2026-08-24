@@ -13,6 +13,21 @@ function clean(value, limit = 300) {
     .slice(0, limit);
 }
 
+function normalizeForMatch(value, limit = 720) {
+  return clean(value, limit)
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function hasSignal(haystack, signal) {
+  const normalizedSignal = normalizeForMatch(signal, 60);
+  if (!normalizedSignal) return false;
+  return ` ${haystack} `.includes(` ${normalizedSignal} `);
+}
+
 function validateModel(value) {
   if (!value || value.format !== "daytrace-smart-model" || typeof value.version !== "string") throw new Error("Unsupported smart model");
   const weights = {};
@@ -43,16 +58,16 @@ function loadModel(file) {
 }
 
 function classifyContext(activity, model) {
-  const app = clean(activity?.app, 120).toLowerCase();
-  const title = clean(activity?.title, 300).toLowerCase();
-  const domain = clean(activity?.domain, 180).toLowerCase();
-  const haystack = `${app} ${domain} ${title}`;
+  const app = clean(activity?.app, 120);
+  const title = clean(activity?.title, 300);
+  const domain = clean(activity?.domain, 180);
+  const haystack = normalizeForMatch(`${app} ${domain} ${title}`);
   const scores = [];
   for (const [intent, weights] of Object.entries(model.weights)) {
     let score = 0;
     const evidence = [];
     for (const [token, weight] of Object.entries(weights)) {
-      if (!haystack.includes(token)) continue;
+      if (!hasSignal(haystack, token)) continue;
       score += weight;
       evidence.push(token);
     }
@@ -102,4 +117,4 @@ if (!isMainThread) {
   }
 }
 
-module.exports = { analyzeContexts, classifyContext, loadModel, validateModel };
+module.exports = { analyzeContexts, classifyContext, hasSignal, loadModel, normalizeForMatch, validateModel };

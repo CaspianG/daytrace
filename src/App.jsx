@@ -5,6 +5,7 @@ import { FaEdge } from "react-icons/fa6";
 import { VscVscode } from "react-icons/vsc";
 import sageBranch from "./assets/sage-branch.png";
 import { formatDay, formatDuration, formatTime, normalizeLanguage, text, translations } from "./i18n.js";
+import { runSemanticAnalysis } from "./semantic-analysis-client.js";
 
 const NAVIGATION = [
   { id: "history", icon: Clock },
@@ -63,14 +64,14 @@ function demoState(language = demoLanguage(), onboardingComplete = true) {
   }));
   const makeSession = (id, from, to, focus, intent) => ({ id, start: activities[from].start, end: activities[to].end, durationMs: activities[to].end - activities[from].start, focus, label: FOCUS_LABELS[lang][focus], intent, intentLabel: INTENT_LABELS[lang][intent], activities: activities.slice(from, to + 1) });
   return {
-    settings: { trackingEnabled: true, retentionHours: 48, excludePrivateWindows: true, collectWindowTitles: true, collectInputCounts: true, collectBrowserTabCount: true, smartAnalysisEnabled: false, browserCompanionEnabled: false, autoStartEnabled: false, excludedApps: ["1Password", "Bitwarden", "KeePass"], intentRules: [{ id: "demo-friends", match: lang === "ru" ? "Друзья" : "Friends", intent: "personal" }], intentRulesUndo: [], language: lang, onboardingComplete },
-    runtime: { platform: updatePreview || desktopPreview ? "win32" : "browser", trackerStatus: "running", accessibilityTrusted: true, autoStartSupported: desktopPreview, autoStartEnabled: false, capabilities: { browserTabCount: Boolean(updatePreview || desktopPreview), browserCompanion: Boolean(updatePreview || desktopPreview), smartAnalysis: true, encryptedBackup: true }, browserCompanion: { running: desktopPreview }, smartAnalysis: { installed: false, running: false }, diagnostics: null, update: { status: updateStatus, currentVersion: "0.5.6", latestVersion: updatePreview ? "0.5.7" : "0.5.6", checkedAt: Date.now(), progress: updateStatus === "downloading" ? 64 : ["ready", "installing", "restarting"].includes(updateStatus) ? 100 : 0 } },
+    settings: { trackingEnabled: true, retentionHours: 48, excludePrivateWindows: true, collectWindowTitles: true, collectInputCounts: true, collectBrowserTabCount: true, analysisEngine: "builtin", smartAnalysisEnabled: false, browserCompanionEnabled: false, autoStartEnabled: false, excludedApps: ["1Password", "Bitwarden", "KeePass"], intentRules: [{ id: "demo-friends", match: lang === "ru" ? "Друзья" : "Friends", intent: "personal" }], intentRulesUndo: [], language: lang, onboardingComplete, accessibilityOnboardingDismissed: false },
+    runtime: { platform: updatePreview || desktopPreview ? "win32" : "browser", trackerStatus: "running", accessibilityTrusted: true, autoStartSupported: desktopPreview, autoStartEnabled: false, capabilities: { browserTabCount: Boolean(updatePreview || desktopPreview), browserCompanion: Boolean(updatePreview || desktopPreview), smartAnalysis: true, encryptedBackup: true }, browserCompanion: { running: desktopPreview }, smartAnalysis: { engine: "builtin", installed: true, running: false, version: "built-in", signal: { installed: false, running: false, sizeBytes: 6391, updateAvailable: false, lastResult: { status: "never", candidates: 0, refined: 0, changed: 0 } }, semantic: { installed: false, running: false, downloading: false, progress: 0, sizeBytes: 49821594, version: "1.0.0", languages: ["ru", "en"], lastResult: { status: "never", candidates: 0, refined: 0, changed: 0 } } }, diagnostics: null, update: { status: updateStatus, currentVersion: "0.5.7", latestVersion: updatePreview ? "0.5.8" : "0.5.7", checkedAt: Date.now(), progress: updateStatus === "downloading" ? 64 : ["ready", "installing", "restarting"].includes(updateStatus) ? 100 : 0 } },
     sessions: [
       makeSession("demo-1", 0, 2, "mixed", "work"), makeSession("demo-2", 3, 6, "mixed", "work"), makeSession("demo-3", 7, 8, "communication", "mixed"),
       { id: "demo-break", start: startOfToday(12, 5), end: startOfToday(12, 20), durationMs: 15 * 60_000, focus: "break", label: FOCUS_LABELS[lang].break, intent: "unknown", intentLabel: INTENT_LABELS[lang].unknown, activities: [] },
     ],
     brief: { totalMs: 3 * 60 * 60_000, appCount: 5, narrative: t.demo.brief, themes: activities.slice(0, 3).map((activity) => ({ label: activity.title, app: activity.app, durationMs: activity.durationMs })), completed: [t.demo.completed], openLoops: [t.demo.openLoop], interruptions: [], lowConfidenceCount: 0 },
-    reviewQueue: [], eventCount: 128, retentionCutoff: Date.now() - 48 * 60 * 60_000, availableDays: [dateKey(Date.now())], dataPath: t.demo.dataPath,
+    reviewQueue: [], eventCount: 128, retentionCutoff: Date.now() - 48 * 60 * 60_000, historyStartedAt: startOfToday(9, 5), availableDays: [dateKey(Date.now())], dataPath: t.demo.dataPath,
     skills: [
       { id: "morning-dev", title: t.demo.skills[0][0], description: t.demo.skills[0][1], apps: ["Visual Studio Code", "Google Chrome", "Telegram Desktop"], count: 3, duration: t.demo.skills[0][2] },
       { id: "requirements-sync", title: t.demo.skills[1][0], description: t.demo.skills[1][1], apps: ["Telegram Desktop", "Figma", "Gmail"], count: 2, duration: t.demo.skills[1][2] },
@@ -210,7 +211,13 @@ function useDaytrace() {
     if (!window.daytrace) return undefined;
     setIsDesktop(true);
     window.daytrace.getState().then(setState);
-    return window.daytrace.onStateChanged(setState);
+    const removeStateListener = window.daytrace.onStateChanged(setState);
+    const removeSemanticListener = window.daytrace.onSemanticAnalysisRequested?.(() => {
+      runSemanticAnalysis(window.daytrace)
+        .then((nextState) => { if (nextState?.settings) setState(nextState); })
+        .catch(() => window.daytrace.getState().then(setState).catch(() => {}));
+    });
+    return () => { removeStateListener?.(); removeSemanticListener?.(); };
   }, []);
   const language = normalizeLanguage(state.settings.language);
   const actions = {
@@ -228,6 +235,8 @@ function useDaytrace() {
     },
     async setAutoStart(enabled) { if (window.daytrace) setState(await window.daytrace.setAutoStart(enabled)); else setState((current) => ({ ...current, settings: { ...current.settings, autoStartEnabled: enabled }, runtime: { ...current.runtime, autoStartEnabled: enabled } })); },
     async requestAccessibility() { if (window.daytrace) setState(await window.daytrace.requestAccessibility()); },
+    async refreshAccessibility() { if (window.daytrace) setState(await window.daytrace.refreshAccessibility()); },
+    async dismissAccessibilityOnboarding() { if (window.daytrace) setState(await window.daytrace.dismissAccessibilityOnboarding()); else setState((current) => ({ ...current, settings: { ...current.settings, accessibilityOnboardingDismissed: true } })); },
     relaunch() { return window.daytrace?.relaunch(); },
     async setExclusions(apps) { if (window.daytrace) setState(await window.daytrace.setExclusions(apps)); else setState((current) => ({ ...current, settings: { ...current.settings, excludedApps: apps } })); },
     async previewIntentRules(rules) {
@@ -244,7 +253,7 @@ function useDaytrace() {
     },
     async setLanguage(nextLanguage) { const next = normalizeLanguage(nextLanguage); if (window.daytrace) setState(await window.daytrace.setLanguage(next)); else setState(demoState(next, true)); },
     async completeOnboarding(nextLanguage) { const next = normalizeLanguage(nextLanguage); if (window.daytrace) setState(await window.daytrace.completeOnboarding(next)); else setState(demoState(next, true)); },
-    async deleteAll() { if (window.daytrace) setState(await window.daytrace.deleteAll()); else setState((current) => ({ ...current, sessions: [], eventCount: 0 })); },
+    async deleteAll() { if (window.daytrace) setState(await window.daytrace.deleteAll()); else setState((current) => ({ ...current, sessions: [], eventCount: 0, historyStartedAt: null, availableDays: [] })); },
     async deleteSession(session) { if (window.daytrace) setState(await window.daytrace.deleteSession(session.start, session.end)); else setState((current) => ({ ...current, sessions: current.sessions.filter((item) => item.id !== session.id) })); },
     async ask(question) {
       if (window.daytrace) return window.daytrace.ask(question);
@@ -271,10 +280,29 @@ function useDaytrace() {
     },
     async installBrowserHost() { if (window.daytrace) setState(await window.daytrace.installBrowserHost()); else setState((current) => ({ ...current, settings: { ...current.settings, browserCompanionEnabled: true }, runtime: { ...current.runtime, browserCompanion: { running: true } } })); },
     revealBrowserExtension() { return window.daytrace?.revealBrowserExtension(); },
-    async downloadSmartModel() { if (window.daytrace) setState(await window.daytrace.downloadSmartModel()); else setState((current) => ({ ...current, settings: { ...current.settings, smartAnalysisEnabled: true }, runtime: { ...current.runtime, smartAnalysis: { installed: true, version: "1.0.0" } } })); },
+    async setAnalysisEngine(engine) { if (window.daytrace) setState(await window.daytrace.setAnalysisEngine(engine)); else setState((current) => ({ ...current, settings: { ...current.settings, analysisEngine: engine, smartAnalysisEnabled: engine !== "builtin" }, runtime: { ...current.runtime, smartAnalysis: { ...current.runtime.smartAnalysis, engine } } })); },
+    async downloadSmartModel() { if (window.daytrace) setState(await window.daytrace.downloadSmartModel()); else setState((current) => ({ ...current, settings: { ...current.settings, analysisEngine: "signals", smartAnalysisEnabled: true }, runtime: { ...current.runtime, smartAnalysis: { ...current.runtime.smartAnalysis, engine: "signals", installed: true, signal: { ...current.runtime.smartAnalysis.signal, installed: true, version: "1.1.0", updateAvailable: false } } } })); },
     async installSmartModel() { if (window.daytrace) setState(await window.daytrace.installSmartModel()); },
-    async removeSmartModel() { if (window.daytrace) setState(await window.daytrace.removeSmartModel()); else setState((current) => ({ ...current, settings: { ...current.settings, smartAnalysisEnabled: false }, runtime: { ...current.runtime, smartAnalysis: { installed: false } } })); },
+    async removeSmartModel() { if (window.daytrace) setState(await window.daytrace.removeSmartModel()); else setState((current) => ({ ...current, settings: { ...current.settings, analysisEngine: current.settings.analysisEngine === "signals" ? "builtin" : current.settings.analysisEngine, smartAnalysisEnabled: current.settings.analysisEngine !== "signals" && current.settings.analysisEngine !== "builtin" }, runtime: { ...current.runtime, smartAnalysis: { ...current.runtime.smartAnalysis, engine: current.settings.analysisEngine === "signals" ? "builtin" : current.settings.analysisEngine, signal: { ...current.runtime.smartAnalysis.signal, installed: false } } } })); },
     async runSmartAnalysis() { if (window.daytrace) setState(await window.daytrace.runSmartAnalysis()); },
+    async downloadSemanticModel() {
+      if (window.daytrace) {
+        setState(await window.daytrace.downloadSemanticModel());
+        const nextState = await runSemanticAnalysis(window.daytrace);
+        if (nextState?.settings) setState(nextState);
+      } else setState((current) => ({ ...current, settings: { ...current.settings, analysisEngine: "semantic", smartAnalysisEnabled: true }, runtime: { ...current.runtime, smartAnalysis: { ...current.runtime.smartAnalysis, engine: "semantic", installed: true, semantic: { ...current.runtime.smartAnalysis.semantic, installed: true, progress: 100, stage: "ready" } } } }));
+    },
+    async removeSemanticModel() { if (window.daytrace) setState(await window.daytrace.removeSemanticModel()); else setState((current) => ({ ...current, settings: { ...current.settings, analysisEngine: current.settings.analysisEngine === "semantic" ? "builtin" : current.settings.analysisEngine, smartAnalysisEnabled: current.settings.analysisEngine !== "semantic" && current.settings.analysisEngine !== "builtin" }, runtime: { ...current.runtime, smartAnalysis: { ...current.runtime.smartAnalysis, engine: current.settings.analysisEngine === "semantic" ? "builtin" : current.settings.analysisEngine, semantic: { ...current.runtime.smartAnalysis.semantic, installed: false, progress: 0 } } } })); },
+    async runSelectedAnalysis() {
+      if (!window.daytrace) return undefined;
+      if (state.settings.analysisEngine === "semantic") {
+        const nextState = await runSemanticAnalysis(window.daytrace);
+        if (nextState?.settings) setState(nextState);
+        return nextState;
+      }
+      setState(await window.daytrace.runSmartAnalysis());
+      return undefined;
+    },
     revealData() { return window.daytrace?.revealData(); },
     async checkUpdates() { if (window.daytrace) setState(await window.daytrace.checkUpdates()); else setState((current) => ({ ...current, runtime: { ...current.runtime, update: { ...current.runtime.update, status: "up-to-date", checkedAt: Date.now() } } })); },
     async installUpdate() { if (window.daytrace) setState(await window.daytrace.installUpdate()); },
@@ -303,10 +331,16 @@ function Onboarding({ language, onComplete }) {
 
 function MacPermissionOnboarding({ actions, onContinue, runtime, t }) {
   const [requesting, setRequesting] = useState(false);
+  const [checking, setChecking] = useState(false);
   const request = async () => {
     setRequesting(true);
     try { await actions.requestAccessibility(); }
     finally { setRequesting(false); }
+  };
+  const refresh = async () => {
+    setChecking(true);
+    try { await actions.refreshAccessibility(); }
+    finally { setChecking(false); }
   };
   return <main className="onboarding-shell">
     <section className="onboarding-card permission-onboarding-card">
@@ -320,8 +354,10 @@ function MacPermissionOnboarding({ actions, onContinue, runtime, t }) {
         <li><span>3</span>{t.onboarding.permissionStepThree}</li>
       </ol>
       {runtime?.macInstall?.issue && <div className="permission-copy-warning"><strong>{t.onboarding.permissionCopyTitle}</strong><span>{text(t.settings.accessibilityInstallIssues[runtime.macInstall.issue] || t.settings.accessibilityInstallIssues["unknown-location"], { name: runtime.macInstall.appName, path: runtime.macInstall.bundlePath || "—" })}</span></div>}
+      <div className="permission-repair"><strong>{t.onboarding.permissionRepairTitle}</strong><span>{t.onboarding.permissionRepairText}</span></div>
       <div className="onboarding-privacy"><LockKey size={25} /><div><strong>{t.settings.deviceOnly}</strong><span>{t.onboarding.permissionPrivacy}</span></div></div>
       <button className="onboarding-continue" onClick={request} disabled={requesting}>{requesting ? t.onboarding.permissionWaiting : t.onboarding.permissionGrant}<ArrowRight size={19} /></button>
+      <button className="permission-check" onClick={refresh} disabled={checking}>{checking ? t.onboarding.permissionChecking : t.onboarding.permissionCheck}<ArrowClockwise size={18} /></button>
       <button className="permission-restart" onClick={actions.relaunch}>{t.onboarding.permissionRestart}</button>
       <button className="permission-later" onClick={onContinue}>{t.onboarding.permissionLater}</button>
     </section>
@@ -356,12 +392,15 @@ function SidebarUpdateStatus({ update, actions, setPage, t }) {
 }
 
 function Sidebar({ page, setPage, state, actions, language, t }) {
-  const retainedSince = new Intl.DateTimeFormat(t.locale, { dateStyle: "short", timeStyle: "short" }).format(new Date(state.retentionCutoff));
+  const historyStartedAt = state.historyStartedAt ? new Date(state.historyStartedAt) : null;
+  const historyStart = historyStartedAt && Number.isFinite(historyStartedAt.getTime())
+    ? text(t.status.historyStart, { time: new Intl.DateTimeFormat(t.locale, { dateStyle: "short", timeStyle: "short" }).format(historyStartedAt) })
+    : t.status.historyEmpty;
   const update = state.runtime?.update || {};
   return <aside className="sidebar">
     <div className="brand-mark"><Compass size={29} weight="fill" /></div>
     <nav className="main-nav" aria-label={language === "ru" ? "Разделы" : "Sections"}>{NAVIGATION.map(({ id, icon: Icon, separated }) => <button key={id} className={`${page === id ? "active" : ""} ${separated ? "separated" : ""}`} onClick={() => setPage(id)}><Icon size={25} weight={page === id ? "fill" : "regular"} /><span>{t.nav[id]}</span></button>)}</nav>
-    <div className="sidebar-status"><div className="status-row"><span className={`status-dot ${state.settings.trackingEnabled ? "on" : "off"}`} /><span>{state.settings.trackingEnabled ? t.common.local : t.status.paused}</span></div><div className="status-row muted"><Database size={18} /><span>{text(t.status.retention, { period: formatRetention(state.settings.retentionHours, t) })}</span></div><div className="expiry">{text(t.status.deletion, { time: retainedSince })}</div></div>
+    <div className="sidebar-status"><div className="status-row"><span className={`status-dot ${state.settings.trackingEnabled ? "on" : "off"}`} /><span>{state.settings.trackingEnabled ? t.common.local : t.status.paused}</span></div><div className="status-row muted"><Database size={18} /><span>{text(t.status.retention, { period: formatRetention(state.settings.retentionHours, t) })}</span></div><div className="expiry">{historyStart}</div></div>
     <SidebarUpdateStatus update={update} actions={actions} setPage={setPage} t={t} />
     <button className={`tracking-button ${state.settings.trackingEnabled ? "pause" : "resume"}`} onClick={() => actions.setTracking(!state.settings.trackingEnabled)}>{state.settings.trackingEnabled ? <Pause size={22} weight="fill" /> : <Play size={22} weight="fill" />}{state.settings.trackingEnabled ? t.status.pause : t.status.resume}</button>
   </aside>;
@@ -604,7 +643,29 @@ function ReviewQueue({ items, onClassify, t }) {
 
 function SmartAnalysisSettings({ state, actions, pending, run, t }) {
   const runtime = state.runtime?.smartAnalysis || {};
-  return <div className="feature-settings"><div className="feature-heading"><Robot size={23} /><div><strong>{t.settings.smartTitle}</strong><span>{t.settings.smartText}</span></div><SettingSwitch checked={Boolean(state.settings.smartAnalysisEnabled)} disabled={Boolean(pending) || !runtime.installed} label={t.settings.smartTitle} onChange={(enabled) => run("smart-enabled", () => actions.setSetting("smartAnalysisEnabled", enabled))} /></div><div className="feature-status"><span className={`status-dot ${runtime.installed ? "on" : "off"}`} />{runtime.installed ? text(t.settings.smartInstalled, { version: runtime.version || "1" }) : t.settings.smartNotInstalled}{runtime.running && <em>{t.settings.smartRunning}</em>}</div><div className="feature-actions">{!runtime.installed && <button className="secondary-button" disabled={Boolean(pending)} onClick={() => run("smart-download", actions.downloadSmartModel)}><DownloadSimple size={17} /> {t.settings.smartDownload}</button>} {!runtime.installed && <button className="secondary-button" disabled={Boolean(pending)} onClick={() => run("smart-file", actions.installSmartModel)}><FolderOpen size={17} /> {t.settings.smartFile}</button>}{runtime.installed && <button className="secondary-button" disabled={Boolean(pending) || runtime.running} onClick={() => run("smart-run", actions.runSmartAnalysis)}><Sparkle size={17} /> {t.settings.smartRun}</button>}{runtime.installed && <button className="text-button" disabled={Boolean(pending)} onClick={() => run("smart-remove", actions.removeSmartModel)}>{t.settings.smartRemove}</button>}</div><p>{t.settings.smartPrivacy}</p></div>;
+  const engine = state.settings.analysisEngine || runtime.engine || "builtin";
+  const signal = runtime.signal || {};
+  const semantic = runtime.semantic || {};
+  const selectedRuntime = engine === "signals" ? signal : engine === "semantic" ? semantic : runtime;
+  const lastResult = selectedRuntime.lastResult || {};
+  const semanticSize = semantic.sizeBytes
+    ? `${new Intl.NumberFormat(t.locale, { maximumFractionDigits: 1 }).format(semantic.sizeBytes / (1024 * 1024))} ${t.settings.megabytes}`
+    : t.settings.semanticApproxSize;
+  const modes = [
+    { id: "builtin", icon: Compass, title: t.settings.analysisBuiltin, size: t.settings.analysisNoDownload, description: t.settings.analysisBuiltinText, installed: true },
+    { id: "signals", icon: Robot, title: t.settings.analysisSignals, size: t.settings.analysisSignalsSize, description: t.settings.analysisSignalsText, installed: Boolean(signal.installed) },
+    { id: "semantic", icon: Brain, title: t.settings.analysisSemantic, size: semanticSize, description: t.settings.analysisSemanticText, installed: Boolean(semantic.installed) },
+  ];
+  return <div className="analysis-settings">
+    <div className="feature-heading analysis-heading"><Brain size={23} /><div><strong>{t.settings.smartTitle}</strong><span>{t.settings.smartText}</span></div></div>
+    <div className="analysis-mode-grid" role="radiogroup" aria-label={t.settings.analysisMode}>
+      {modes.map((mode) => { const Icon = mode.icon; return <button type="button" key={mode.id} className={`analysis-mode-card ${engine === mode.id ? "selected" : ""}`} role="radio" aria-checked={engine === mode.id} disabled={Boolean(pending) || semantic.downloading || semantic.running} onClick={() => run(`analysis-${mode.id}`, () => actions.setAnalysisEngine(mode.id))}><span className="analysis-mode-icon"><Icon size={19} /></span><span className="analysis-mode-copy"><strong>{mode.title}</strong><small>{mode.description}</small><em>{mode.size}</em></span><span className={`status-dot ${mode.installed ? "on" : "off"}`} /></button>; })}
+    </div>
+    {engine === "signals" && <div className="analysis-detail"><div className="feature-status"><span className={`status-dot ${signal.installed && !signal.updateAvailable ? "on" : "off"}`} />{signal.installed ? signal.updateAvailable ? text(t.settings.smartOutdated, { version: signal.version || "1.0" }) : text(t.settings.smartInstalled, { version: signal.version || "1.1", size: t.settings.analysisSignalsSize }) : t.settings.smartNotInstalled}{signal.running && <em>{t.settings.smartRunning}</em>}</div><div className="feature-actions">{(!signal.installed || signal.updateAvailable) && <button className="secondary-button" disabled={Boolean(pending)} onClick={() => run("smart-download", actions.downloadSmartModel)}><DownloadSimple size={17} /> {signal.updateAvailable ? t.settings.smartUpdate : t.settings.smartDownload}</button>}{!signal.installed && <button className="secondary-button" disabled={Boolean(pending)} onClick={() => run("smart-file", actions.installSmartModel)}><FolderOpen size={17} /> {t.settings.smartFile}</button>}{signal.installed && <button className="secondary-button" disabled={Boolean(pending) || signal.running} onClick={() => run("smart-run", actions.runSelectedAnalysis)}><Sparkle size={17} /> {t.settings.smartRun}</button>}{signal.installed && <button className="text-button" disabled={Boolean(pending)} onClick={() => run("smart-remove", actions.removeSmartModel)}>{t.settings.smartRemove}</button>}</div><p>{t.settings.smartPrivacy}</p></div>}
+    {engine === "semantic" && <div className="analysis-detail"><div className="feature-status"><span className={`status-dot ${semantic.installed ? "on" : "off"}`} />{semantic.installed ? text(t.settings.semanticInstalled, { version: semantic.version || "1.0", size: semanticSize }) : text(t.settings.semanticNotInstalled, { size: semanticSize })}{(semantic.downloading || semantic.running) && <em>{semantic.downloading ? t.settings.semanticDownloading : t.settings.smartRunning}</em>}</div>{(semantic.downloading || semantic.running) && <div className="analysis-progress" aria-label={t.settings.semanticProgress}><span style={{ width: `${Math.max(2, Number(semantic.progress || 0))}%` }} /></div>}<div className="feature-actions">{!semantic.installed && <button className="secondary-button" disabled={Boolean(pending) || semantic.downloading} onClick={() => run("semantic-download", actions.downloadSemanticModel)}><DownloadSimple size={17} /> {t.settings.semanticDownload}</button>}{semantic.installed && <button className="secondary-button" disabled={Boolean(pending) || semantic.running} onClick={() => run("semantic-run", actions.runSelectedAnalysis)}><Sparkle size={17} /> {t.settings.smartRun}</button>}{semantic.installed && <button className="text-button" disabled={Boolean(pending) || semantic.running} onClick={() => run("semantic-remove", actions.removeSemanticModel)}>{t.settings.semanticRemove}</button>}</div>{semantic.error && <small className="analysis-error">{semantic.error}</small>}<p>{t.settings.semanticPrivacy}</p></div>}
+    {engine === "builtin" && <p className="analysis-footnote">{t.settings.analysisBuiltinPrivacy}</p>}
+    {lastResult.status && lastResult.status !== "never" && <div className="analysis-result"><CheckCircle size={18} /><span><strong>{t.settings.analysisLastResult}</strong><small>{text(t.settings.analysisResultMetrics, { candidates: lastResult.candidates || 0, refined: lastResult.refined || 0, changed: lastResult.changed || 0 })}</small></span></div>}
+  </div>;
 }
 
 function BrowserCompanionSettings({ state, actions, pending, run, isDesktop, t }) {
@@ -700,6 +761,7 @@ function SettingsPage({ state, actions, isDesktop, language, t }) {
           <div><strong>{t.settings.accessibility}</strong><span>{accessibilityText}</span></div>
           <div className="permission-actions">
             <button onClick={() => run("accessibility", actions.requestAccessibility)} disabled={Boolean(pending)}>{t.settings.grantAccess}</button>
+            <button onClick={() => run("accessibility-check", actions.refreshAccessibility)} disabled={Boolean(pending)}>{t.onboarding.permissionCheck}</button>
             <button onClick={actions.relaunch}>{t.settings.restartAfterAccess}</button>
           </div>
         </div>
@@ -774,7 +836,6 @@ export function App() {
   const { state, actions, isDesktop, language } = useDaytrace();
   const [page, setPage] = useState("history");
   const [selectedDay, setSelectedDay] = useState(() => startOfLocalDay(Date.now()));
-  const [permissionDismissed, setPermissionDismissed] = useState(false);
   const t = translations[language];
   const today = startOfLocalDay(Date.now());
   const displayDay = page === "history" ? selectedDay : today;
@@ -784,6 +845,6 @@ export function App() {
   useEffect(() => { document.documentElement.lang = language; document.title = "Daytrace"; }, [language]);
   useEffect(() => { if (selectedDay < firstRetainedDay) setSelectedDay(firstRetainedDay); }, [firstRetainedDay, selectedDay]);
   if (!state.settings.onboardingComplete) return <Onboarding language={language} onComplete={actions.completeOnboarding} />;
-  if (isDesktop && state.runtime?.platform === "darwin" && !state.runtime.accessibilityTrusted && !permissionDismissed) return <MacPermissionOnboarding actions={actions} onContinue={() => setPermissionDismissed(true)} runtime={state.runtime} t={t} />;
+  if (isDesktop && state.runtime?.platform === "darwin" && !state.runtime.accessibilityTrusted && !state.settings.accessibilityOnboardingDismissed) return <MacPermissionOnboarding actions={actions} onContinue={actions.dismissAccessibilityOnboarding} runtime={state.runtime} t={t} />;
   return <div className="app-shell"><Sidebar page={page} setPage={setPage} state={state} actions={actions} language={language} t={t} /><div className="app-main"><header className="date-header"><div className="date-copy" key={`${displayDay}-${language}`}><h1>{isToday ? `${t.common.today}, ${date.date}` : date.date}</h1><span>{date.weekday}</span></div>{page === "history" && <DateNavigation selectedDay={selectedDay} minDay={firstRetainedDay} maxDay={today} availableDays={state.availableDays || []} language={language} onSelect={setSelectedDay} t={t} />}</header>{page === "history" && <HistoryPage key={selectedDay} state={state} actions={actions} setPage={setPage} selectedDay={selectedDay} language={language} t={t} />}{page === "ask" && <AskPage actions={actions} setPage={setPage} language={language} retentionHours={state.settings.retentionHours} t={t} />}{page === "skills" && <SkillsPage state={state} actions={actions} t={t} />}{page === "settings" && <SettingsPage state={state} actions={actions} isDesktop={isDesktop} language={language} t={t} />}{page === "exclusions" && <ExclusionsPage state={state} actions={actions} t={t} />}</div></div>;
 }

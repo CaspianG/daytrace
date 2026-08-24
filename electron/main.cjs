@@ -6,7 +6,7 @@ const { spawn } = require("node:child_process");
 const readline = require("node:readline");
 const { Readable, Transform } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
-const { EventStore } = require("./lib/event-store.cjs");
+const { EventStore, normalizeAnalysisEngine } = require("./lib/event-store.cjs");
 const { createAccessibilityService } = require("./lib/accessibility-service.cjs");
 const { getMacInstallInfo } = require("./lib/mac-install-service.cjs");
 const { confirmMacUpdateReady, findStaleMacDuplicates, getMacUpdateReadyRequest, prepareMacUpdate } = require("./lib/mac-update-service.cjs");
@@ -15,11 +15,13 @@ const { MAX_RELEASE_JSON_BYTES, MAX_UPDATE_BYTES, normalizeChecksumRelease, norm
 const { WINDOWS_UPDATE_ENV, confirmWindowsUpdateReady, getWindowsUpdateReadyRequest, prepareWindowsUpdate } = require("./lib/windows-update-service.cjs");
 const { BrowserCompanionService, installNativeHost, runNativeMessagingHost } = require("./lib/browser-companion.cjs");
 const { SmartAnalysisService } = require("./lib/smart-analysis-service.cjs");
+const { SemanticModelService } = require("./lib/semantic-model-service.cjs");
 const { createEncryptedBackup, exportCsv, exportJson, restoreEncryptedBackup } = require("./lib/data-portability.cjs");
 const { platformCapabilities, runDiagnostics } = require("./lib/diagnostics.cjs");
 
 if (process.argv.includes("--disable-gpu") || process.env.DAYTRACE_SOFTWARE_RENDERING === "1") app.disableHardwareAcceleration();
-const SMOKE_TEST = process.argv.includes("--daytrace-smoke-test");
+const SEMANTIC_SMOKE_TEST = process.argv.includes("--daytrace-semantic-smoke-test");
+const SMOKE_TEST = process.argv.includes("--daytrace-smoke-test") || SEMANTIC_SMOKE_TEST;
 const smokeTempRoot = fs.realpathSync(app.getPath("temp"));
 const smokeUserDataArgument = process.argv.find((argument) => String(argument).startsWith("--daytrace-smoke-user-data="));
 const requestedSmokeUserData = smokeUserDataArgument ? path.resolve(String(smokeUserDataArgument).slice("--daytrace-smoke-user-data=".length)) : "";
@@ -47,6 +49,8 @@ process.on("unhandledRejection", (error) => startupLog("unhandledRejection", err
 
 let mainWindow = null;
 let creatingWindow = null;
+let semanticWindow = null;
+let creatingSemanticWindow = null;
 let tray = null;
 let tracker = null;
 let trackerStatus = "stopped";
@@ -61,7 +65,10 @@ let accessibilityService = null;
 let trackerStarting = false;
 let browserCompanion = null;
 let smartAnalysis = null;
+let semanticAnalysis = null;
 let smartAnalysisTimer = null;
+let semanticRequestPending = false;
+let semanticBackgroundWindowOwned = false;
 let latestDiagnostics = null;
 const UPDATE_DIR = path.join(app.getPath("temp"), "daytrace-updates");
 const DATA_ROOT = path.join(app.getPath("userData"), "daytrace-data");
@@ -116,9 +123,16 @@ function currentAutoStart() {
   if (!app.isPackaged || !["win32", "darwin"].includes(process.platform)) return false;
   try { return Boolean(app.getLoginItemSettings(loginItemSettings(true)).openAtLogin); } catch { return false; }
 }
+function analysisRuntimeStatus() {
+  const engine = normalizeAnalysisEngine(store?.settings?.analysisEngine);
+  const signal = smartAnalysis?.status() || { installed: false, running: false };
+  const semantic = semanticAnalysis?.status() || { installed: false, running: false };
+  const selected = engine === "semantic" ? semantic : engine === "signals" ? signal : { installed: true, running: false, version: "built-in" };
+  return { engine, ...selected, signal, semantic };
+}
 function state() {
   const browserStatus = browserCompanion?.status() || { running: false };
-  const smartStatus = smartAnalysis?.status() || { installed: false, running: false };
+  const smartStatus = analysisRuntimeStatus();
   return {
     ...store.state(),
     runtime: {
@@ -333,8 +347,42 @@ async function cleanStaleMacDuplicates() {
 
 function trackerPath() {
   if (process.platform === "win32") return app.isPackaged ? path.join(process.resourcesPath, "tracker", "windows", "Daytrace.Tracker.exe") : path.join(__dirname, "..", "native", "windows-tracker", "bin", "Release", "daytrace-win-x64", "Daytrace.Tracker.exe");
-  if (process.platform === "darwin") return app.isPackaged ? path.join(process.resourcesPath, "tracker", "macos", "daytrace-tracker") : path.join(__dirname, "..", "native", "macos-tracker", "build", "daytrace-tracker");
+  if (process.platform === "darwin") return app.isPackaged ? path.join(path.dirname(process.execPath), "daytrace-tracker") : path.join(__dirname, "..", "native", "macos-tracker", "build", "daytrace-tracker");
   return null;
+}
+function probeTrackerAccessibility(prompt = false) {
+  if (process.platform !== "darwin") return Promise.resolve(true);
+  const executable = trackerPath();
+  if (!executable || !fs.existsSync(executable)) {
+    startupLog(`accessibility-probe-unavailable path=${executable || "none"}`);
+    return Promise.resolve(Boolean(systemPreferences.isTrustedAccessibilityClient(Boolean(prompt))));
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    let timeout = null;
+    const finish = (trusted) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      resolve(Boolean(trusted));
+    };
+    let child;
+    try {
+      child = spawn(executable, [prompt ? "--request-accessibility" : "--check-accessibility"], { windowsHide: true, stdio: "ignore" });
+    } catch (error) {
+      startupLog("accessibility-probe-spawn-failed", error);
+      finish(false);
+      return;
+    }
+    timeout = setTimeout(() => {
+      child.kill();
+      startupLog("accessibility-probe-timeout");
+      finish(false);
+    }, 5_000);
+    timeout.unref?.();
+    child.once("error", (error) => { startupLog("accessibility-probe-error", error); finish(false); });
+    child.once("exit", (code) => finish(code === 0));
+  });
 }
 function startTracker() {
   if (tracker || trackerStarting || !store?.settings.trackingEnabled) return;
@@ -355,9 +403,18 @@ function startTracker() {
       },
     });
     tracker = child;
-    trackerStatus = "running";
     const lines = readline.createInterface({ input: child.stdout });
-    lines.on("line", (line) => { try { store.append(JSON.parse(line)); } catch { } });
+    lines.on("line", (line) => {
+      try {
+        const event = JSON.parse(line);
+        if (tracker === child && trackerStatus === "starting") {
+          trackerStatus = "running";
+          accessibilityService?.mark(true);
+          sendState();
+        }
+        store.append(event);
+      } catch { }
+    });
     child.once("error", (error) => {
       if (tracker !== child) return;
       trackerStatus = "error"; tracker = null; startupLog("tracker-error", error); sendState();
@@ -367,7 +424,7 @@ function startTracker() {
       tracker = null;
       if (!isQuitting && store.settings.trackingEnabled) {
         trackerStatus = code === 77 ? "permission-required" : code === 0 ? "stopped" : "error";
-        if (code === 77) accessibilityService?.watch();
+        if (code === 77) { accessibilityService?.mark(false); accessibilityService?.watch(); }
       }
       sendState();
     });
@@ -427,7 +484,42 @@ function secureWindowNavigation(window) {
   });
 }
 
-async function createWindow() {
+async function createSemanticHostWindow() {
+  const window = new BrowserWindow({
+    width: 360, height: 240, show: false, backgroundColor: "#fbfaf7",
+    webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
+  });
+  semanticWindow = window;
+  secureWindowNavigation(window);
+  window.webContents.on("console-message", (details) => { if (details.level === "error") startupLog(`semantic-renderer-error ${details.message}`); });
+  window.webContents.on("did-fail-load", (_event, code, description, url) => startupLog(`semantic-did-fail-load code=${code} description=${description} url=${url}`));
+  window.webContents.on("render-process-gone", (_event, details) => {
+    startupLog(`semantic-renderer-gone reason=${details.reason}`);
+    if (semanticAnalysis?.active) semanticAnalysis.cancel(`Semantic analysis process exited: ${details.reason}`);
+    if (!window.isDestroyed()) window.destroy();
+  });
+  window.on("closed", () => { if (semanticWindow === window) semanticWindow = null; });
+  try {
+    if (!USE_LOCAL_RENDERER) await window.loadURL(`${DEV_RENDERER_ORIGIN}?semanticHost=1`);
+    else await window.loadFile(RENDERER_FILE, { query: { semanticHost: "1" } });
+    const ready = await window.webContents.executeJavaScript("new Promise((resolve) => { const deadline = Date.now() + 10000; const check = () => window.__daytraceSemanticHostReady ? resolve(true) : Date.now() >= deadline ? resolve(false) : setTimeout(check, 25); check(); })");
+    if (!ready) throw new Error("Semantic worker host did not become ready");
+    startupLog("semantic-window-ready-background");
+    return window;
+  } catch (error) {
+    if (semanticAnalysis?.active) semanticAnalysis.cancel(error?.message || "Semantic analysis host failed");
+    if (!window.isDestroyed()) window.destroy();
+    throw error;
+  }
+}
+
+async function ensureSemanticHostWindow() {
+  if (semanticWindow && !semanticWindow.isDestroyed()) return semanticWindow;
+  if (!creatingSemanticWindow) creatingSemanticWindow = createSemanticHostWindow().finally(() => { creatingSemanticWindow = null; });
+  return creatingSemanticWindow;
+}
+
+async function createWindow(showWindow = true) {
   startupLog(`createWindow packaged=${app.isPackaged}`);
   const window = new BrowserWindow({
     width: 1488, height: 1058, minWidth: 1080, minHeight: 720, backgroundColor: "#fbfaf7", title: "Daytrace",
@@ -439,19 +531,26 @@ async function createWindow() {
   window.webContents.on("did-finish-load", () => startupLog("did-finish-load"));
   window.webContents.on("console-message", (details) => { if (details.level === "error") startupLog(`renderer-error ${details.message}`); });
   window.webContents.on("did-fail-load", (_event, code, description, url) => startupLog(`did-fail-load code=${code} description=${description} url=${url}`));
+  window.webContents.on("render-process-gone", (_event, details) => {
+    startupLog(`renderer-gone reason=${details.reason}`);
+    if (semanticAnalysis?.active) semanticAnalysis.cancel(`Semantic analysis process exited: ${details.reason}`);
+  });
   window.on("minimize", (event) => { if (!isQuitting) { event.preventDefault(); hideWindow(window); } });
   window.on("close", (event) => { if (!isQuitting) { event.preventDefault(); hideWindow(window); } });
-  window.on("focus", () => { if (process.platform === "darwin") { accessibilityService?.check(); startTracker(); } });
+  window.on("focus", () => {
+    if (process.platform !== "darwin") return;
+    void accessibilityService?.refresh(false).then((trusted) => { if (trusted) startTracker(); else accessibilityService?.watch(); sendState(); });
+  });
   window.on("closed", () => { if (mainWindow === window) mainWindow = null; });
   if (!USE_LOCAL_RENDERER) await window.loadURL(DEV_RENDERER_ORIGIN);
   else await window.loadFile(RENDERER_FILE);
-  const renderer = await window.webContents.executeJavaScript("(() => { const root = document.getElementById('root'); return { children: root?.childElementCount || 0, text: root?.innerText.trim().length || 0 }; })()");
+  const renderer = await window.webContents.executeJavaScript("new Promise((resolve) => { const deadline = Date.now() + 10000; const check = () => { const root = document.getElementById('root'); if (window.__daytraceAppReady && root?.childElementCount > 0 && root?.innerText.trim().length > 0) resolve({ children: root.childElementCount, text: root.innerText.trim().length }); else if (Date.now() >= deadline) resolve({ children: 0, text: 0 }); else setTimeout(check, 25); }; check(); })");
   if (renderer.children < 1 || renderer.text < 1) throw new Error("Renderer loaded without visible content");
   const bridgeReady = await window.webContents.executeJavaScript("window.daytrace?.getState().then((value) => Boolean(value?.settings && value?.runtime)).catch(() => false)");
   if (!bridgeReady) throw new Error("Renderer could not reach the local Daytrace service");
   if (SMOKE_TEST) {
     startupLog(`desktop-smoke-ready children=${renderer.children} text=${renderer.text}`);
-  } else {
+  } else if (showWindow) {
     window.show(); window.focus(); startupLog(`window-visible children=${renderer.children} text=${renderer.text}`);
     if (windowsUpdateReadyRequest) {
       confirmWindowsUpdateReady(windowsUpdateReadyRequest);
@@ -461,15 +560,21 @@ async function createWindow() {
       confirmMacUpdateReady(macUpdateReadyRequest);
       startupLog("mac-update-ready-confirmed");
     }
-  }
+  } else startupLog(`window-ready-background children=${renderer.children} text=${renderer.text}`);
   setTimeout(startTracker, 400).unref();
   return window;
 }
-async function openWindow() {
+async function openWindow(showWindow = true) {
   clearTimeout(releaseTimer);
-  if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); sendState(); return mainWindow; }
-  if (!creatingWindow) creatingWindow = createWindow().finally(() => { creatingWindow = null; });
-  return creatingWindow;
+  if (showWindow) semanticBackgroundWindowOwned = false;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (showWindow) { mainWindow.show(); mainWindow.focus(); }
+    sendState(); return mainWindow;
+  }
+  if (!creatingWindow) creatingWindow = createWindow(showWindow).finally(() => { creatingWindow = null; });
+  const window = await creatingWindow;
+  if (showWindow && !SMOKE_TEST && !window.isVisible()) { window.show(); window.focus(); }
+  return window;
 }
 
 function setTracking(enabled) {
@@ -492,16 +597,55 @@ async function syncBrowserCompanion() {
 }
 
 async function runSmartAnalysis(force = false) {
-  if (!smartAnalysis || !store?.settings.smartAnalysisEnabled) return { status: "disabled", rules: [] };
+  const engine = normalizeAnalysisEngine(store?.settings?.analysisEngine);
+  if (engine === "builtin") return { status: "disabled", rules: [] };
   if (!force && powerMonitor.getSystemIdleTime() < 120) return { status: "waiting-for-idle", rules: [] };
+  if (engine === "semantic") return requestSemanticAnalysis();
+  if (!smartAnalysis) return { status: "unavailable", rules: [] };
   try {
-    const result = await smartAnalysis.analyze(store);
+    const analysis = smartAnalysis.analyze(store);
+    sendState();
+    const result = await analysis;
     sendState();
     return result;
   } catch (error) {
     startupLog("smart-analysis-failed", error);
     sendState();
     throw error;
+  }
+}
+
+function requestSemanticAnalysis() {
+  if (!semanticAnalysis?.status().installed) return { status: "model-required" };
+  if (semanticAnalysis.status().running) return { status: "busy" };
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    if (!store.smartAnalysisCandidates(1, 30).length) {
+      const result = semanticAnalysis.begin(store);
+      sendState();
+      return result;
+    }
+    if (semanticRequestPending) return { status: "requested" };
+    semanticRequestPending = true;
+    void ensureSemanticHostWindow().then((window) => {
+      if (store.settings.analysisEngine === "semantic" && semanticAnalysis?.status().installed && !window.isDestroyed()) window.webContents.send("daytrace:semantic-analysis-requested");
+      else if (!window.isDestroyed()) window.destroy();
+    }).catch((error) => startupLog("semantic-background-window-failed", error)).finally(() => { semanticRequestPending = false; });
+    return { status: "requested" };
+  }
+  clearTimeout(releaseTimer);
+  if (!mainWindow.isVisible()) semanticBackgroundWindowOwned = true;
+  mainWindow.webContents.send("daytrace:semantic-analysis-requested");
+  return { status: "requested" };
+}
+
+function releaseSemanticBackgroundWindow() {
+  if (semanticWindow && !semanticWindow.isDestroyed()) {
+    const completedWindow = semanticWindow;
+    setTimeout(() => { if (semanticWindow === completedWindow && !completedWindow.isDestroyed()) completedWindow.destroy(); }, 100).unref();
+  }
+  if (semanticBackgroundWindowOwned) {
+    semanticBackgroundWindowOwned = false;
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) scheduleWindowRelease(mainWindow);
   }
 }
 
@@ -522,7 +666,7 @@ function refreshDiagnostics() {
     accessibilityTrusted: accessibilityTrusted(),
     autoStartEnabled: currentAutoStart(),
     browserStatus: browserCompanion?.status() || {},
-    smartStatus: smartAnalysis?.status() || {},
+    smartStatus: analysisRuntimeStatus(),
   });
   sendState();
   return latestDiagnostics;
@@ -556,7 +700,7 @@ async function chooseRestore(passphrase) {
     filters: [{ name: "Encrypted Daytrace backup", extensions: ["daytrace"] }],
   });
   if (selected.canceled || !selected.filePaths[0]) return state();
-  if (smartAnalysis?.status().running) throw new Error("Wait for local smart analysis to finish before restoring a backup");
+  if (smartAnalysis?.status().running || semanticAnalysis?.status().running) throw new Error("Wait for local smart analysis to finish before restoring a backup");
   const wasTracking = store.settings.trackingEnabled;
   stopTracker("stopped");
   browserCompanion?.stop();
@@ -579,7 +723,7 @@ async function chooseRestore(passphrase) {
 function handleIpc(channel, listener) {
   ipcMain.handle(channel, (event, ...args) => {
     assertTrustedIpcSender(event, {
-      expectedWebContents: mainWindow?.webContents,
+      expectedWebContents: [mainWindow?.webContents, semanticWindow?.webContents].filter(Boolean),
       packaged: USE_LOCAL_RENDERER,
       rendererFile: RENDERER_FILE,
       devOrigin: DEV_RENDERER_ORIGIN,
@@ -593,12 +737,19 @@ function registerIpc() {
   handleIpc("daytrace:ask", (question) => store.ask(question));
   handleIpc("daytrace:set-tracking", (enabled) => setTracking(enabled));
   handleIpc("daytrace:set-setting", async (key, value) => {
-    const allowed = new Set(["excludePrivateWindows", "collectWindowTitles", "collectInputCounts", "collectBrowserTabCount", "smartAnalysisEnabled", "browserCompanionEnabled"]);
+    const allowed = new Set(["excludePrivateWindows", "collectWindowTitles", "collectInputCounts", "collectBrowserTabCount", "browserCompanionEnabled"]);
     if (!allowed.has(key)) throw new Error("Unsupported setting");
     const enabled = key === "collectBrowserTabCount" && !platformCapabilities(process.platform, app.isPackaged).browserTabCount ? false : Boolean(value);
     store.updateSettings({ [key]: enabled });
     if (["collectWindowTitles", "collectInputCounts", "collectBrowserTabCount"].includes(key)) restartTracker();
     if (key === "browserCompanionEnabled") await syncBrowserCompanion();
+    return state();
+  });
+  handleIpc("daytrace:set-analysis-engine", async (engine) => {
+    const normalized = normalizeAnalysisEngine(engine);
+    store.updateSettings({ analysisEngine: normalized });
+    if (normalized === "signals" && smartAnalysis?.status().installed) await runSmartAnalysis(true);
+    if (normalized === "semantic" && semanticAnalysis?.status().installed) setTimeout(requestSemanticAnalysis, 50).unref();
     return state();
   });
   handleIpc("daytrace:set-retention", (hours) => { store.updateSettings({ retentionHours: hours }); return state(); });
@@ -613,6 +764,17 @@ function registerIpc() {
     if (accessibilityTrusted()) startTracker();
     else { trackerStatus = "permission-required"; accessibilityService?.watch(); }
     sendState();
+    return state();
+  });
+  handleIpc("daytrace:refresh-accessibility", async () => {
+    if (process.platform === "darwin") await accessibilityService.refresh(false);
+    if (accessibilityTrusted()) startTracker();
+    else { trackerStatus = "permission-required"; accessibilityService?.watch(); }
+    sendState();
+    return state();
+  });
+  handleIpc("daytrace:dismiss-accessibility-onboarding", () => {
+    store.updateSettings({ accessibilityOnboardingDismissed: true });
     return state();
   });
   handleIpc("daytrace:relaunch", () => {
@@ -648,19 +810,31 @@ function registerIpc() {
   });
   handleIpc("daytrace:download-smart-model", async () => {
     await smartAnalysis.download();
-    store.updateSettings({ smartAnalysisEnabled: true });
+    store.updateSettings({ analysisEngine: "signals" });
+    await runSmartAnalysis(true);
     return state();
   });
   handleIpc("daytrace:install-smart-model", async () => {
     const selected = await dialog.showOpenDialog(mainWindow, { properties: ["openFile"], filters: [{ name: "Daytrace smart model", extensions: ["json"] }] });
     if (!selected.canceled && selected.filePaths[0]) {
       smartAnalysis.installFile(selected.filePaths[0]);
-      store.updateSettings({ smartAnalysisEnabled: true });
+      store.updateSettings({ analysisEngine: "signals" });
+      await runSmartAnalysis(true);
     }
     return state();
   });
-  handleIpc("daytrace:remove-smart-model", () => { smartAnalysis.remove(); store.updateSettings({ smartAnalysisEnabled: false }); return state(); });
+  handleIpc("daytrace:remove-smart-model", () => { smartAnalysis.remove(); if (store.settings.analysisEngine === "signals") store.updateSettings({ analysisEngine: "builtin" }); return state(); });
   handleIpc("daytrace:run-smart-analysis", async () => { await runSmartAnalysis(true); return state(); });
+  handleIpc("daytrace:download-semantic-model", async () => {
+    await semanticAnalysis.download();
+    store.updateSettings({ analysisEngine: "semantic" });
+    return state();
+  });
+  handleIpc("daytrace:remove-semantic-model", () => { semanticAnalysis.remove(); if (store.settings.analysisEngine === "semantic") store.updateSettings({ analysisEngine: "builtin" }); return state(); });
+  handleIpc("daytrace:begin-semantic-analysis", () => { const result = semanticAnalysis.begin(store); if (result.status !== "ready") releaseSemanticBackgroundWindow(); return result; });
+  handleIpc("daytrace:report-semantic-analysis", (token, progress, stage) => semanticAnalysis.report(String(token || ""), progress, stage));
+  handleIpc("daytrace:finish-semantic-analysis", (token, decisions) => { semanticAnalysis.complete(String(token || ""), decisions, store); const nextState = state(); releaseSemanticBackgroundWindow(); return nextState; });
+  handleIpc("daytrace:fail-semantic-analysis", (token, error) => { if (semanticAnalysis.active?.token === String(token || "")) semanticAnalysis.cancel(error); const nextState = state(); releaseSemanticBackgroundWindow(); return nextState; });
   handleIpc("daytrace:reveal-data", () => shell.openPath(store.root));
   handleIpc("daytrace:check-updates", async () => { await checkForUpdates(); return state(); });
   handleIpc("daytrace:install-update", async () => { await downloadAndInstallUpdate(); return state(); });
@@ -679,21 +853,58 @@ if (nativeMessagingOrigin) {
       Menu.setApplicationMenu(null);
       store = new EventStore(DATA_ROOT, broadcastState, { defaultLanguage: app.getLocale() });
       smartAnalysis = new SmartAnalysisService(DATA_ROOT, { version: app.getVersion(), fetch: (url, options) => net.fetch(url, options) });
+      semanticAnalysis = new SemanticModelService(DATA_ROOT, {
+        version: app.getVersion(),
+        fetch: (url, options) => net.fetch(url, options),
+        developmentAssetRoot: app.isPackaged ? "" : path.join(__dirname, "..", "models"),
+        onChange: sendState,
+      });
       browserCompanion = new BrowserCompanionService(DATA_ROOT, (context) => Boolean(store?.settings.browserCompanionEnabled && store.append(context)));
       accessibilityService = createAccessibilityService({
         platform: process.platform,
         isTrusted: (prompt) => systemPreferences.isTrustedAccessibilityClient(prompt),
+        probeTrusted: process.platform === "darwin" ? probeTrackerAccessibility : null,
         openExternal: async (url) => {
           try { await shell.openExternal(url); }
           catch (error) { startupLog("accessibility-settings-open-failed", error); }
         },
         onChange: accessibilityChanged,
       });
+      await accessibilityService.refresh(false);
       store.updateSettings({ autoStartEnabled: currentAutoStart() });
       await syncBrowserCompanion();
       registerIpc(); createTray();
       const launchedInBackground = process.argv.includes("--background") || app.getLoginItemSettings().wasOpenedAtLogin || app.getLoginItemSettings().wasOpenedAsHidden;
       if (!launchedInBackground) await openWindow(); else setTimeout(startTracker, 400).unref();
+      if (SEMANTIC_SMOKE_TEST) {
+        await semanticAnalysis.download();
+        store.updateSettings({ analysisEngine: "semantic" });
+        const observedAt = Date.now() - 10_000;
+        store.append({ at: new Date(observedAt).toISOString(), kind: "foreground", app: "Telegram Desktop", title: "Согласуем структуру кабинета с командой", context: "messaging" });
+        store.append({ at: new Date(observedAt + 2_000).toISOString(), kind: "heartbeat", app: "Telegram Desktop", title: "Согласуем структуру кабинета с командой", context: "messaging" });
+        store.append({ at: new Date(observedAt + 3_000).toISOString(), kind: "foreground", app: "Google Chrome", title: "Prepare the quarterly plan for our department", domain: "acme.invalid", context: "browser" });
+        store.append({ at: new Date(observedAt + 5_000).toISOString(), kind: "heartbeat", app: "Google Chrome", title: "Prepare the quarterly plan for our department", domain: "acme.invalid", context: "browser" });
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        const semanticStartedAt = Date.now();
+        const totalPrivateMiB = () => app.getAppMetrics().reduce((total, metric) => total + Number(metric.memory?.privateBytes || 0), 0) / 1024;
+        const baselinePrivateMiB = totalPrivateMiB();
+        let peakPrivateMiB = baselinePrivateMiB;
+        requestSemanticAnalysis();
+        const deadline = Date.now() + 90_000;
+        while (["never"].includes(semanticAnalysis.status().lastResult.status) && Date.now() < deadline) {
+          if (semanticAnalysis.status().error) throw new Error(semanticAnalysis.status().error);
+          peakPrivateMiB = Math.max(peakPrivateMiB, totalPrivateMiB());
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        const result = semanticAnalysis.status().lastResult;
+        const englishRule = store.smartRules.find((rule) => rule.source === "semantic-model" && rule.domain === "acme.invalid");
+        const russianRule = store.smartRules.find((rule) => rule.source === "semantic-model" && rule.title === "Согласуем структуру кабинета с командой");
+        if (result.status !== "complete" || result.refined < 2 || englishRule?.intent !== "work" || russianRule?.intent !== "work") throw new Error(`Semantic renderer smoke did not produce both RU/EN exact rules: ${JSON.stringify(result)}`);
+        await new Promise((resolve) => setTimeout(resolve, 175));
+        if (semanticWindow && !semanticWindow.isDestroyed()) throw new Error("Semantic background window remained resident after analysis");
+        startupLog(`semantic-desktop-smoke-passed refined=${result.refined} changed=${result.changed} durationMs=${Date.now() - semanticStartedAt} baselinePrivateMiB=${baselinePrivateMiB.toFixed(1)} peakPrivateMiB=${peakPrivateMiB.toFixed(1)}`);
+        isQuitting = true; app.exit(0); return;
+      }
       if (SMOKE_TEST) { startupLog("desktop-smoke-passed"); isQuitting = true; app.exit(0); return; }
       setTimeout(() => void cleanStaleMacDuplicates(), 1_000).unref();
       setTimeout(refreshDiagnostics, 3_000).unref();
@@ -707,7 +918,11 @@ if (nativeMessagingOrigin) {
     }
   });
   app.on("window-all-closed", () => { });
-  app.on("activate", () => { accessibilityService?.check(); startTracker(); void openWindow(); });
+  app.on("activate", () => {
+    if (process.platform === "darwin") void accessibilityService?.refresh(false).then((trusted) => { if (trusted) startTracker(); else accessibilityService?.watch(); });
+    else startTracker();
+    void openWindow();
+  });
   app.on("second-instance", () => void openWindow());
   app.on("before-quit", () => {
     isQuitting = true;
@@ -717,6 +932,7 @@ if (nativeMessagingOrigin) {
     updateAbortController?.abort();
     accessibilityService?.stop();
     browserCompanion?.stop();
+    semanticAnalysis?.cancel();
     stopTracker("stopped");
   });
 }

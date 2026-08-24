@@ -34,6 +34,7 @@ test("IPC requires both the expected webContents and a trusted URL", () => {
   const webContents = { getURL: () => pathToFileURL(rendererFile).href };
   const event = { sender: webContents, senderFrame: { url: pathToFileURL(rendererFile).href } };
   assert.doesNotThrow(() => security.assertTrustedIpcSender(event, { expectedWebContents: webContents, packaged: true, rendererFile }));
+  assert.doesNotThrow(() => security.assertTrustedIpcSender(event, { expectedWebContents: [{}, webContents], packaged: true, rendererFile }));
   assert.throws(() => security.assertTrustedIpcSender({ ...event, senderFrame: { url: "https://example.com/" } }, { expectedWebContents: webContents, packaged: true, rendererFile }), /Untrusted IPC sender/);
   assert.throws(() => security.assertTrustedIpcSender(event, { expectedWebContents: {}, packaged: true, rendererFile }), /Untrusted IPC sender/);
 });
@@ -42,6 +43,8 @@ test("desktop runtime blocks navigation, webviews, and tracker restart races", (
   assert.match(mainSource, /setWindowOpenHandler/);
   assert.match(mainSource, /will-navigate/);
   assert.match(mainSource, /will-attach-webview/);
+  assert.match(mainSource, /render-process-gone/);
+  assert.match(mainSource, /Semantic analysis process exited/);
   assert.match(mainSource, /assertTrustedIpcSender/);
   assert.match(mainSource, /trackerStarting/);
   assert.match(mainSource, /if \(tracker !== child\) return/);

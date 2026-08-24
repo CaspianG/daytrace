@@ -80,12 +80,31 @@ test("retention can extend to one year while old days are loaded lazily", (t) =>
   assert.equal(backgroundState.sessions.some((session) => session.activities.some((activity) => activity.app === "Archive Editor")), false);
   assert.equal(store.dayState(oldAt).sessions.some((session) => session.activities.some((activity) => activity.app === "Archive Editor")), true);
   assert.equal(backgroundState.availableDays.length, 2);
+  assert.equal(backgroundState.historyStartedAt, oldAt);
   assert.equal(store.loadEvents().length, 2);
   assert.equal(store.eventsCache, null);
 
   store.updateSettings({ retentionHours: 48 });
   assert.equal(store.settings.retentionHours, 48);
   assert.equal(store.dayState(oldAt).sessions.length, 0);
+});
+
+test("extending retention reports the first real event instead of inventing an older history start", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "daytrace-history-start-test-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const store = new storeModule.EventStore(root);
+  store.updateSettings({ retentionHours: 7 * 24 });
+  const firstAt = Date.now() - 20 * 60_000;
+  const secondAt = firstAt + 10 * 60_000;
+  store.append({ at: new Date(firstAt).toISOString(), kind: "foreground", app: "Current Editor", title: "Current project" });
+  store.append({ at: new Date(secondAt).toISOString(), kind: "foreground", app: "Current Editor", title: "Newer project" });
+
+  assert.equal(store.state().historyStartedAt, firstAt);
+  store.updateSettings({ retentionHours: 365 * 24 });
+  assert.equal(store.state().historyStartedAt, firstAt);
+  assert.equal(store.historyStartedAt(firstAt + 1), secondAt);
+  store.deleteAll();
+  assert.equal(store.state().historyStartedAt, null);
 });
 
 test("retention values are clamped to the supported 48-hour to one-year range", (t) => {
@@ -98,6 +117,26 @@ test("retention values are clamped to the supported 48-hour to one-year range", 
   assert.equal(store.settings.retentionHours, 365 * 24);
   store.updateSettings({ retentionHours: "invalid" });
   assert.equal(store.settings.retentionHours, 365 * 24);
+});
+
+test("legacy smart-analysis settings migrate to an explicit engine and only the selected engine applies", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "daytrace-analysis-engine-test-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(root, { recursive: true });
+  fs.writeFileSync(path.join(root, "settings.json"), JSON.stringify({ smartAnalysisEnabled: true }));
+  fs.writeFileSync(path.join(root, "smart-contexts.json"), JSON.stringify([
+    { id: "signal", match: "Atlas", intent: "work", source: "smart-model", confidenceScore: 0.7 },
+    { id: "semantic", match: "Atlas", intent: "learning", source: "semantic-model", confidenceScore: 0.8 },
+  ]));
+  const store = new storeModule.EventStore(root);
+  assert.equal(store.settings.analysisEngine, "signals");
+  assert.equal(store.settings.smartAnalysisEnabled, true);
+  assert.deepEqual(store.analysisRules().filter((rule) => rule.source).map((rule) => rule.source), ["smart-model"]);
+  store.updateSettings({ analysisEngine: "semantic" });
+  assert.deepEqual(store.analysisRules().filter((rule) => rule.source).map((rule) => rule.source), ["semantic-model"]);
+  store.updateSettings({ analysisEngine: "builtin" });
+  assert.equal(store.settings.smartAnalysisEnabled, false);
+  assert.equal(store.analysisRules().some((rule) => rule.source), false);
 });
 
 test("malformed settings and collector events cannot corrupt the journal", (t) => {

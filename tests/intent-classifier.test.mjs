@@ -107,6 +107,17 @@ test("timeline corrections stay scoped to one application or exact browser conte
   assert.notEqual(otherApp.reason, "custom-rule");
 });
 
+test("semantic model rules require the same app, title, and browser domain", () => {
+  const rule = { id: "semantic-doc", scope: "context", app: "Google Chrome", title: "Quarterly plan", domain: "docs.google.com", match: "Quarterly plan", intent: "work", source: "semantic-model", confidenceScore: 0.8, evidence: "semantic" };
+  const matched = classifier.inferIntentDetails({ app: "Google Chrome", title: "Quarterly plan", domain: "docs.google.com" }, [rule]);
+  assert.equal(matched.intent, "work");
+  assert.equal(matched.reason, "semantic-model");
+  const wrongDomain = classifier.inferIntentDetails({ app: "Google Chrome", title: "Quarterly plan", domain: "streaming.example" }, [rule]);
+  assert.notEqual(wrongDomain.reason, "semantic-model");
+  const wrongApp = classifier.inferIntentDetails({ app: "Telegram Desktop", title: "Quarterly plan", domain: "docs.google.com" }, [rule]);
+  assert.notEqual(wrongApp.reason, "semantic-model");
+});
+
 test("ambiguous activity inherits matching surrounding purpose", () => {
   const base = new Date("2026-08-16T09:00:00+03:00").getTime();
   const events = [

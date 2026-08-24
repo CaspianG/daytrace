@@ -17,12 +17,12 @@
   · <a href="SECURITY.md">Security</a>
 </p>
 
-<p align="center"><strong>Current release: v0.5.6</strong> — Windows and macOS artifacts are built from the same tag and published together.</p>
+<p align="center"><strong>Current release: v0.5.7</strong> — Windows and macOS artifacts are built from the same tag and published together.</p>
 
 > **macOS first-launch notice:** the current Mac build is free and fully local, but it is not signed or notarized because the project does not have Apple Developer ID credentials. Gatekeeper will therefore warn on first launch. Read the [safe macOS installation guide](docs/MACOS_INSTALL.md) before downloading; it uses Finder's supported **Open** / **Open Anyway** flow and does not disable Gatekeeper.
 
 <p align="center">
-  <img alt="Current version v0.5.6" src="https://img.shields.io/badge/current-v0.5.6-6f8f67?style=flat-square">
+  <img alt="Current version v0.5.7" src="https://img.shields.io/badge/current-v0.5.7-6f8f67?style=flat-square">
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-6f8f67?style=flat-square">
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-c5684b?style=flat-square">
   <img alt="macOS 12 or newer" src="https://img.shields.io/badge/macOS-12%2B-c5684b?style=flat-square">
@@ -37,7 +37,7 @@ The useful question is simple: **“What was I working on this morning?”** The
 
 OpenAI's announcement of Computer History validated this new category of desktop software. Its initial rollout was described as macOS-only and limited to Pro, Business, and Enterprise plans. Daytrace is an independent cross-platform alternative for people who want the utility without a subscription or a hosted activity history.
 
-Daytrace requires no account and no API key. Events are captured, filtered, grouped, queried, and deleted on your computer. Capture and analysis work offline. Network access is limited to two explicit GitHub operations: verified update checks/downloads, and an optional separately downloaded local classifier pack. Neither request contains activity data.
+Daytrace requires no account and no API key. Events are captured, filtered, grouped, queried, and deleted on your computer. Capture and analysis work offline. Network access is limited to explicit GitHub operations: verified update checks/downloads and optional separately downloaded local analysis assets. None of these requests contains activity data.
 
 > Computer History availability and plan limits may change after the initial announcement. Daytrace is not affiliated with or endorsed by OpenAI.
 
@@ -57,7 +57,7 @@ Prefer a portable build? Download `Daytrace-Portable-…-x64.zip`, extract it, a
 
 On macOS 12 or newer, first read the [macOS installation guide](docs/MACOS_INSTALL.md), then download the universal `Daytrace-…-macOS-universal.dmg`. The release page and mounted DMG both contain the same warning and instructions. Drag Daytrace to Applications, then use **Control-click/right-click → Open** for the first launch. If it is still blocked, use **System Settings → Privacy & Security → Open Anyway**. This Gatekeeper message is expected because the project does not currently have the paid Apple Developer ID certificate required for signing and notarization; it is not a malware detection result. Do not disable Gatekeeper globally.
 
-After the app opens, Daytrace separately explains why Accessibility access is needed and opens the exact Privacy & Security pane. Keep only one installed copy named `/Applications/Daytrace.app`. Daytrace detects the running copy and shows its path. Starting with v0.5.4, the built-in updater replaces the installed app and automatically repairs a numbered duplicate such as `Daytrace 2.app` back to the canonical name. You can continue without Accessibility permission, but the timeline remains empty until it is granted. Verify the DMG against the release's `SHA256SUMS.txt` before opening it.
+After the app opens, Daytrace separately explains why Accessibility access is needed and opens the exact Privacy & Security pane. Keep only one installed copy named `/Applications/Daytrace.app`. Daytrace now verifies access through the actual native collector rather than the Electron window and rechecks automatically when you return. If an old grant is stuck, remove every Daytrace/Daytrace 2 entry with the minus button, add exactly `/Applications/Daytrace.app` with plus, enable it, and choose **Check again**. **Open Daytrace without tracking** keeps the interface accessible while permission is repaired. Starting with v0.5.4, the built-in updater replaces the installed app and automatically repairs a numbered duplicate back to the canonical name. Verify the DMG against the release's `SHA256SUMS.txt` before opening it.
 
 Minimizing or closing the window releases the heavy renderer while the lightweight native tracker continues from the system tray. Double-click the tray icon or launch Daytrace again to reopen the same instance.
 
@@ -96,10 +96,10 @@ The v0.5.5 release also closes several less-visible failure modes found during a
 - **Scoped corrections**: changing a native application affects only that application; changing a browser page or chat affects only that exact app/title context and never recolors neighboring activities.
 - **Broader visible-context understanding** for popular games, packaged game executables, technical work, debugging, installation, infrastructure, searches, comparisons, and reference pages in English and Russian.
 - **Preview and Undo for corrections**: before a rule is applied, Daytrace shows the exact activity count, duration, days, and sample changes it will affect. The previous rule set remains locally recoverable.
-- **Optional smart local analysis**: a small SHA-256-verified RU/EN classifier pack downloads separately, runs in a short-lived worker only during idle time or on demand, and unloads from memory when the batch finishes. The base app remains fully usable without it.
-- **Optional Chromium browser companion** for Chrome, Edge, Brave, and Vivaldi. Native messaging adds only the active tab's title, domain, safe path, and explicit private flag; query strings, fragments, credentials, page content, and background tabs are discarded.
+- **Three local analysis modes**: Built-in uses no downloaded model; Signal pack 1.1 is a transparent SHA-256-verified RU/EN word-and-phrase weight file of about 6 KB; Semantic model 1.0 is an optional ~48 MB RU+EN sentence-encoder bundle that compares meaning instead of only exact keywords. The selected optional engine runs in a bounded, short-lived worker after two minutes of system idle or on demand. Semantic inference uses one CPU thread, loads only the language needed for the current batch, and unloads each language worker before starting the next. It is not a chat or generative LLM, and Daytrace remains fully usable without it.
+- **Optional Chromium browser companion** for Chrome, Edge, Brave, and Vivaldi. Native messaging adds only the focused browser window's active tab title, domain, safe path, and explicit private flag; query strings, fragments, credentials, page content, background windows/tabs, and private contexts are discarded.
 - **JSON and CSV export**, plus streaming encrypted backup/restore using scrypt and AES-256-GCM. Restore is transactional, and the passphrase is never stored.
-- **Built-in self-diagnostics** for storage, collector health, title and idle signals, private filtering, Accessibility, autostart, browser companion, and the optional model.
+- **Built-in self-diagnostics** for storage, collector health, title and idle signals, private filtering, Accessibility, autostart, browser companion, and the selected optional analysis engine.
 
 ![Daytrace day overview and latest activity in English](docs/assets/screenshots/timeline-en.png)
 
@@ -134,7 +134,7 @@ Purpose is inferred in layers: a recognized foreground service, the meaning of t
 
 This is deliberately not message-content analysis. Daytrace can classify an active Telegram chat named “Project Atlas — client meeting” from its visible title and can reuse the same locally observed context later, but it cannot know what an opaque chat name means without surrounding evidence or your correction. The same boundary applies to browser pages, documents, editors, and every other application.
 
-Classifier changes are guarded by a versioned synthetic RU/EN accuracy set covering browsers, messengers, IDEs, games, video, documents, meetings, and learning. CI requires at least 90% coverage, at least 94% precision on covered cases, at least 90% correctness per language, and zero forced labels for explicitly ambiguous examples. This is a regression gate, not a claim that every real-world title can be understood.
+Classifier changes are guarded by a versioned synthetic RU/EN accuracy set covering browsers, messengers, IDEs, games, video, documents, meetings, and learning. CI requires at least 90% coverage, at least 94% precision on covered cases, at least 90% correctness per language, and zero forced labels for explicitly ambiguous examples. The optional semantic bundle has an additional bilingual meaning-based regression set and a real Electron/WASM smoke test. These are regression gates, not a claim that every real-world title can be understood.
 
 ![Correcting activity purpose and reviewing evidence in English](docs/assets/screenshots/purpose-en.png)
 
@@ -157,7 +157,7 @@ Daytrace is intentionally less invasive than screenshot-based activity recorders
 
 Window titles can contain document names, page titles, or conversation names. They stay local, but you should exclude sensitive applications. Base private-browser detection uses title conventions because operating-system accessibility APIs do not expose one universal private-mode signal. The optional Chromium companion is declared with `incognito: not_allowed`, rejects private tabs in the extension, and the native host rejects them again. Exclusions remain the strongest control for a sensitive application.
 
-Daytrace has no telemetry or cloud-analysis endpoint. The updater requests the official GitHub Releases endpoint with only the installed version and verifies the selected artifact against `SHA256SUMS.txt`. If you explicitly download the optional classifier, Daytrace fetches the version-matched release asset and verifies it against both its release checksum and the SHA-256 embedded in that app version. No journal events, titles, domains, questions, rules, or settings are included in either request. Browser companion traffic stays on a per-user local pipe/socket protected by a random token.
+Daytrace has no telemetry or cloud-analysis endpoint. The updater requests the official GitHub Releases endpoint with only the installed version and verifies the selected artifact against `SHA256SUMS.txt`. If you explicitly download an optional analysis asset, Daytrace fetches version-matched release files and verifies their exact size and app-embedded SHA-256 before use. No journal events, titles, domains, questions, rules, or settings are included in these requests. The semantic worker is configured for local files only and the renderer CSP blocks external connections. Browser companion traffic stays on a per-user local pipe/socket protected by a random token.
 
 Default data location:
 
@@ -166,8 +166,11 @@ Default data location:
 ├── events\YYYY-MM-DD-HH.jsonl
 ├── settings.json
 ├── smart-contexts.json
+├── models\                  # only after an optional model is selected
 └── skills\<workflow>\SKILL.md
 ```
+
+The Russian semantic encoder is from the MIT-licensed [`rubert-tiny-sts`](https://huggingface.co/VadimHursevich/rubert-tiny-sts-onnx) family and is dynamically quantized to int8. The English encoder is the Apache-2.0-licensed [`paraphrase-MiniLM-L3-v2`](https://huggingface.co/sentence-transformers/paraphrase-MiniLM-L3-v2) int8 export. Exact source revisions, checksums, conversion instructions, and license texts are stored beside the model assets in [`models/semantic`](models/semantic) and [`models/semantic-en`](models/semantic-en).
 
 Uninstalling the application preserves this folder so history is not destroyed unexpectedly. Use **Delete all data** inside Daytrace if you want to erase the journal first.
 
@@ -193,13 +196,13 @@ The native tracker emits foreground-window changes, samples only the foreground 
 
 Durations are observed foreground intervals, not the time an application merely remained open. Leaving a browser tab open overnight cannot reconnect the previous evening to the next morning: an explicit idle event closes it, and a six-minute signal-gap guard also protects legacy journals, sleep/wake cycles, and collector restarts. Minute heartbeats still preserve passive reading or video viewing while the computer remains in use. Repeated title events are collapsed, sub-second fragments and system windows are ignored, and overview totals are calculated per activity rather than inherited from the first application in a work block.
 
-Local answers do not use an LLM. A deterministic on-device parser recognizes exact and relative dates, comparison periods, time ranges, applications, purposes, and the question type (summary, duration, latest activity, tabs, or context switches), then calculates the response from local sessions. The optional model improves classification of ambiguous visible titles only; it does not generate prose, receive raw journals, stay resident, or make network inference calls. The interpreted query is shown above each answer so mistakes are visible.
+Local answers do not use an LLM. A deterministic on-device parser recognizes exact and relative dates, comparison periods, time ranges, applications, purposes, and the question type (summary, duration, latest activity, tabs, or context switches), then calculates the response from local sessions. The optional signal or semantic engine can improve the purpose labels used by those answers, but neither generates prose, receives a raw journal, stays resident, or makes network inference calls. The interpreted query is shown above each answer so mistakes are visible.
 
 ## System load
 
 Daytrace uses native foreground events and coarse samples instead of screenshots or continuous screen polling. On the Windows verification machine, the packaged v0.4.0 background process measured **0.039% total CPU** over a 30-second sample and **199 MiB combined working memory** across Electron and the native collector with no renderer process. A clean packaged launch reached a validated non-empty window in **1.14 s**. The updater adds one small metadata request after startup and then at most once every six hours while online; it does not continuously poll. Measurements vary by hardware, antivirus, event volume, and operating system; macOS packaging is verified in CI, but equivalent physical-Mac load measurements are still being collected.
 
-The browser companion is event-driven and has no polling loop. Its native bridge is started only for one foreground-context delivery and exits immediately, so enabling the extension does not leave a second Electron process resident. Smart analysis is disabled by default; when enabled it waits for at least two minutes of idle time, processes a bounded batch in a separate worker, and terminates the worker afterward. Historical days and one-year retention are loaded lazily instead of being re-analyzed continuously.
+The browser companion is event-driven and has no polling loop. Its native bridge is started only for one foreground-context delivery and exits immediately, so enabling the extension does not leave a second Electron process resident. The zero-download built-in classifier is the default. An optional signal or semantic pass waits for at least two minutes of idle time, processes a bounded batch, and terminates its worker afterward. In a Windows Electron/WASM smoke test, a bilingual semantic pass reviewed two ambiguous contexts in **2.87 s**: the complete background process tree rose from **150.0 MiB to a transient 569.8 MiB of private memory**, then the hidden analysis host was destroyed. This is a deliberately conservative worst-case RU+EN test, not a continuous background footprint; a one-language pass can be smaller, and results vary by machine. Historical days and one-year retention are loaded lazily instead of being re-analyzed continuously.
 
 The v0.5.5 long-history path was also measured separately with a synthetic one-year archive of **8,760 hourly files** on the Windows verification machine. Opening the store took **63.3 ms**, building the bounded recent state took **106.2 ms**, and answering a today-only question took **28.7 ms** while reading just **48 recent events**. This is a storage/analysis benchmark, not a claim about total launch time; it demonstrates that selecting one-year retention does not turn the full archive into continuous background work.
 
@@ -208,7 +211,7 @@ The Windows native collector remains self-contained, so users do not install .NE
 ## Current limitations
 
 - Windows x64 is tested on Windows 10/11. The macOS universal build targets macOS 12+ and its packaging is checked by CI; broader real-device coverage is still needed.
-- Local Q&A is deterministic and heuristic — the optional classifier is not a conversational LLM.
+- Local Q&A is deterministic and rule-based — the optional signal and semantic refiners are not conversational LLMs.
 - Base tracking analyzes only the foreground app and visible active-window title. The optional companion adds foreground domain and safe path for Chrome, Edge, Brave, and Vivaldi; it does not read page contents or background tabs. Firefox and Safari do not use this companion.
 - Base private-window detection depends on browser title conventions and cannot be guaranteed for every browser/version. Companion-provided private flags are rejected, but exclusions remain the safest choice for sensitive apps.
 - Raw local journals rely on operating-system account permissions and are not separately encrypted at rest; use BitLocker or FileVault when device-at-rest protection matters. Exported `.daytrace` backups are encrypted with a user passphrase.

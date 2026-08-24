@@ -21,6 +21,7 @@ app.whenReady().then(async () => {
   window.webContents.on("console-message", (details) => { if (details.level === "error") consoleErrors.push(details.message); });
   for (const language of ["en", "ru"]) {
     await window.loadURL(`${pathToFileURL(entry).href}?lang=${language}&capture=desktop`);
+    await window.webContents.executeJavaScript("new Promise((resolve, reject) => { const deadline = Date.now() + 10000; const check = () => window.__daytraceAppReady ? resolve() : Date.now() >= deadline ? reject(new Error('Daytrace preview did not become ready')) : setTimeout(check, 25); check(); })");
     await window.webContents.executeJavaScript("document.documentElement.classList.add('capture'); document.fonts.ready.then(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))");
     await window.webContents.executeJavaScript("document.querySelector('.main-nav button:nth-child(1)').click(); new Promise(resolve => setTimeout(resolve, 250))");
     const image = await window.webContents.capturePage();
@@ -58,6 +59,7 @@ app.whenReady().then(async () => {
       fs.writeFileSync(path.join(output, `${name}-${language}.png`), section.toPNG());
     }
     await window.loadURL(`${pathToFileURL(entry).href}?lang=${language}&capture=desktop&update=downloading`);
+    await window.webContents.executeJavaScript("new Promise((resolve, reject) => { const deadline = Date.now() + 10000; const check = () => window.__daytraceAppReady ? resolve() : Date.now() >= deadline ? reject(new Error('Daytrace update preview did not become ready')) : setTimeout(check, 25); check(); })");
     await window.webContents.executeJavaScript("document.documentElement.classList.add('capture'); document.fonts.ready.then(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))");
     await window.webContents.executeJavaScript("document.querySelector('.main-nav button:nth-child(3)').click(); new Promise(resolve => setTimeout(resolve, 250))");
     await window.webContents.executeJavaScript("new Promise(resolve => setTimeout(resolve, 250))");

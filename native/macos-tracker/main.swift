@@ -2,6 +2,24 @@ import AppKit
 import ApplicationServices
 import Foundation
 
+func accessibilityTrusted(prompt: Bool) -> Bool {
+    if !prompt { return AXIsProcessTrusted() }
+    let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+    let options = [promptKey: true] as CFDictionary
+    return AXIsProcessTrustedWithOptions(options)
+}
+
+if CommandLine.arguments.contains("--check-accessibility") || CommandLine.arguments.contains("--request-accessibility") {
+    let prompt = CommandLine.arguments.contains("--request-accessibility")
+    let trusted = accessibilityTrusted(prompt: prompt)
+    if prompt && !trusted {
+        // The macOS consent prompt is asynchronous. Keep the helper alive long
+        // enough for the system to attribute and present it before we exit.
+        RunLoop.current.run(until: Date().addingTimeInterval(0.4))
+    }
+    exit((trusted || AXIsProcessTrusted()) ? 0 : 77)
+}
+
 struct Snapshot: Equatable {
     let app: String
     let process: String
@@ -91,7 +109,7 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
     return Unmanaged.passUnretained(event)
 }
 
-guard AXIsProcessTrusted() else {
+guard accessibilityTrusted(prompt: false) else {
     fputs("Daytrace requires macOS Accessibility permission.\n", stderr)
     exit(77)
 }

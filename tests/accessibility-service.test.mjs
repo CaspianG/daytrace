@@ -38,8 +38,28 @@ test("macOS request prompts, opens the Accessibility pane, and detects consent",
   assert.equal(opened, ACCESSIBILITY_SETTINGS_URL);
   assert.equal(typeof poll, "function");
   trusted = true;
-  poll();
+  await poll();
   assert.equal(service.check(), true);
   assert.equal(poll, null);
   assert.deepEqual(changes, [false, true]);
+});
+
+test("macOS uses the native collector probe instead of the Electron process result", async () => {
+  let collectorTrusted = false;
+  let mainProcessChecks = 0;
+  const probes = [];
+  const service = createAccessibilityService({
+    platform: "darwin",
+    isTrusted: () => { mainProcessChecks += 1; return true; },
+    probeTrusted: async (prompt) => { probes.push(prompt); return collectorTrusted; },
+    openExternal: async () => {},
+  });
+
+  assert.equal(await service.refresh(false), false);
+  assert.equal(service.check(), false);
+  collectorTrusted = true;
+  assert.equal(await service.refresh(false), true);
+  assert.equal(service.check(), true);
+  assert.deepEqual(probes, [false, false]);
+  assert.equal(mainProcessChecks, 0);
 });

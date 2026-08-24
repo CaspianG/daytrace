@@ -2,6 +2,17 @@
 
 All notable changes to Daytrace are documented here.
 
+## [0.5.7] - 2026-08-24
+
+- Fixed the macOS permission loop by checking Accessibility through the actual native collector instead of the Electron UI process. The helper now lives under `Daytrace.app/Contents/MacOS`, the app rechecks consent when focus returns, and collector exit code 77 immediately corrects stale UI state.
+- The macOS permission screen now provides a visible **Check again** action, exact stale-entry recovery steps, and a full-width **Open Daytrace without tracking** escape path. Gatekeeper instructions in DMG/ZIP artifacts use an explicit `IF MAC BLOCKS DAYTRACE - OPEN THIS.txt` filename.
+- The sidebar now shows the timestamp of the first event that is actually stored. Extending retention no longer presents the policy cutoff as if historical data had existed since that date.
+- Replaced the opaque smart-analysis toggle with three explicit modes: the zero-download built-in classifier, the expanded ~6 KB RU/EN Signal pack 1.1, and an optional ~48 MB RU+EN semantic model. Existing 1.0 packs now surface an in-app update action instead of looking current.
+- Added local int8 Russian `rubert-tiny-sts` and English `paraphrase-MiniLM-L3-v2` sentence encoders. They run sequentially in separate one-thread, short-lived Electron Web Workers, load only languages present in the current bounded batch, and cannot make remote model requests.
+- Optional model assets are release-pinned and verified by exact size plus app-embedded SHA-256 before installation and again before inference. The model download sends no activity metadata.
+- Analysis now runs immediately after an explicit install, displays checked/refined/changed counts, and fixes substring matches such as `home` inside `Chrome`. A real bilingual Electron/WASM smoke complements the synthetic accuracy gate.
+- The browser companion now verifies that the browser window itself is focused before reporting its active tab, preventing background title changes from appearing as foreground activity.
+
 ## [0.5.6] - 2026-08-23
 
 ### Trustworthy purpose analysis

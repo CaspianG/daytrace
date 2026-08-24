@@ -1,6 +1,6 @@
 {
   "name": "daytrace-local",
-  "version": "0.5.6",
+  "version": "0.5.7",
   "private": true,
   "description": "Private, fully local activity timeline and workday recall for Windows and macOS.",
   "author": "Daytrace contributors",
@@ -39,17 +39,19 @@
     "clean:check": "node scripts/clean-artifacts.cjs --dry-run",
     "clean": "node scripts/clean-artifacts.cjs",
     "model:verify": "node scripts/verify-smart-model.mjs",
+    "model:verify:semantic": "node scripts/evaluate-semantic-model.mjs",
     "preview": "vite preview",
-    "test": "npm run model:verify && node --test tests/privacy.test.mjs tests/sessionizer.test.mjs tests/intent-classifier.test.mjs tests/intent-accuracy.test.mjs tests/activity-insights.test.mjs tests/rule-preview.test.mjs tests/local-answer-dates.test.mjs tests/browser-companion.test.mjs tests/smart-analysis.test.mjs tests/data-portability.test.mjs tests/diagnostics.test.mjs tests/update-service.test.mjs tests/accessibility-service.test.mjs tests/mac-install-service.test.mjs tests/mac-update-service.test.mjs tests/windows-update-service.test.mjs tests/event-store.test.mjs tests/localization.test.mjs tests/runtime-security.test.mjs tests/native-collector-contract.test.mjs tests/release-docs.test.mjs",
+    "test": "npm run model:verify && npm run model:verify:semantic && node --test tests/privacy.test.mjs tests/sessionizer.test.mjs tests/intent-classifier.test.mjs tests/intent-accuracy.test.mjs tests/activity-insights.test.mjs tests/rule-preview.test.mjs tests/local-answer-dates.test.mjs tests/browser-companion.test.mjs tests/smart-analysis.test.mjs tests/semantic-model.test.mjs tests/data-portability.test.mjs tests/diagnostics.test.mjs tests/update-service.test.mjs tests/accessibility-service.test.mjs tests/mac-install-service.test.mjs tests/mac-update-service.test.mjs tests/windows-update-service.test.mjs tests/event-store.test.mjs tests/localization.test.mjs tests/runtime-security.test.mjs tests/native-collector-contract.test.mjs tests/release-docs.test.mjs",
     "test:accuracy": "node --test tests/intent-accuracy.test.mjs",
     "test:sites": "npm run build && node --test tests/sites-worker.test.mjs",
-    "test:desktop": "node scripts/run-desktop-smoke.cjs",
+    "test:desktop": "node scripts/run-desktop-smoke.cjs && node scripts/run-semantic-desktop-smoke.cjs",
     "test:packaged:win": "node scripts/run-packaged-windows-smoke.cjs"
   },
   "dependencies": {},
   "devDependencies": {
     "@fontsource/manrope": "^5.3.0",
     "@fontsource/source-serif-4": "^5.3.0",
+    "@huggingface/transformers": "4.2.0",
     "@phosphor-icons/react": "^2.1.10",
     "@vitejs/plugin-react": "5.0.4",
     "concurrently": "10.0.5",
@@ -64,8 +66,11 @@
     "wait-on": "^8.0.5"
   },
   "overrides": {
+    "adm-zip": "0.6.0",
     "nanoid": "3.3.18",
-    "postcss": "8.5.26"
+    "onnxruntime-node": "1.27.0",
+    "postcss": "8.5.26",
+    "sharp": "0.35.3"
   },
   "build": {
     "appId": "local.daytrace.desktop",
@@ -148,13 +153,13 @@
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.inherit.plist",
       "binaries": [
-        "Contents/Resources/tracker/macos/daytrace-tracker"
+        "Contents/MacOS/daytrace-tracker"
       ],
       "artifactName": "Daytrace-${version}-macOS-${arch}.${ext}",
-      "extraResources": [
+      "extraFiles": [
         {
           "from": "native/macos-tracker/build/daytrace-tracker",
-          "to": "tracker/macos/daytrace-tracker"
+          "to": "MacOS/daytrace-tracker"
         }
       ],
       "target": [
@@ -193,7 +198,7 @@
           "y": 350,
           "type": "file",
           "path": "MACOS_INSTALL.txt",
-          "name": "READ BEFORE INSTALLING.txt"
+          "name": "IF MAC BLOCKS DAYTRACE - OPEN THIS.txt"
         }
       ]
     },

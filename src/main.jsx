@@ -1,16 +1,14 @@
-import React from "react";
-import { createRoot } from "react-dom/client";
-import { App } from "./App.jsx";
-import "@fontsource/manrope/400.css";
-import "@fontsource/manrope/500.css";
-import "@fontsource/manrope/600.css";
-import "@fontsource/manrope/700.css";
-import "@fontsource/source-serif-4/500.css";
-import "@fontsource/source-serif-4/600.css";
-import "./styles.css";
+const root = document.getElementById("root");
+const semanticHost = new URLSearchParams(window.location.search).get("semanticHost") === "1";
 
-createRoot(document.getElementById("root")).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-);
+if (semanticHost) {
+  root.hidden = true;
+  root.textContent = "Daytrace local semantic analysis";
+  import("./semantic-analysis-client.js").then(({ runSemanticAnalysis }) => {
+    window.daytrace?.onSemanticAnalysisRequested(() => void runSemanticAnalysis(window.daytrace).catch(() => {}));
+    window.__daytraceSemanticHostReady = true;
+  });
+} else {
+  root.textContent = "Loading Daytrace…";
+  import("./app-entry.jsx");
+}

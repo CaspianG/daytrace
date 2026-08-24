@@ -20,3 +20,10 @@ test("native collectors expose aggregate activity but no typed values or pointer
   assert.match(macCollector, /options: \.listenOnly/);
   assert.match(windowsCollector, /GetLastInputInfo/);
 });
+
+test("macOS collector exposes a permission probe for its own TCC identity", () => {
+  assert.match(macCollector, /--check-accessibility/);
+  assert.match(macCollector, /--request-accessibility/);
+  assert.match(macCollector, /AXIsProcessTrustedWithOptions/);
+  assert.match(macCollector, /exit\(\(trusted \|\| AXIsProcessTrusted\(\)\) \? 0 : 77\)/);
+});
