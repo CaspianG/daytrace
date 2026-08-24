@@ -85,7 +85,7 @@ class SemanticModelService {
     this.modelRoot = path.join(root, "models", "daytrace-semantic-v1");
     this.receiptPath = path.join(this.modelRoot, "receipt.json");
     this.fetch = options.fetch || globalThis.fetch;
-    this.baseUrl = options.baseUrl || releaseBase(options.version || "0.5.7");
+    this.baseUrl = options.baseUrl || releaseBase(options.version || "0.5.8");
     this.developmentAssetRoot = options.developmentAssetRoot || "";
     this.onChange = typeof options.onChange === "function" ? options.onChange : () => {};
     this.downloading = false;

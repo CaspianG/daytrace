@@ -1,11 +1,12 @@
 ## Downloads
 
-### What is new in v0.5.7
+### What is new in v0.5.8
 
-- Settings now offer three honest local analysis modes: a zero-download built-in classifier, the expanded ~6 KB RU/EN Signal pack 1.1, and an optional ~48 MB RU+EN semantic model. The semantic bundle is explicitly downloaded, checksum-verified, limited to one CPU thread, run only as short-lived per-language workers, and blocked from network inference. Its MIT and Apache-2.0 license files are published beside the weights.
-- The release includes a bilingual semantic regression gate and an actual Electron/WASM RU+EN inference smoke test. The UI reports how many ambiguous contexts were reviewed, refined, and changed instead of presenting a model toggle with no visible effect.
-- macOS Accessibility is now checked by the real native collector rather than the Electron UI process. The helper is embedded under `Daytrace.app/Contents/MacOS`, permission is rechecked on return, stale grants have exact recovery steps, and the setup screen can no longer lock users out of the interface.
-- Extending retention now shows the timestamp of the first event actually stored instead of presenting the newly selected policy window as historical data that already exists.
+- Every new and existing user receives one polished, versioned RU/EN walkthrough. It explains local-only capture, how a correction is remembered for the same context, and offers Built-in, Signal pack 1.1, or the optional Semantic model 1.0 without silent downloads.
+- A low-confidence review coach now appears after a meaningful backlog: 5 unique contexts, 12 occurrences, or 45 minutes. It can open the grouped review queue, take the user directly to the local semantic model, or snooze for seven days.
+- Repeated uncertain events are grouped by stable context with total occurrences and duration. Exact browser/chat corrections stay exact and cannot recolor unrelated activity; native specialist applications retain application-level rules, with preview and Undo before changes are applied.
+- The new flow includes Settings badges, guided scrolling, a replay-tour action, polished motion with a reduced-motion fallback, automated RU/EN capture checks, and matching localized README screenshots.
+- The local development watcher no longer observes generated packaging folders, avoiding a Windows file-lock race during local release builds.
 
 - Observed facts and inferred purpose are now separate, with visible evidence, confidence, an ambiguity review queue, correction preview, and Undo. Ambiguous activity is no longer silently labeled Personal.
 - Day briefs include observed themes, likely completed work, open loops, interruptions, and returns. Local questions support exact dates and period comparisons in English and Russian without an LLM.

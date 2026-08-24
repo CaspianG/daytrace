@@ -44,3 +44,34 @@ test("day brief recognizes explicit Russian completed and open-loop markers", ()
   assert.deepEqual(brief.completed, ["Релиз готово"]);
   assert.deepEqual(brief.openLoops, ["Проверка в процессе"]);
 });
+
+test("review journal groups repeated contexts into one remembered decision", () => {
+  const base = Date.now() - 60_000;
+  const sessions = [{ activities: [
+    { start: base, end: base + 5_000, durationMs: 5_000, app: "Telegram Desktop", title: "General chat", intent: "unknown", intentConfidence: "low" },
+    { start: base + 10_000, end: base + 20_000, durationMs: 10_000, app: "Telegram Desktop", title: "General chat", intent: "unknown", intentConfidence: "low" },
+    { start: base + 25_000, end: base + 30_000, durationMs: 5_000, app: "Telegram Desktop", title: "Project chat", intent: "unknown", intentConfidence: "low" },
+    { start: base + 35_000, end: base + 40_000, durationMs: 5_000, app: "Visual Studio Code", title: "one.txt", intent: "unknown", intentConfidence: "low" },
+    { start: base + 45_000, end: base + 50_000, durationMs: 5_000, app: "Visual Studio Code", title: "two.txt", intent: "unknown", intentConfidence: "low" },
+  ] }];
+  insights.annotateSessions(sessions, "en");
+  const queue = insights.buildReviewQueue(sessions, "en");
+  assert.equal(queue.length, 3);
+  assert.equal(queue.find((item) => item.title === "General chat").occurrenceCount, 2);
+  assert.equal(queue.find((item) => item.app === "Visual Studio Code").occurrenceCount, 2);
+  assert.equal(queue.find((item) => item.title === "Project chat").scope, "context");
+});
+
+test("review reminder waits for a real backlog and respects a seven-day snooze", () => {
+  const queue = Array.from({ length: 4 }, (_, index) => ({ id: `${index}`, occurrenceCount: 3, durationMs: 12 * 60_000 }));
+  const now = Date.now();
+  const due = insights.buildReviewBacklog(queue, { reviewLearningExplained: false }, now);
+  assert.equal(due.uniqueCount, 4);
+  assert.equal(due.occurrenceCount, 12);
+  assert.equal(due.thresholdReached, true);
+  assert.equal(due.notificationDue, true);
+  assert.equal(due.firstExplanation, true);
+  const snoozed = insights.buildReviewBacklog(queue, { reviewLearningExplained: true, reviewReminderSnoozedUntil: now + 7 * 24 * 60 * 60_000 }, now);
+  assert.equal(snoozed.notificationDue, false);
+  assert.equal(snoozed.firstExplanation, false);
+});

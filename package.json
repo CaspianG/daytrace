@@ -1,6 +1,6 @@
 {
   "name": "daytrace-local",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "private": true,
   "description": "Private, fully local activity timeline and workday recall for Windows and macOS.",
   "author": "Daytrace contributors",

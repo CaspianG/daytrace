@@ -20,6 +20,14 @@ app.whenReady().then(async () => {
   const consoleErrors = [];
   window.webContents.on("console-message", (details) => { if (details.level === "error") consoleErrors.push(details.message); });
   for (const language of ["en", "ru"]) {
+    await window.loadURL(`${pathToFileURL(entry).href}?lang=${language}&capture=desktop&onboarding=1&tourStep=2`);
+    await window.webContents.executeJavaScript("new Promise((resolve, reject) => { const deadline = Date.now() + 10000; const check = () => window.__daytraceAppReady ? resolve() : Date.now() >= deadline ? reject(new Error('Daytrace onboarding preview did not become ready')) : setTimeout(check, 25); check(); })");
+    await window.webContents.executeJavaScript("new Promise(resolve => setTimeout(resolve, 650))");
+    await window.webContents.executeJavaScript("document.documentElement.classList.add('capture'); document.fonts.ready.then(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))");
+    if (!await window.webContents.executeJavaScript("Boolean(document.querySelector('.onboarding-model-grid'))")) throw new Error(`Model onboarding is missing in ${language}`);
+    const onboarding = await window.webContents.capturePage();
+    fs.writeFileSync(path.join(output, `onboarding-${language}.png`), onboarding.toPNG());
+
     await window.loadURL(`${pathToFileURL(entry).href}?lang=${language}&capture=desktop`);
     await window.webContents.executeJavaScript("new Promise((resolve, reject) => { const deadline = Date.now() + 10000; const check = () => window.__daytraceAppReady ? resolve() : Date.now() >= deadline ? reject(new Error('Daytrace preview did not become ready')) : setTimeout(check, 25); check(); })");
     await window.webContents.executeJavaScript("document.documentElement.classList.add('capture'); document.fonts.ready.then(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))");
@@ -65,6 +73,14 @@ app.whenReady().then(async () => {
     await window.webContents.executeJavaScript("new Promise(resolve => setTimeout(resolve, 250))");
     const updates = await window.webContents.capturePage();
     fs.writeFileSync(path.join(output, `updates-${language}.png`), updates.toPNG());
+
+    await window.loadURL(`${pathToFileURL(entry).href}?lang=${language}&capture=desktop&review=1`);
+    await window.webContents.executeJavaScript("new Promise((resolve, reject) => { const deadline = Date.now() + 10000; const check = () => window.__daytraceAppReady ? resolve() : Date.now() >= deadline ? reject(new Error('Daytrace review preview did not become ready')) : setTimeout(check, 25); check(); })");
+    await window.webContents.executeJavaScript("document.fonts.ready.then(() => new Promise(resolve => setTimeout(resolve, 1250)))");
+    await window.webContents.executeJavaScript("document.documentElement.classList.add('capture'); new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+    if (!await window.webContents.executeJavaScript("Boolean(document.querySelector('.review-coach'))")) throw new Error(`Review coach is missing in ${language}`);
+    const reviewCoach = await window.webContents.capturePage();
+    fs.writeFileSync(path.join(output, `review-coach-${language}.png`), reviewCoach.toPNG());
   }
   if (consoleErrors.length) throw new Error(`Renderer console errors:\n${consoleErrors.join("\n")}`);
   window.destroy();

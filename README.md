@@ -17,12 +17,12 @@
   · <a href="SECURITY.md">Security</a>
 </p>
 
-<p align="center"><strong>Current release: v0.5.7</strong> — Windows and macOS artifacts are built from the same tag and published together.</p>
+<p align="center"><strong>Current release: v0.5.8</strong> — Windows and macOS artifacts are built from the same tag and published together.</p>
 
 > **macOS first-launch notice:** the current Mac build is free and fully local, but it is not signed or notarized because the project does not have Apple Developer ID credentials. Gatekeeper will therefore warn on first launch. Read the [safe macOS installation guide](docs/MACOS_INSTALL.md) before downloading; it uses Finder's supported **Open** / **Open Anyway** flow and does not disable Gatekeeper.
 
 <p align="center">
-  <img alt="Current version v0.5.7" src="https://img.shields.io/badge/current-v0.5.7-6f8f67?style=flat-square">
+  <img alt="Current version v0.5.8" src="https://img.shields.io/badge/current-v0.5.8-6f8f67?style=flat-square">
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-6f8f67?style=flat-square">
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-c5684b?style=flat-square">
   <img alt="macOS 12 or newer" src="https://img.shields.io/badge/macOS-12%2B-c5684b?style=flat-square">
@@ -92,11 +92,13 @@ The v0.5.5 release also closes several less-visible failure modes found during a
 - **Fine-grained collection controls** for window titles, anonymous active-second samples, browser-tab counts, and private-window filtering.
 - **Fact and inference shown separately**: the observed app/title/domain stays factual, while purpose is explicitly marked as an estimate. Telegram can be work or personal; a browser can be work, learning, entertainment, or genuinely ambiguous.
 - **Visible confidence and evidence** for every inferred purpose, plus a low-confidence review journal. Ambiguous contexts remain **Ambiguous purpose** instead of silently becoming Personal.
+- **A calm review reminder when ambiguity becomes a backlog**: Daytrace groups repeats into unique contexts and offers Review now, Improve with local model, or Remind me in 7 days after 5 unique contexts, 12 occurrences, or 45 minutes of uncertain activity.
 - **Adaptive local purpose analysis** for popular video, streaming, social, shopping, learning, developer, office, creative, and communication contexts in English and Russian.
 - **Scoped corrections**: changing a native application affects only that application; changing a browser page or chat affects only that exact app/title context and never recolors neighboring activities.
 - **Broader visible-context understanding** for popular games, packaged game executables, technical work, debugging, installation, infrastructure, searches, comparisons, and reference pages in English and Russian.
 - **Preview and Undo for corrections**: before a rule is applied, Daytrace shows the exact activity count, duration, days, and sample changes it will affect. The previous rule set remains locally recoverable.
 - **Three local analysis modes**: Built-in uses no downloaded model; Signal pack 1.1 is a transparent SHA-256-verified RU/EN word-and-phrase weight file of about 6 KB; Semantic model 1.0 is an optional ~48 MB RU+EN sentence-encoder bundle that compares meaning instead of only exact keywords. The selected optional engine runs in a bounded, short-lived worker after two minutes of system idle or on demand. Semantic inference uses one CPU thread, loads only the language needed for the current batch, and unloads each language worker before starting the next. It is not a chat or generative LLM, and Daytrace remains fully usable without it.
+- **A three-step first-run guide for every new and existing user** explains local privacy, how observe → infer → remember works, and lets the user explicitly choose Built-in, Signal pack, or Semantic model. Nothing downloads silently, and the tour can be replayed from Settings.
 - **Optional Chromium browser companion** for Chrome, Edge, Brave, and Vivaldi. Native messaging adds only the focused browser window's active tab title, domain, safe path, and explicit private flag; query strings, fragments, credentials, page content, background windows/tabs, and private contexts are discarded.
 - **JSON and CSV export**, plus streaming encrypted backup/restore using scrypt and AES-256-GCM. Restore is transactional, and the passphrase is never stored.
 - **Built-in self-diagnostics** for storage, collector health, title and idle signals, private filtering, Accessibility, autostart, browser companion, and the selected optional analysis engine.
@@ -118,6 +120,16 @@ The v0.5.5 release also closes several less-visible failure modes found during a
 ![Self-diagnostics in English](docs/assets/screenshots/diagnostics-en.png)
 
 ![JSON, CSV and encrypted backup controls in English](docs/assets/screenshots/data-portability-en.png)
+
+## One short setup, then Daytrace learns locally
+
+Version 0.5.8 shows the improved guide once to both fresh installs and existing users. It explains exactly what is and is not captured, and offers three honest analysis levels. The recommended semantic model is optional, downloaded only after an explicit click, checksum-verified, and unloaded after a bounded pass. A full generative LLM is deliberately not presented as if it were included.
+
+When enough low-confidence activity accumulates, Daytrace shows one in-app reminder instead of repeatedly interrupting the user. Repeated appearances of the same application, page, or chat are grouped into one review item. A confirmed correction is stored as a local rule and reused for that same scope in later activity; the preview and Undo remain available before any timeline is changed.
+
+![Daytrace first-run local analysis choice in English](docs/assets/screenshots/onboarding-en.png)
+
+![Daytrace low-confidence review reminder in English](docs/assets/screenshots/review-coach-en.png)
 
 The same interface is also available in [Russian](README_RU.md), including localized summaries and system-tray controls.
 

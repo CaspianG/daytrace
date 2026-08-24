@@ -8,6 +8,7 @@ import security from "../electron/lib/runtime-security.cjs";
 const root = path.resolve(import.meta.dirname, "..");
 const mainSource = fs.readFileSync(path.join(root, "electron", "main.cjs"), "utf8");
 const rendererSource = fs.readFileSync(path.join(root, "src", "App.jsx"), "utf8");
+const preloadSource = fs.readFileSync(path.join(root, "electron", "preload.cjs"), "utf8");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 
 test("renderer trust is exact in packaged and development builds", () => {
@@ -60,4 +61,14 @@ test("collection settings remain configurable while tracking is paused and surfa
   assert.doesNotMatch(rendererSource, /disabled=\{Boolean\(pending\) \|\| !state\.settings\.trackingEnabled\}/);
   assert.match(rendererSource, /className="settings-action-error" role="alert"/);
   assert.match(rendererSource, /catch \{\s*setActionError\(t\.settings\.actionFailed\)/);
+});
+
+test("onboarding and review guidance use versioned local IPC instead of browser storage", () => {
+  assert.match(mainSource, /CURRENT_ONBOARDING_VERSION/);
+  assert.match(mainSource, /daytrace:acknowledge-review-guidance/);
+  assert.match(preloadSource, /restartOnboarding/);
+  assert.match(preloadSource, /acknowledgeReviewGuidance/);
+  assert.match(rendererSource, /onboardingVersion/);
+  assert.match(rendererSource, /review-coach/);
+  assert.doesNotMatch(rendererSource, /localStorage/);
 });

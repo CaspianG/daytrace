@@ -53,13 +53,28 @@ test("first run follows the OS language and persists onboarding choices", (t) =>
   const store = new storeModule.EventStore(root, () => {}, { defaultLanguage: "ru-RU" });
   assert.equal(store.settings.language, "ru");
   assert.equal(store.settings.onboardingComplete, false);
+  assert.equal(store.settings.onboardingVersion, 0);
   assert.equal(store.settings.accessibilityOnboardingDismissed, false);
-  store.updateSettings({ language: "en", onboardingComplete: true, accessibilityOnboardingDismissed: true });
+  store.updateSettings({ language: "en", onboardingComplete: true, onboardingVersion: 2, accessibilityOnboardingDismissed: true, reviewLearningExplained: true });
 
   const reopened = new storeModule.EventStore(root, () => {}, { defaultLanguage: "ru-RU" });
   assert.equal(reopened.settings.language, "en");
   assert.equal(reopened.settings.onboardingComplete, true);
+  assert.equal(reopened.settings.onboardingVersion, 2);
   assert.equal(reopened.settings.accessibilityOnboardingDismissed, true);
+  assert.equal(reopened.settings.reviewLearningExplained, true);
+});
+
+test("legacy users are migrated to the one-time improved onboarding", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "daytrace-onboarding-migration-test-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, "settings.json"), JSON.stringify({ language: "ru", onboardingComplete: true }));
+  const store = new storeModule.EventStore(root);
+  assert.equal(store.settings.onboardingComplete, true);
+  assert.equal(store.settings.onboardingVersion, 1);
+  store.updateSettings({ onboardingVersion: storeModule.CURRENT_ONBOARDING_VERSION });
+  const reopened = new storeModule.EventStore(root);
+  assert.equal(reopened.settings.onboardingVersion, 2);
 });
 
 test("local answers use browser and Telegram context without message content", () => {
@@ -126,6 +141,8 @@ test("English and Russian READMEs use only their matching localized visuals", ()
   assert.match(englishReadme, /calendar-en\.png/);
   assert.match(englishReadme, /rhythm-en\.png/);
   assert.match(englishReadme, /retention-en\.png/);
+  assert.match(englishReadme, /onboarding-en\.png/);
+  assert.match(englishReadme, /review-coach-en\.png/);
   assert.doesNotMatch(englishReadme, /(?:daytrace-cover|timeline)-ru\.png/);
 
   assert.match(russianReadme, /daytrace-cover-ru\.png/);
@@ -137,6 +154,8 @@ test("English and Russian READMEs use only their matching localized visuals", ()
   assert.match(russianReadme, /calendar-ru\.png/);
   assert.match(russianReadme, /rhythm-ru\.png/);
   assert.match(russianReadme, /retention-ru\.png/);
+  assert.match(russianReadme, /onboarding-ru\.png/);
+  assert.match(russianReadme, /review-coach-ru\.png/);
   assert.doesNotMatch(russianReadme, /(?:daytrace-cover|timeline)-en\.png/);
 
   for (const relativePath of [
@@ -158,6 +177,10 @@ test("English and Russian READMEs use only their matching localized visuals", ()
     "docs/assets/screenshots/rhythm-ru.png",
     "docs/assets/screenshots/retention-en.png",
     "docs/assets/screenshots/retention-ru.png",
+    "docs/assets/screenshots/onboarding-en.png",
+    "docs/assets/screenshots/onboarding-ru.png",
+    "docs/assets/screenshots/review-coach-en.png",
+    "docs/assets/screenshots/review-coach-ru.png",
   ]) {
     assert.equal(fs.existsSync(path.join(root, relativePath)), true, `${relativePath} must exist`);
   }
