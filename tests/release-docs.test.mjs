@@ -105,6 +105,9 @@ test("macOS tagged releases use a stable community identity without pretending i
   assert.match(releaseWorkflow, /DAYTRACE_REQUIRE_COMMUNITY_SIGNING/);
   assert.match(importMacCommunityIdentity, /Daytrace Community Release/);
   assert.match(importMacCommunityIdentity, /Stable Daytrace community signing secrets are required/);
+  assert.match(importMacCommunityIdentity, /daytrace-community-signing-probe/);
+  assert.match(importMacCommunityIdentity, /DAYTRACE_COMMUNITY_SIGNING_AUTHORITY/);
+  assert.doesNotMatch(importMacCommunityIdentity, /add-trusted-cert/);
   assert.match(releaseWorkflow, /cp MACOS_INSTALL\.txt release\/MACOS_INSTALL\.txt/);
   assert.match(releaseWorkflow, /release\/MACOS_INSTALL\.txt/);
   assert.match(releaseWorkflow, /body_path: \.github\/RELEASE_BODY\.md/);
