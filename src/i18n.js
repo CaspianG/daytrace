@@ -51,7 +51,7 @@ export const translations = {
         mixed: "Several purposes were observed without one clearly dominating the period.",
       },
     },
-    history: { title: "Latest activity", newestFirst: "Newest first", emptyTitle: "No activity for this day", emptyText: "Leave tracking enabled and switch between your work applications. The first sessions will appear here automatically.", checkSettings: "Check settings" },
+    history: { title: "Latest activity", newestFirst: "Newest first", emptyTitle: "No activity for this day", emptyText: "Leave tracking enabled and switch between your work applications. The first sessions will appear here automatically.", checkSettings: "Check settings", loadingTitle: "Opening the day", loadingText: "Using the local day cache without substituting another date.", showMore: "Show {count} more · {remaining} remaining" },
     calendar: { title: "Choose a day", previousMonth: "Previous month", nextMonth: "Next month", dataHint: "A dot marks days with stored activity" },
     overview: {
       previousDay: "Previous day", nextDay: "Next day", backToday: "Today",
@@ -174,7 +174,7 @@ export const translations = {
         mixed: "Наблюдалось несколько целей без одной явно преобладающей.",
       },
     },
-    history: { title: "Последняя активность", newestFirst: "Сначала новое", emptyTitle: "За этот день активности нет", emptyText: "Оставьте сбор включённым и переключитесь между рабочими приложениями. Первые сессии появятся здесь автоматически.", checkSettings: "Проверить настройки" },
+    history: { title: "Последняя активность", newestFirst: "Сначала новое", emptyTitle: "За этот день активности нет", emptyText: "Оставьте сбор включённым и переключитесь между рабочими приложениями. Первые сессии появятся здесь автоматически.", checkSettings: "Проверить настройки", loadingTitle: "Открываю день", loadingText: "Беру данные из локального кеша дня без подмены другой датой.", showMore: "Показать ещё {count} · осталось {remaining}" },
     calendar: { title: "Выбрать день", previousMonth: "Предыдущий месяц", nextMonth: "Следующий месяц", dataHint: "Точкой отмечены дни с сохранённой активностью" },
     overview: {
       previousDay: "Предыдущий день", nextDay: "Следующий день", backToday: "Сегодня",
