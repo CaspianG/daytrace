@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
+const { signAsync } = require("@electron/osx-sign");
 
 const run = promisify(execFile);
 let preparation;
@@ -28,27 +29,28 @@ async function prepareUnsignedUniversalCollector(event) {
   await run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleShortVersionString 1.0.0", collectorInfo]);
   await run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleVersion 1.0.0", collectorInfo]);
 
-  // Re-seal the exact final helper, then the parent app that contains it. The
-  // optional community identity is a stable non-Apple code-signing identity:
-  // it does not bypass Gatekeeper, but it prevents TCC from seeing a new
-  // collector after every update. Developer-ID builds use the strict path and
-  // deliberately skip this community hook.
-  await run("codesign", [
-    "--force",
-    "--sign", signingIdentity,
-    "--timestamp=none",
-    "--options", "runtime",
-    "--identifier", "io.github.caspiang.daytrace.collector",
-    collectorApp,
-  ]);
-  await run("codesign", [
-    "--force",
-    "--sign", signingIdentity,
-    "--timestamp=none",
-    "--options", "runtime",
-    "--entitlements", entitlements,
-    appPath,
-  ]);
+  // Re-seal every executable component from the deepest Electron helper up to
+  // the parent app. Signing only the collector and outer bundle leaves the
+  // standard GPU/Renderer helpers unsigned and produces an app macOS refuses
+  // to validate. The collector receives no JIT entitlement; its bundle ID from
+  // the fixed Info.plist becomes its stable designated requirement.
+  await signAsync({
+    app: appPath,
+    identity: signingIdentity,
+    identityValidation: false,
+    platform: "darwin",
+    preAutoEntitlements: false,
+    preEmbedProvisioningProfile: false,
+    strictVerify: true,
+    optionsForFile(filePath) {
+      const options = { timestamp: "none" };
+      if (filePath === appPath) options.entitlements = entitlements;
+      if (filePath === collectorApp || filePath.startsWith(`${collectorApp}${path.sep}`)) {
+        options.entitlements = [];
+      }
+      return options;
+    },
+  });
   await run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", collectorApp]);
   await run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", appPath]);
   process.stdout.write(`Prepared final universal Daytrace Activity Collector and parent app with ${signingIdentity === "-" ? "ad-hoc" : "stable community"} signatures.\n`);

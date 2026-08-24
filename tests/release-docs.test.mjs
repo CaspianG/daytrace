@@ -137,10 +137,13 @@ test("macOS packages and checks a named Accessibility collector with its own exa
   assert.match(macTrackerBuild, /codesign --force --sign - --options runtime --identifier "\$COLLECTOR_ID"/);
   assert.match(prepareMacArtifact, /DAYTRACE_COMMUNITY_MAC_BUILD/);
   assert.match(prepareMacArtifact, /mac-universal/);
-  assert.match(prepareMacArtifact, /--identifier", "io\.github\.caspiang\.daytrace\.collector/);
+  assert.match(prepareMacArtifact, /signAsync/);
+  assert.equal(pkg.devDependencies["@electron/osx-sign"], "1.3.3");
+  assert.match(prepareMacArtifact, /identityValidation: false/);
+  assert.match(prepareMacArtifact, /options\.entitlements = \[\]/);
   assert.match(prepareMacArtifact, /ElectronAsarIntegrity/);
   assert.match(prepareMacArtifact, /DAYTRACE_COMMUNITY_SIGNING_IDENTITY/);
-  assert.match(prepareMacArtifact, /--timestamp=none/);
+  assert.match(prepareMacArtifact, /timestamp: "none"/);
   assert.match(prepareMacArtifact, /--verify", "--deep", "--strict/);
   assert.match(verifyMacReleaseScript, /Contents\/Helpers\/Daytrace Activity Collector\.app/);
   assert.match(verifyMacPackageScript, /CFBundleIdentifier/);
