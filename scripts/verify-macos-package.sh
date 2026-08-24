@@ -17,9 +17,14 @@ fi
 VERIFY_ROOT="$(mktemp -d)"
 DMG_MOUNT="$VERIFY_ROOT/dmg"
 DMG_ATTACHED=0
+SMOKE_ROOT="$(cd "${TMPDIR:-/tmp}" && pwd -P)"
+SMOKE_DATA="$(mktemp -d "$SMOKE_ROOT/daytrace-desktop-smoke-packaged-XXXXXX")"
 cleanup() {
   if [[ "$DMG_ATTACHED" = "1" ]]; then
     hdiutil detach "$DMG_MOUNT" -quiet || true
+  fi
+  if [[ "$(dirname "$SMOKE_DATA")" = "$SMOKE_ROOT" && "$(basename "$SMOKE_DATA")" = daytrace-desktop-smoke-packaged-* ]]; then
+    rm -rf "$SMOKE_DATA"
   fi
   rm -rf "$VERIFY_ROOT"
 }
@@ -53,8 +58,6 @@ if [[ "$PROBE_STATUS" != "0" && "$PROBE_STATUS" != "77" ]]; then
   exit 1
 fi
 
-SMOKE_DATA="$VERIFY_ROOT/daytrace-desktop-smoke-packaged"
-mkdir -p "$SMOKE_DATA"
 "$APP_PATH/Contents/MacOS/Daytrace" --daytrace-smoke-test --daytrace-smoke-user-data="$SMOKE_DATA"
 grep -q "desktop-smoke-passed" "$SMOKE_DATA/startup.log"
 
