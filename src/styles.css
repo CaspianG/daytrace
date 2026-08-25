@@ -382,6 +382,9 @@ button:focus-visible, input:focus-visible { outline: 2px solid #748e6c; outline-
 .permission-copy-warning { display: grid; gap: 5px; margin: 16px 0 0; padding: 14px 16px; border: 1px solid #e2b7a9; border-radius: 10px; color: #955a47; background: #fff8f5; }
 .permission-copy-warning span { font-size: 12px; line-height: 1.5; }
 .permission-restart { width: 100%; min-height: 43px; margin-top: 9px; border: 1px solid #9fb297; border-radius: 10px; color: #526e4d; background: #fff; cursor: pointer; font-weight: 700; }
+.permission-repair-action { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 43px; margin-top: 9px; padding: 8px 12px; border: 1px solid #c7a96d; border-radius: 10px; color: #765d2f; background: #fffaf0; cursor: pointer; font-weight: 750; line-height: 1.3; }
+.permission-repair-action:hover { border-color: #ad8b4d; background: #fff6e4; }
+.permission-repair-action:disabled { cursor: wait; opacity: .68; }
 .update-settings { display: grid; gap: 16px; }
 .update-copy { display: grid; gap: 10px; }
 .update-copy > div:first-child { display: grid; gap: 5px; }
@@ -954,6 +957,8 @@ html[data-theme="dark"] .onboarding-error { border-color: #754d40; color: #e2a18
 html[data-theme="dark"] .permission-card button,
 html[data-theme="dark"] .permission-restart,
 html[data-theme="dark"] .permission-check { border-color: #566b50; color: #bdd1b7; background: #1a2018; }
+html[data-theme="dark"] .permission-repair-action { border-color: #705f3d; color: #d7bd82; background: #2d271b; }
+html[data-theme="dark"] .permission-repair-action:hover { border-color: #8a7447; background: #352d1d; }
 html[data-theme="dark"] .setting-row { border-color: #343c31; }
 html[data-theme="dark"] .setting-switch { border-color: #4a5147; background: #353b33; }
 html[data-theme="dark"] .setting-switch span { background: #d9ddd5; box-shadow: 0 2px 5px rgba(0, 0, 0, .38); }

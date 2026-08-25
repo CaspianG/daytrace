@@ -153,10 +153,10 @@ test("macOS packages and checks a named Accessibility collector with its own exa
   assert.match(verifyMacPackageScript, /signature_details="\$\(codesign -dvvv/);
   assert.match(verifyMacPackageScript, /IF MAC BLOCKS DAYTRACE - OPEN THIS\.txt/);
   assert.match(verifyMacPackageScript, /mktemp -d "\$SMOKE_ROOT\/daytrace-desktop-smoke-packaged-XXXXXX"/);
-  assert.match(verifyMacPackageScript, /--check-accessibility/);
   assert.match(verifyMacPackageScript, /--daytrace-smoke-test/);
   assert.match(electronMain, /MAC_COLLECTOR_NAME = "Daytrace Activity Collector"/);
-  assert.match(verifyMacPackageScript, /\/usr\/bin\/open -n -W "\$COLLECTOR_APP"/);
+  assert.match(verifyMacPackageScript, /verify-macos-accessibility-probe\.cjs/);
+  assert.match(verifyMacPackageScript, /verify-macos-collector-runtime\.cjs/);
   assert.match(electronMain, /probeTrusted: process\.platform === "darwin" \? probeTrackerAccessibility : null/);
 });
 

@@ -68,6 +68,20 @@ test("macOS uses the native collector probe instead of the Electron process resu
   assert.equal(mainProcessChecks, 0);
 });
 
+test("a collector probe failure never inherits the Electron window permission", async () => {
+  let mainProcessChecks = 0;
+  const service = createAccessibilityService({
+    platform: "darwin",
+    isTrusted: () => { mainProcessChecks += 1; return true; },
+    probeTrusted: async () => { throw new Error("collector callback failed"); },
+    openExternal: async () => {},
+  });
+
+  assert.equal(await service.refresh(false), false);
+  assert.equal(service.check(), false);
+  assert.equal(mainProcessChecks, 0);
+});
+
 test("macOS opens Accessibility settings while the collector prompt remains alive", async () => {
   let finishPrompt;
   let checks = 0;

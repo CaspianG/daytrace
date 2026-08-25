@@ -20,6 +20,7 @@ const { AnalysisQualityService } = require("./lib/analysis-quality-service.cjs")
 const { createEncryptedBackup, exportCsv, exportJson, restoreEncryptedBackup } = require("./lib/data-portability.cjs");
 const { platformCapabilities, runDiagnostics } = require("./lib/diagnostics.cjs");
 const { createMacAccessibilityProbe } = require("./lib/mac-accessibility-probe.cjs");
+const { spawnMacCollectorBundle } = require("./lib/mac-collector-runtime.cjs");
 const { createRecoveryBackoff } = require("./lib/runtime-recovery.cjs");
 const { compactRendererState } = require("./lib/renderer-state.cjs");
 
@@ -504,16 +505,23 @@ function startTracker() {
     const executable = trackerPath();
     if (!executable || !fs.existsSync(executable)) { trackerStatus = "unavailable"; startupLog(`tracker-unavailable path=${executable || "none"}`); sendState(); return; }
     trackerStatus = "starting";
-    const child = spawn(executable, [], {
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-      env: {
-        ...process.env,
-        DAYTRACE_COLLECT_TITLES: store.settings.collectWindowTitles ? "1" : "0",
-        DAYTRACE_COLLECT_INPUT: store.settings.collectInputCounts ? "1" : "0",
-        DAYTRACE_COLLECT_TAB_COUNT: store.settings.collectBrowserTabCount ? "1" : "0",
-      },
-    });
+    const child = process.platform === "darwin"
+      ? spawnMacCollectorBundle({
+        executablePath: executable,
+        collectTitles: store.settings.collectWindowTitles,
+        collectInput: store.settings.collectInputCounts,
+        log: startupLog,
+      })
+      : spawn(executable, [], {
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: {
+          ...process.env,
+          DAYTRACE_COLLECT_TITLES: store.settings.collectWindowTitles ? "1" : "0",
+          DAYTRACE_COLLECT_INPUT: store.settings.collectInputCounts ? "1" : "0",
+          DAYTRACE_COLLECT_TAB_COUNT: store.settings.collectBrowserTabCount ? "1" : "0",
+        },
+      });
     tracker = child;
     trackerRecovery.markStarted();
     clearTrackerReadyTimer();
@@ -1107,6 +1115,20 @@ function registerIpc() {
     else {
       trackerStatus = "permission-required";
       accessibilityService?.watch();
+    }
+    sendState();
+    return state();
+  });
+  handleIpc("daytrace:repair-accessibility", async () => {
+    if (process.platform !== "darwin") return state();
+    stopTracker("permission-required");
+    const reset = await macAccessibilityProbe?.reset();
+    if (!reset) return state();
+    const trusted = await accessibilityService.request();
+    if (trusted) startTracker();
+    else {
+      trackerStatus = "permission-required";
+      accessibilityService.watch();
     }
     sendState();
     return state();

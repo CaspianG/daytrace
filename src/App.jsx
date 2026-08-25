@@ -301,6 +301,7 @@ function useDaytrace() {
     async setAutoStart(enabled) { if (window.daytrace) setState(await window.daytrace.setAutoStart(enabled)); else setState((current) => ({ ...current, settings: { ...current.settings, autoStartEnabled: enabled }, runtime: { ...current.runtime, autoStartEnabled: enabled } })); },
     async requestAccessibility() { if (window.daytrace) setState(await window.daytrace.requestAccessibility()); },
     async refreshAccessibility() { if (window.daytrace) setState(await window.daytrace.refreshAccessibility()); },
+    async repairAccessibility() { if (window.daytrace) setState(await window.daytrace.repairAccessibility()); },
     async dismissAccessibilityOnboarding() { if (window.daytrace) setState(await window.daytrace.dismissAccessibilityOnboarding()); else setState((current) => ({ ...current, settings: { ...current.settings, accessibilityOnboardingDismissed: true } })); },
     relaunch() { return window.daytrace?.relaunch(); },
     async setExclusions(apps) { if (window.daytrace) setState(await window.daytrace.setExclusions(apps)); else setState((current) => ({ ...current, settings: { ...current.settings, excludedApps: apps } })); },
@@ -500,6 +501,7 @@ function Onboarding({ state, actions, language }) {
 function MacPermissionOnboarding({ actions, onContinue, runtime, t }) {
   const [requesting, setRequesting] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [repairing, setRepairing] = useState(false);
   const request = async () => {
     setRequesting(true);
     try { await actions.requestAccessibility(); }
@@ -510,8 +512,14 @@ function MacPermissionOnboarding({ actions, onContinue, runtime, t }) {
     try { await actions.refreshAccessibility(); }
     finally { setChecking(false); }
   };
+  const repair = async () => {
+    setRepairing(true);
+    try { await actions.repairAccessibility(); }
+    finally { setRepairing(false); }
+  };
   const probePhase = runtime?.accessibilityProbe?.phase || "idle";
-  const probeBusy = probePhase === "registering";
+  const probeBusy = ["registering", "checking", "repairing"].includes(probePhase);
+  const canRepair = ["denied", "error", "reset"].includes(probePhase) && !runtime?.macInstall?.issue;
   const probeText = t.onboarding.permissionProbeStatuses?.[probePhase];
   return <main className="onboarding-shell permission-onboarding-shell">
     <section className="onboarding-card permission-onboarding-card" role="dialog" aria-modal="true" aria-labelledby="mac-permission-title">
@@ -532,6 +540,7 @@ function MacPermissionOnboarding({ actions, onContinue, runtime, t }) {
       <div className="onboarding-privacy"><LockKey size={25} /><div><strong>{t.settings.deviceOnly}</strong><span>{t.onboarding.permissionPrivacy}</span></div></div>
       <button className="onboarding-continue" onClick={request} disabled={requesting || probeBusy}>{requesting || probeBusy ? t.onboarding.permissionWaiting : t.onboarding.permissionGrant}<ArrowRight size={19} /></button>
       <button className="permission-check" onClick={refresh} disabled={checking || probeBusy}>{checking ? t.onboarding.permissionChecking : t.onboarding.permissionCheck}<ArrowClockwise size={18} /></button>
+      {canRepair && <button className="permission-repair-action" onClick={repair} disabled={repairing || probeBusy}><ArrowCounterClockwise size={18} />{repairing ? t.onboarding.permissionRepairing : t.onboarding.permissionRepairAction}</button>}
       <button className="permission-restart" onClick={actions.relaunch}>{t.onboarding.permissionRestart}</button>
       <button className="permission-later" onClick={onContinue}>{t.onboarding.permissionLater}</button>
     </section>
@@ -1182,7 +1191,8 @@ function SettingsPage({ state, actions, isDesktop, language, focusSection, t, on
     : runtime.accessibilityMainTrusted ? t.settings.accessibilityWrongTarget : t.settings.accessibilityText;
   const statusLabel = t.settings.statuses[runtime.trackerStatus] || t.settings.statuses.stopped;
   const accessibilityProbePhase = runtime.accessibilityProbe?.phase || "idle";
-  const accessibilityProbeBusy = accessibilityProbePhase === "registering";
+  const accessibilityProbeBusy = ["registering", "checking", "repairing"].includes(accessibilityProbePhase);
+  const accessibilityCanRepair = ["denied", "error", "reset"].includes(accessibilityProbePhase) && !macInstall.issue;
   const accessibilityProbeText = t.settings.accessibilityProbeStatuses?.[accessibilityProbePhase];
   const setting = (key, title, description) => (
     <div className="setting-row" key={key}>
@@ -1209,6 +1219,7 @@ function SettingsPage({ state, actions, isDesktop, language, focusSection, t, on
             <button onClick={() => run("accessibility-check", actions.refreshAccessibility)} disabled={Boolean(pending) || accessibilityProbeBusy}>{t.onboarding.permissionCheck}</button>
             <button onClick={actions.relaunch}>{t.settings.restartAfterAccess}</button>
           </div>
+          {accessibilityCanRepair && <button className="permission-repair-action" onClick={() => run("accessibility-repair", actions.repairAccessibility)} disabled={Boolean(pending) || accessibilityProbeBusy}><ArrowCounterClockwise size={18} />{t.onboarding.permissionRepairAction}</button>}
         </div>
       )}
       <div className="settings-section appearance-section">

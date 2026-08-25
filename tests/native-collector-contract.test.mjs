@@ -26,8 +26,16 @@ test("macOS collector exposes a permission probe for its own TCC identity", () =
   assert.match(macCollector, /--request-accessibility/);
   assert.match(macCollector, /AXIsProcessTrustedWithOptions/);
   assert.match(macCollector, /Date\(\)\.addingTimeInterval\(60\)/);
-  assert.match(macCollector, /if AXIsProcessTrusted\(\) \{ exit\(0\) \}/);
+  assert.match(macCollector, /"type": "probe"/);
+  assert.match(macCollector, /"token": String\(callbackToken\)/);
   assert.match(macCollector, /exit\(77\)/);
+});
+
+test("macOS collector streams only to an authenticated loopback callback", () => {
+  assert.match(macCollector, /OutputStream\(toHost: "127\.0\.0\.1"/);
+  assert.match(macCollector, /--stream-events/);
+  assert.match(macCollector, /"type": "ready"/);
+  assert.match(macCollector, /"type": "liveness"/);
 });
 
 test("native collectors avoid expensive overlapping or idle window scans", () => {
@@ -37,5 +45,6 @@ test("native collectors avoid expensive overlapping or idle window scans", () =>
   assert.match(macCollector, /if idleBeforeSample && !force \{ return \}/);
   assert.match(macCollector, /tapDisabledByTimeout/);
   assert.match(macCollector, /CGEvent\.tapEnable/);
-  assert.match(macCollector, /if !AXIsProcessTrusted\(\) \{ flush\(\); exit\(77\) \}/);
+  assert.match(macCollector, /if !AXIsProcessTrusted\(\)/);
+  assert.match(macCollector, /"type": "status", "code": 77/);
 });
