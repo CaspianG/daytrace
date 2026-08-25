@@ -32,7 +32,8 @@ test("macOS collector exposes a permission probe for its own TCC identity", () =
 });
 
 test("macOS collector streams only to an authenticated loopback callback", () => {
-  assert.match(macCollector, /OutputStream\(toHost: "127\.0\.0\.1"/);
+  assert.match(macCollector, /Stream\.getStreamsToHost/);
+  assert.match(macCollector, /withName: "127\.0\.0\.1"/);
   assert.match(macCollector, /--stream-events/);
   assert.match(macCollector, /"type": "ready"/);
   assert.match(macCollector, /"type": "liveness"/);
