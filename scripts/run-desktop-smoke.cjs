@@ -6,18 +6,19 @@ const { spawnSync } = require("node:child_process");
 const projectRoot = path.resolve(__dirname, "..");
 const tempRoot = fs.realpathSync(os.tmpdir());
 const userData = fs.mkdtempSync(path.join(tempRoot, "daytrace-desktop-smoke-"));
+const startupTimeoutMs = process.env.CI ? 90_000 : 30_000;
 
 try {
   const electron = require("electron");
   const result = spawnSync(electron, [projectRoot, "--daytrace-smoke-test", `--daytrace-smoke-user-data=${userData}`], {
     cwd: projectRoot,
     encoding: "utf8",
-    timeout: 30_000,
+    timeout: startupTimeoutMs,
     windowsHide: true,
   });
   const logPath = path.join(userData, "startup.log");
   const startupLog = fs.existsSync(logPath) ? fs.readFileSync(logPath, "utf8") : "";
-  if (result.error) throw result.error;
+  if (result.error) throw new Error(`Desktop smoke could not finish within ${startupTimeoutMs} ms: ${result.error.message}.\n${startupLog}`);
   if (result.status !== 0 || !/desktop-smoke-passed/.test(startupLog)) {
     throw new Error(`Desktop smoke failed with exit ${result.status}.\n${result.stderr || ""}\n${startupLog}`);
   }
