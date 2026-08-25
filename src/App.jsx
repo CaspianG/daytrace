@@ -100,7 +100,7 @@ function demoState(language = demoLanguage(), onboardingComplete = new URLSearch
   })) : [];
   return {
     settings: { trackingEnabled: true, retentionHours: 48, excludePrivateWindows: true, collectWindowTitles: true, collectInputCounts: true, collectBrowserTabCount: true, analysisEngine: previewEngine, smartAnalysisEnabled: previewEngine !== "builtin", browserCompanionEnabled: false, autoStartEnabled: false, theme: normalizeTheme(params.get("theme")), excludedApps: ["1Password", "Bitwarden", "KeePass"], intentRules: [{ id: "demo-friends", match: lang === "ru" ? "Друзья" : "Friends", intent: "personal" }], intentRulesUndo: [], language: lang, onboardingComplete, onboardingVersion: onboardingComplete ? CURRENT_ONBOARDING_VERSION : Number(params.get("onboardingVersion") || 0), quickTourComplete: params.get("tour") !== "1", accessibilityOnboardingDismissed: false, reviewLearningExplained: false, reviewReminderSnoozedUntil: null, reviewReminderLastCount: 0 },
-    runtime: { platform: macPermissionPreview ? "darwin" : updatePreview || desktopPreview ? "win32" : "browser", trackerStatus: macPermissionPreview ? "permission-required" : "running", accessibilityTrusted: !macPermissionPreview, accessibilityMainTrusted: true, accessibilityTarget: "Daytrace Activity Collector", accessibilityProbe: macPermissionPreview ? { phase: "denied", trusted: false, checkedAt: Date.now(), code: 77, error: "permission required" } : null, autoStartSupported: desktopPreview, autoStartEnabled: false, capabilities: { browserTabCount: Boolean(updatePreview || desktopPreview), browserCompanion: Boolean(updatePreview || desktopPreview), smartAnalysis: true, encryptedBackup: true }, browserCompanion: { running: desktopPreview }, smartAnalysis: { engine: previewEngine, installed: true, running: false, version: "built-in", signal: { installed: false, running: false, sizeBytes: 6391, updateAvailable: false, lastResult: { status: "never", candidates: 0, refined: 0, changed: 0 } }, semantic: { installed: false, running: false, downloading: false, progress: 0, sizeBytes: 49821594, version: "1.0.0", languages: ["ru", "en"], quality: { benchmark: { labelable: 48, precision: 35 / 37, coverage: 37 / 48 }, holdout: { precision: 20 / 22, coverage: 22 / 32 } }, lastResult: { status: "never", candidates: 0, refined: 0, changed: 0 } }, quality: DEMO_ANALYSIS_QUALITY }, diagnostics: null, update: { status: updateStatus, currentVersion: "0.5.12", latestVersion: updatePreview ? "0.6.0" : "0.5.12", checkedAt: Date.now(), progress: updateStatus === "downloading" ? 64 : ["ready", "installing", "restarting"].includes(updateStatus) ? 100 : 0 } },
+    runtime: { platform: macPermissionPreview ? "darwin" : updatePreview || desktopPreview ? "win32" : "browser", trackerStatus: macPermissionPreview ? "permission-required" : "running", accessibilityTrusted: !macPermissionPreview, accessibilityMainTrusted: true, accessibilityTarget: "Daytrace Activity Collector", accessibilityProbe: macPermissionPreview ? { phase: "denied", trusted: false, checkedAt: Date.now(), code: 77, error: "permission required" } : null, autoStartSupported: desktopPreview, autoStartEnabled: false, capabilities: { browserTabCount: Boolean(updatePreview || desktopPreview), browserCompanion: Boolean(updatePreview || desktopPreview), smartAnalysis: true, encryptedBackup: true }, browserCompanion: { running: desktopPreview }, smartAnalysis: { engine: previewEngine, installed: true, running: false, version: "built-in", signal: { installed: false, running: false, sizeBytes: 6391, updateAvailable: false, lastResult: { status: "never", candidates: 0, refined: 0, changed: 0 } }, semantic: { installed: false, running: false, downloading: false, progress: 0, sizeBytes: 49821594, version: "1.0.0", languages: ["ru", "en"], quality: { benchmark: { labelable: 48, precision: 35 / 37, coverage: 37 / 48 }, holdout: { precision: 20 / 22, coverage: 22 / 32 } }, lastResult: { status: "never", candidates: 0, refined: 0, changed: 0 } }, quality: DEMO_ANALYSIS_QUALITY }, diagnostics: null, update: { status: updateStatus, currentVersion: "0.5.13", latestVersion: updatePreview ? "0.6.0" : "0.5.13", checkedAt: Date.now(), progress: updateStatus === "downloading" ? 64 : ["ready", "installing", "restarting"].includes(updateStatus) ? 100 : 0 } },
     sessions: [
       makeSession("demo-1", 0, 2, "mixed", "work"), makeSession("demo-2", 3, 6, "mixed", "work"), makeSession("demo-3", 7, 8, "communication", "mixed"),
       { id: "demo-break", start: startOfToday(12, 5), end: startOfToday(12, 20), durationMs: 15 * 60_000, focus: "break", label: FOCUS_LABELS[lang].break, intent: "unknown", intentLabel: INTENT_LABELS[lang].unknown, activities: [] },
@@ -301,6 +301,7 @@ function useDaytrace() {
     async setAutoStart(enabled) { if (window.daytrace) setState(await window.daytrace.setAutoStart(enabled)); else setState((current) => ({ ...current, settings: { ...current.settings, autoStartEnabled: enabled }, runtime: { ...current.runtime, autoStartEnabled: enabled } })); },
     async requestAccessibility() { if (window.daytrace) setState(await window.daytrace.requestAccessibility()); },
     async refreshAccessibility() { if (window.daytrace) setState(await window.daytrace.refreshAccessibility()); },
+    async repairAccessibility() { if (window.daytrace) setState(await window.daytrace.repairAccessibility()); },
     async dismissAccessibilityOnboarding() { if (window.daytrace) setState(await window.daytrace.dismissAccessibilityOnboarding()); else setState((current) => ({ ...current, settings: { ...current.settings, accessibilityOnboardingDismissed: true } })); },
     relaunch() { return window.daytrace?.relaunch(); },
     async setExclusions(apps) { if (window.daytrace) setState(await window.daytrace.setExclusions(apps)); else setState((current) => ({ ...current, settings: { ...current.settings, excludedApps: apps } })); },
@@ -500,6 +501,7 @@ function Onboarding({ state, actions, language }) {
 function MacPermissionOnboarding({ actions, onContinue, runtime, t }) {
   const [requesting, setRequesting] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [repairing, setRepairing] = useState(false);
   const request = async () => {
     setRequesting(true);
     try { await actions.requestAccessibility(); }
@@ -510,8 +512,14 @@ function MacPermissionOnboarding({ actions, onContinue, runtime, t }) {
     try { await actions.refreshAccessibility(); }
     finally { setChecking(false); }
   };
+  const repair = async () => {
+    setRepairing(true);
+    try { await actions.repairAccessibility(); }
+    finally { setRepairing(false); }
+  };
   const probePhase = runtime?.accessibilityProbe?.phase || "idle";
-  const probeBusy = probePhase === "registering";
+  const probeBusy = ["registering", "checking", "repairing"].includes(probePhase);
+  const canRepair = ["denied", "error", "reset"].includes(probePhase) && !runtime?.macInstall?.issue;
   const probeText = t.onboarding.permissionProbeStatuses?.[probePhase];
   return <main className="onboarding-shell permission-onboarding-shell">
     <section className="onboarding-card permission-onboarding-card" role="dialog" aria-modal="true" aria-labelledby="mac-permission-title">
@@ -532,6 +540,7 @@ function MacPermissionOnboarding({ actions, onContinue, runtime, t }) {
       <div className="onboarding-privacy"><LockKey size={25} /><div><strong>{t.settings.deviceOnly}</strong><span>{t.onboarding.permissionPrivacy}</span></div></div>
       <button className="onboarding-continue" onClick={request} disabled={requesting || probeBusy}>{requesting || probeBusy ? t.onboarding.permissionWaiting : t.onboarding.permissionGrant}<ArrowRight size={19} /></button>
       <button className="permission-check" onClick={refresh} disabled={checking || probeBusy}>{checking ? t.onboarding.permissionChecking : t.onboarding.permissionCheck}<ArrowClockwise size={18} /></button>
+      {canRepair && <button className="permission-repair-action" onClick={repair} disabled={repairing || probeBusy}><ArrowCounterClockwise size={18} />{repairing ? t.onboarding.permissionRepairing : t.onboarding.permissionRepairAction}</button>}
       <button className="permission-restart" onClick={actions.relaunch}>{t.onboarding.permissionRestart}</button>
       <button className="permission-later" onClick={onContinue}>{t.onboarding.permissionLater}</button>
     </section>
@@ -1182,7 +1191,8 @@ function SettingsPage({ state, actions, isDesktop, language, focusSection, t, on
     : runtime.accessibilityMainTrusted ? t.settings.accessibilityWrongTarget : t.settings.accessibilityText;
   const statusLabel = t.settings.statuses[runtime.trackerStatus] || t.settings.statuses.stopped;
   const accessibilityProbePhase = runtime.accessibilityProbe?.phase || "idle";
-  const accessibilityProbeBusy = accessibilityProbePhase === "registering";
+  const accessibilityProbeBusy = ["registering", "checking", "repairing"].includes(accessibilityProbePhase);
+  const accessibilityCanRepair = ["denied", "error", "reset"].includes(accessibilityProbePhase) && !macInstall.issue;
   const accessibilityProbeText = t.settings.accessibilityProbeStatuses?.[accessibilityProbePhase];
   const setting = (key, title, description) => (
     <div className="setting-row" key={key}>
@@ -1209,6 +1219,7 @@ function SettingsPage({ state, actions, isDesktop, language, focusSection, t, on
             <button onClick={() => run("accessibility-check", actions.refreshAccessibility)} disabled={Boolean(pending) || accessibilityProbeBusy}>{t.onboarding.permissionCheck}</button>
             <button onClick={actions.relaunch}>{t.settings.restartAfterAccess}</button>
           </div>
+          {accessibilityCanRepair && <button className="permission-repair-action" onClick={() => run("accessibility-repair", actions.repairAccessibility)} disabled={Boolean(pending) || accessibilityProbeBusy}><ArrowCounterClockwise size={18} />{t.onboarding.permissionRepairAction}</button>}
         </div>
       )}
       <div className="settings-section appearance-section">

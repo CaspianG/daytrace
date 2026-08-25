@@ -46,7 +46,10 @@ function createAccessibilityService({
     if (refreshPromise && !prompt) return refreshPromise;
     const pending = Promise.resolve()
       .then(() => probeTrusted ? probeTrusted(Boolean(prompt)) : isTrusted?.(Boolean(prompt)))
-      .catch(() => isTrusted?.(Boolean(prompt)))
+      // Once a dedicated collector probe exists, the Electron window is not a
+      // valid fallback identity. Treat a probe failure as denied so Daytrace
+      // never claims access that the process doing the AX calls does not have.
+      .catch(() => probeTrusted ? false : isTrusted?.(Boolean(prompt)))
       .then(publish);
     if (prompt) promptPromise = pending;
     else refreshPromise = pending;

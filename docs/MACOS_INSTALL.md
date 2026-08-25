@@ -37,10 +37,11 @@ Choose **Register collector**. Daytrace launches the embedded helper so macOS ad
 
 If the switch is already on but Daytrace still shows the permission screen:
 
-1. If only **Daytrace**, **Daytrace 2**, or the old **Daytrace Collector** is enabled, that is not the v0.5.12 collector identity.
-2. Return to Daytrace and click **Register collector** so macOS adds **Daytrace Activity Collector** automatically. Do not add `/Applications/Daytrace.app` manually for this permission.
-3. If several **Daytrace Activity Collector** entries exist, remove the stale ones, register the collector again, enable the new entry, and click **Check again**.
-4. A close button and **Open Daytrace without tracking** always keep the interface available. Collection starts as soon as the real helper succeeds.
+1. If only **Daytrace**, **Daytrace 2**, or the old **Daytrace Collector** is enabled, that is not the current collector identity.
+2. Update to v0.5.13 or newer. Permission checks and real collection now launch the same **Daytrace Activity Collector.app** through LaunchServices, so a different executable or the Daytrace UI cannot produce a false success or denial.
+3. Click **Repair Daytrace permission** once. Daytrace resets only `io.github.caspiang.daytrace.collector`, registers the exact current helper again, and opens Accessibility. No other application's permission is changed.
+4. Enable the newly registered **Daytrace Activity Collector** entry. The helper reports its own authenticated result and collection starts automatically; **Check again** remains available for an explicit retry.
+5. A close button and **Open Daytrace without tracking** always keep the interface available.
 
 The collector is a named nested helper at `Daytrace.app/Contents/Helpers/Daytrace Activity Collector.app` with bundle ID `io.github.caspiang.daytrace.collector`. This removes the previous mismatch where the interface asked for permission for `Daytrace.app` while a different executable performed and checked the protected operation.
 
@@ -53,6 +54,8 @@ Starting with v0.5.5, “launches successfully” means that the new application
 The transition from v0.5.3 or older is a one-time exception: those installed binaries only know how to open the DMG, so perform the replacement described above once. Updates from v0.5.4 onward use the automatic path, while v0.5.5 adds readiness-confirmed rollback safety.
 
 v0.5.12 is a one-time permission migration from the former **Daytrace Collector** to the newly named **Daytrace Activity Collector**. Click **Register collector** and enable the new entry once; the old entry can be removed. The helper now has a fixed bundle version, no longer inherits the changing parent `app.asar` hash, launches through macOS LaunchServices, and is signed by the same protected community key on every public build. This is designed to preserve its Accessibility identity across later community updates. Daytrace still verifies the exact helper after every check and shows a real result instead of treating a button press as success.
+
+v0.5.13 fixes the remaining case where registration used the helper app but live tracking or a quick check could run its executable through a different path. Checks and collection now use the same LaunchServices app identity and an authenticated loopback readiness channel. If macOS already retained an inconsistent TCC record, **Repair Daytrace permission** performs the one exact reset and re-registration inside the app.
 
 ## Why the warning cannot be removed in code
 

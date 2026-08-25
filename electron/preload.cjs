@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld("daytrace", {
   setAutoStart: (enabled) => ipcRenderer.invoke("daytrace:set-autostart", enabled),
   requestAccessibility: () => ipcRenderer.invoke("daytrace:request-accessibility"),
   refreshAccessibility: () => ipcRenderer.invoke("daytrace:refresh-accessibility"),
+  repairAccessibility: () => ipcRenderer.invoke("daytrace:repair-accessibility"),
   dismissAccessibilityOnboarding: () => ipcRenderer.invoke("daytrace:dismiss-accessibility-onboarding"),
   relaunch: () => ipcRenderer.invoke("daytrace:relaunch"),
   setExclusions: (apps) => ipcRenderer.invoke("daytrace:set-exclusions", apps),

@@ -2,6 +2,74 @@ import AppKit
 import ApplicationServices
 import Foundation
 
+func argumentValue(_ name: String) -> String? {
+    guard let index = CommandLine.arguments.firstIndex(of: name), index + 1 < CommandLine.arguments.count else { return nil }
+    return CommandLine.arguments[index + 1]
+}
+
+final class CallbackTransport {
+    private let stream: OutputStream
+    private let lock = NSLock()
+
+    init?(port: Int) {
+        guard (1...65535).contains(port) else { return nil }
+        var outputStream: OutputStream?
+        Stream.getStreamsToHost(
+            withName: "127.0.0.1",
+            port: port,
+            inputStream: nil,
+            outputStream: &outputStream
+        )
+        guard let outputStream else { return nil }
+        stream = outputStream
+        stream.schedule(in: .current, forMode: .default)
+        stream.open()
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline && (stream.streamStatus == .notOpen || stream.streamStatus == .opening) {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        guard stream.streamStatus == .open || stream.streamStatus == .writing else {
+            stream.close()
+            stream.remove(from: .current, forMode: .default)
+            return nil
+        }
+    }
+
+    func write(line: String) -> Bool {
+        guard let data = "\(line)\n".data(using: .utf8) else { return false }
+        lock.lock()
+        defer { lock.unlock() }
+        return data.withUnsafeBytes { rawBuffer in
+            guard let base = rawBuffer.bindMemory(to: UInt8.self).baseAddress else { return false }
+            var offset = 0
+            while offset < data.count {
+                let written = stream.write(base.advanced(by: offset), maxLength: data.count - offset)
+                if written <= 0 { return false }
+                offset += written
+            }
+            return true
+        }
+    }
+
+    deinit {
+        stream.close()
+        stream.remove(from: .current, forMode: .default)
+    }
+}
+
+let callbackPort = Int(argumentValue("--callback-port") ?? "")
+let callbackToken = String(argumentValue("--callback-token") ?? "").prefix(128)
+var callbackTransport = callbackPort.flatMap { CallbackTransport(port: $0) }
+
+@discardableResult
+func sendCallback(_ payload: [String: Any]) -> Bool {
+    guard let transport = callbackTransport,
+          JSONSerialization.isValidJSONObject(payload),
+          let data = try? JSONSerialization.data(withJSONObject: payload),
+          let line = String(data: data, encoding: .utf8) else { return false }
+    return transport.write(line: line)
+}
+
 func accessibilityTrusted(prompt: Bool) -> Bool {
     if !prompt { return AXIsProcessTrusted() }
     let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
@@ -11,17 +79,24 @@ func accessibilityTrusted(prompt: Bool) -> Bool {
 
 if CommandLine.arguments.contains("--check-accessibility") || CommandLine.arguments.contains("--request-accessibility") {
     let prompt = CommandLine.arguments.contains("--request-accessibility")
-    if accessibilityTrusted(prompt: prompt) { exit(0) }
-    if prompt {
+    var trusted = accessibilityTrusted(prompt: prompt)
+    if !trusted && prompt {
         // The prompt is asynchronous. Keep the exact helper identity alive while
         // the user enables its switch, and report success without a relaunch.
         let deadline = Date().addingTimeInterval(60)
         while Date() < deadline {
             RunLoop.current.run(until: Date().addingTimeInterval(0.25))
-            if AXIsProcessTrusted() { exit(0) }
+            if AXIsProcessTrusted() { trusted = true; break }
         }
     }
-    exit(77)
+    if callbackPort != nil && !callbackToken.isEmpty {
+        _ = sendCallback([
+            "type": "probe", "token": String(callbackToken), "trusted": trusted,
+            "pid": ProcessInfo.processInfo.processIdentifier,
+            "error": trusted ? "" : "permission-required",
+        ])
+    }
+    exit(trusted ? 0 : 77)
 }
 
 struct Snapshot: Equatable {
@@ -31,8 +106,8 @@ struct Snapshot: Equatable {
     let context: String
 }
 
-let collectTitles = ProcessInfo.processInfo.environment["DAYTRACE_COLLECT_TITLES"] != "0"
-let collectInput = ProcessInfo.processInfo.environment["DAYTRACE_COLLECT_INPUT"] != "0"
+let collectTitles = argumentValue("--collect-titles").map { $0 != "0" } ?? (ProcessInfo.processInfo.environment["DAYTRACE_COLLECT_TITLES"] != "0")
+let collectInput = argumentValue("--collect-input").map { $0 != "0" } ?? (ProcessInfo.processInfo.environment["DAYTRACE_COLLECT_INPUT"] != "0")
 let encoder = JSONSerialization.self
 var active = Snapshot(app: "Application", process: "", title: "", context: "other")
 var inputs = 0
@@ -73,7 +148,13 @@ func emit(kind: String, count: Int, value: Snapshot) {
         "at": ISO8601DateFormatter().string(from: Date()), "kind": kind, "count": count,
         "app": value.app, "process": value.process, "title": value.title, "context": value.context, "tabCount": 0,
     ]
-    if let data = try? encoder.data(withJSONObject: payload), let line = String(data: data, encoding: .utf8) { print(line); fflush(stdout) }
+    if let data = try? encoder.data(withJSONObject: payload), let line = String(data: data, encoding: .utf8) {
+        if callbackTransport != nil {
+            if !callbackTransport!.write(line: line) { exit(0) }
+        } else {
+            print(line); fflush(stdout)
+        }
+    }
 }
 
 func flush(value: Snapshot? = nil) {
@@ -103,7 +184,11 @@ func samplePresence() {
 }
 
 func heartbeat() {
-    if !AXIsProcessTrusted() { flush(); exit(77) }
+    if !AXIsProcessTrusted() {
+        flush()
+        _ = sendCallback(["type": "status", "code": 77, "error": "permission-required"])
+        exit(77)
+    }
     lock.lock(); let idle = isIdle; let current = active; lock.unlock()
     if !idle { emit(kind: "heartbeat", count: 1, value: current) }
 }
@@ -121,8 +206,20 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
 }
 
 guard accessibilityTrusted(prompt: false) else {
+    _ = sendCallback(["type": "status", "token": String(callbackToken), "code": 77, "error": "permission-required"])
     fputs("Daytrace requires macOS Accessibility permission.\n", stderr)
     exit(77)
+}
+
+if CommandLine.arguments.contains("--stream-events") {
+    guard callbackTransport != nil, !callbackToken.isEmpty else {
+        fputs("Daytrace collector callback is missing.\n", stderr)
+        exit(70)
+    }
+    guard sendCallback([
+        "type": "ready", "token": String(callbackToken),
+        "pid": ProcessInfo.processInfo.processIdentifier,
+    ]) else { exit(70) }
 }
 
 if collectInput {
@@ -143,5 +240,8 @@ let sampleTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { _ i
 let flushTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { _ in flush() }
 let presenceTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in samplePresence() }
 let heartbeatTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in heartbeat() }
+let livenessTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in
+    if callbackTransport != nil && !sendCallback(["type": "liveness"]) { exit(0) }
+}
 RunLoop.main.run()
-center.removeObserver(observer); sampleTimer.invalidate(); flushTimer.invalidate(); presenceTimer.invalidate(); heartbeatTimer.invalidate(); flush()
+center.removeObserver(observer); sampleTimer.invalidate(); flushTimer.invalidate(); presenceTimer.invalidate(); heartbeatTimer.invalidate(); livenessTimer.invalidate(); flush()

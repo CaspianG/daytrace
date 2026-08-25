@@ -58,7 +58,7 @@ class SmartAnalysisService {
     this.modelPath = path.join(this.modelDir, MODEL_NAME);
     this.workerPath = options.workerPath || path.join(__dirname, "smart-analysis-worker.cjs");
     this.fetch = options.fetch || globalThis.fetch;
-    const urls = modelUrlsForVersion(options.version || "0.5.12");
+    const urls = modelUrlsForVersion(options.version || "0.5.13");
     this.modelUrl = options.modelUrl || urls.modelUrl;
     this.checksumUrl = options.checksumUrl || urls.checksumUrl;
     this.expectedChecksum = String(options.expectedChecksum || MODEL_SHA256).toLowerCase();

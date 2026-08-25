@@ -67,19 +67,8 @@ verify_collector "$APP_PATH"
 COLLECTOR_APP="$APP_PATH/Contents/Helpers/Daytrace Activity Collector.app"
 COLLECTOR_EXECUTABLE="$COLLECTOR_APP/Contents/MacOS/Daytrace Activity Collector"
 
-set +e
-"$COLLECTOR_EXECUTABLE" --check-accessibility >/dev/null 2>&1
-PROBE_STATUS=$?
-set -e
-if [[ "$PROBE_STATUS" != "0" && "$PROBE_STATUS" != "77" ]]; then
-  echo "Collector Accessibility probe crashed with status $PROBE_STATUS" >&2
-  exit 1
-fi
-
-# Exercise the same LaunchServices path used by the in-app Register button.
-# `open` reports launch success; the direct probe above remains the authority
-# for the helper's own TCC status.
-/usr/bin/open -n -W "$COLLECTOR_APP" --args --check-accessibility
+node scripts/verify-macos-accessibility-probe.cjs "$COLLECTOR_EXECUTABLE"
+node scripts/verify-macos-collector-runtime.cjs "$COLLECTOR_EXECUTABLE"
 
 "$APP_PATH/Contents/MacOS/Daytrace" --daytrace-smoke-test --daytrace-smoke-user-data="$SMOKE_DATA"
 grep -q "desktop-smoke-passed" "$SMOKE_DATA/startup.log"
