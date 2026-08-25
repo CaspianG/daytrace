@@ -35,7 +35,7 @@ test("collector bundle path resolves the exact nested app", () => {
   assert.equal(collectorBundlePath("/tmp/daytrace-tracker"), "");
 });
 
-test("a denied direct preflight is confirmed through the real LaunchServices app identity", async () => {
+test("permission checks use the real LaunchServices app identity", async () => {
   const launches = [];
   const diagnostics = [];
   const service = createMacAccessibilityProbe({
@@ -45,7 +45,6 @@ test("a denied direct preflight is confirmed through the real LaunchServices app
     randomBytes: () => Buffer.alloc(32, 7),
     spawn: (command, args) => {
       launches.push({ command, args });
-      if (command === executable) return childThatExits(77, "permission required");
       respondToBundleProbe(args, true);
       return childThatExits(0);
     },
@@ -53,13 +52,12 @@ test("a denied direct preflight is confirmed through the real LaunchServices app
   });
 
   assert.equal(await service.probe(false), true);
-  assert.equal(launches.length, 2);
-  assert.equal(launches[0].command, executable);
-  assert.deepEqual(launches[0].args, ["--check-accessibility"]);
-  assert.equal(launches[1].command, "/usr/bin/open");
-  assert.deepEqual(launches[1].args.slice(0, 2), ["-n", "-g"]);
-  assert.match(launches[1].args[2].replaceAll("\\", "/"), /\/Applications\/Daytrace\.app\/Contents\/Helpers\/Daytrace Activity Collector\.app$/);
-  assert.equal(launches[1].args.includes("-W"), false);
+  assert.equal(launches.length, 1);
+  assert.equal(launches[0].command, "/usr/bin/open");
+  assert.deepEqual(launches[0].args.slice(0, 2), ["-n", "-g"]);
+  assert.match(launches[0].args[2].replaceAll("\\", "/"), /\/Applications\/Daytrace\.app\/Contents\/Helpers\/Daytrace Activity Collector\.app$/);
+  assert.equal(launches[0].args.includes("-W"), false);
+  assert.equal(launches[0].args.includes("--check-accessibility"), true);
   assert.equal(diagnostics.at(-1).phase, "trusted");
   assert.equal(diagnostics.at(-1).transport, "launch-services-callback");
   assert.equal(diagnostics.at(-1).bundleIdentifier, COLLECTOR_BUNDLE_ID);
@@ -89,19 +87,6 @@ test("registration waits for the collector callback instead of trusting the open
   assert.equal(diagnostics.at(-1).denialCount, 1);
 });
 
-test("a trusted direct preflight avoids an extra LaunchServices process", async () => {
-  const launches = [];
-  const service = createMacAccessibilityProbe({
-    platform: "darwin",
-    executablePath: () => executable,
-    existsSync: () => true,
-    spawn: (command, args) => { launches.push({ command, args }); return childThatExits(0); },
-  });
-
-  assert.equal(await service.probe(false), true);
-  assert.deepEqual(launches, [{ command: executable, args: ["--check-accessibility"] }]);
-});
-
 test("repair resets only the Daytrace collector Accessibility record", async () => {
   const launches = [];
   const diagnostics = [];
@@ -124,8 +109,7 @@ test("collector launch failures remain visible as diagnostics", async () => {
     platform: "darwin",
     executablePath: () => executable,
     existsSync: () => true,
-    spawn: (command) => {
-      if (command === executable) return childThatExits(77);
+    spawn: () => {
       throw new Error("launch denied");
     },
     onDiagnostic: (value) => diagnostics.push(value),

@@ -14,7 +14,7 @@ const probe = createMacAccessibilityProbe({
 
 probe.probe(false).then(() => {
   probe.stop();
-  if (!diagnostic || !["trusted", "denied"].includes(diagnostic.phase) || diagnostic.transport !== "launch-services-callback" && diagnostic.transport !== "direct-preflight") {
+  if (!diagnostic || !["trusted", "denied"].includes(diagnostic.phase) || diagnostic.transport !== "launch-services-callback") {
     throw new Error(`Collector Accessibility callback probe failed: ${JSON.stringify(diagnostic)}`);
   }
   process.stdout.write(`Verified collector Accessibility identity through ${diagnostic.transport}: ${diagnostic.phase}.\n`);

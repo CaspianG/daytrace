@@ -89,27 +89,6 @@ function createMacAccessibilityProbe({
     });
   }
 
-  async function directCheck(phase = "accessibility-check", publishResult = true) {
-    const executable = String(executablePath?.() || "");
-    if (!executable || !existsSync(executable)) {
-      if (publishResult) publish({ phase: "unavailable", trusted: false, error: "collector-missing", executable });
-      return { trusted: false, phase: "unavailable", code: null, signal: null, error: "collector-missing", executable, bundle: "" };
-    }
-    const result = await run(executable, ["--check-accessibility"], CHECK_TIMEOUT_MS, phase);
-    const diagnostic = {
-      phase: result.ok ? "trusted" : result.code === 77 ? "denied" : "error",
-      trusted: result.ok,
-      code: result.code,
-      signal: result.signal,
-      error: result.error,
-      executable,
-      bundle: collectorBundlePath(executable),
-      transport: "direct-preflight",
-    };
-    if (publishResult) publish(diagnostic);
-    return diagnostic;
-  }
-
   function launchBundleProbe(prompt) {
     return new Promise((resolve) => {
       const executable = String(executablePath?.() || "");
@@ -205,16 +184,11 @@ function createMacAccessibilityProbe({
 
   async function probe(prompt = false) {
     if (platform !== "darwin") return true;
-    if (prompt) return Boolean((await launchBundleProbe(true)).trusted);
-
-    // The direct probe is a cheap preflight. A denial is always confirmed by
-    // launching the real helper app through LaunchServices, which is the same
-    // identity and launch path used for collection. This avoids false denials
-    // when TCC treats a bare nested executable differently from its app bundle.
-    const direct = await directCheck("accessibility-direct-preflight", false);
-    if (direct.trusted) { publish(direct); return true; }
-    if (direct.phase === "unavailable") { publish(direct); return false; }
-    return Boolean((await launchBundleProbe(false)).trusted);
+    // TCC must be checked by the same app identity and launch path that performs
+    // the real AX calls. Never trust a bare executable preflight here: it can
+    // disagree with the LaunchServices app shown in System Settings and create
+    // an endless allowed/denied restart loop.
+    return Boolean((await launchBundleProbe(Boolean(prompt))).trusted);
   }
 
   async function reset() {
