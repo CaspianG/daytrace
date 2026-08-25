@@ -3,9 +3,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SOURCE="$ROOT/native/macos-tracker/main.swift"
 OUTPUT="$ROOT/native/macos-tracker/build"
-VERSION="$(node -p "require(process.argv[1]).version" "$ROOT/package.json")"
-COLLECTOR_APP="$OUTPUT/Daytrace Collector.app"
-COLLECTOR_EXECUTABLE="$COLLECTOR_APP/Contents/MacOS/Daytrace Collector"
+COLLECTOR_NAME="Daytrace Activity Collector"
+COLLECTOR_ID="io.github.caspiang.daytrace.collector"
+COLLECTOR_VERSION="1.0.0"
+COLLECTOR_APP="$OUTPUT/$COLLECTOR_NAME.app"
+COLLECTOR_EXECUTABLE="$COLLECTOR_APP/Contents/MacOS/$COLLECTOR_NAME"
 ICONSET="$OUTPUT/DaytraceCollector.iconset"
 mkdir -p "$OUTPUT"
 swiftc -O -target arm64-apple-macos12 "$SOURCE" -o "$OUTPUT/daytrace-tracker-arm64" -framework AppKit -framework ApplicationServices
@@ -27,15 +29,15 @@ cat > "$COLLECTOR_APP/Contents/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
-  <key>CFBundleDisplayName</key><string>Daytrace Collector</string>
-  <key>CFBundleExecutable</key><string>Daytrace Collector</string>
+  <key>CFBundleDisplayName</key><string>$COLLECTOR_NAME</string>
+  <key>CFBundleExecutable</key><string>$COLLECTOR_NAME</string>
   <key>CFBundleIconFile</key><string>DaytraceCollector</string>
-  <key>CFBundleIdentifier</key><string>local.daytrace.desktop.collector</string>
+  <key>CFBundleIdentifier</key><string>$COLLECTOR_ID</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-  <key>CFBundleName</key><string>Daytrace Collector</string>
+  <key>CFBundleName</key><string>$COLLECTOR_NAME</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>$VERSION</string>
-  <key>CFBundleVersion</key><string>$VERSION</string>
+  <key>CFBundleShortVersionString</key><string>$COLLECTOR_VERSION</string>
+  <key>CFBundleVersion</key><string>$COLLECTOR_VERSION</string>
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>LSUIElement</key><true/>
   <key>NSAccessibilityUsageDescription</key><string>Daytrace uses Accessibility only to read active-application and active-window metadata locally.</string>
@@ -56,5 +58,5 @@ plutil -lint "$COLLECTOR_APP/Contents/Info.plist"
 # This ad-hoc signature gives the helper a valid explicit identifier in unsigned
 # community builds. A real Developer ID signature still replaces it in the
 # strict release path and is the only way to guarantee consent survives updates.
-codesign --force --sign - --options runtime --identifier local.daytrace.desktop.collector "$COLLECTOR_APP"
+codesign --force --sign - --options runtime --identifier "$COLLECTOR_ID" "$COLLECTOR_APP"
 codesign --verify --strict --verbose=2 "$COLLECTOR_APP"

@@ -30,6 +30,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with: { node-version: 22, cache: npm }
+      - name: Import stable community macOS identity when available
+        env:
+          DAYTRACE_COMMUNITY_MAC_CERT_P12: ${{ secrets.DAYTRACE_COMMUNITY_MAC_CERT_P12 }}
+          DAYTRACE_COMMUNITY_MAC_CERT_PASSWORD: ${{ secrets.DAYTRACE_COMMUNITY_MAC_CERT_PASSWORD }}
+        run: bash scripts/import-community-macos-certificate.sh
       - run: npm ci
       - run: npm test
       - run: npm run build
@@ -37,5 +42,5 @@ jobs:
       - run: npm run build:tracker:mac
       - run: npm run test:stability
       - run: npm run test:performance
-      - name: Package and inspect the final unsigned universal ZIP and DMG
+      - name: Package and inspect the final community universal ZIP and DMG
         run: npm run package:mac:community

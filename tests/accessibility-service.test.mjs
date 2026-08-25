@@ -127,3 +127,28 @@ test("macOS permission polling is single-flight and exponentially backs off", as
   assert.equal(peak, 1);
   service.stop();
 });
+
+test("repeated macOS registration clicks share one live collector prompt", async () => {
+  let finishPrompt;
+  let promptCount = 0;
+  const service = createAccessibilityService({
+    platform: "darwin",
+    isTrusted: () => false,
+    probeTrusted: (prompt) => {
+      if (!prompt) return false;
+      promptCount += 1;
+      return new Promise((resolve) => { finishPrompt = resolve; });
+    },
+    openExternal: async () => {},
+    setTimeoutFn: () => ({ unref() {} }),
+    clearTimeoutFn: () => {},
+  });
+
+  const first = service.request();
+  while (!finishPrompt) await new Promise((resolve) => setImmediate(resolve));
+  const second = service.request();
+  assert.equal(await first, false);
+  assert.equal(await second, false);
+  assert.equal(promptCount, 1);
+  finishPrompt(false);
+});

@@ -10,9 +10,9 @@ fi
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 spctl --assess --verbose=2 --type exec "$APP_PATH"
 xcrun stapler validate "$APP_PATH"
-COLLECTOR_APP="$APP_PATH/Contents/Helpers/Daytrace Collector.app"
-COLLECTOR_EXECUTABLE="$COLLECTOR_APP/Contents/MacOS/Daytrace Collector"
-test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$COLLECTOR_APP/Contents/Info.plist")" = "local.daytrace.desktop.collector"
+COLLECTOR_APP="$APP_PATH/Contents/Helpers/Daytrace Activity Collector.app"
+COLLECTOR_EXECUTABLE="$COLLECTOR_APP/Contents/MacOS/Daytrace Activity Collector"
+test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$COLLECTOR_APP/Contents/Info.plist")" = "io.github.caspiang.daytrace.collector"
 codesign --verify --deep --strict --verbose=2 "$COLLECTOR_APP"
 codesign --verify --strict --verbose=2 "$COLLECTOR_EXECUTABLE"
 

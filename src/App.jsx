@@ -100,7 +100,7 @@ function demoState(language = demoLanguage(), onboardingComplete = new URLSearch
   })) : [];
   return {
     settings: { trackingEnabled: true, retentionHours: 48, excludePrivateWindows: true, collectWindowTitles: true, collectInputCounts: true, collectBrowserTabCount: true, analysisEngine: previewEngine, smartAnalysisEnabled: previewEngine !== "builtin", browserCompanionEnabled: false, autoStartEnabled: false, theme: normalizeTheme(params.get("theme")), excludedApps: ["1Password", "Bitwarden", "KeePass"], intentRules: [{ id: "demo-friends", match: lang === "ru" ? "Друзья" : "Friends", intent: "personal" }], intentRulesUndo: [], language: lang, onboardingComplete, onboardingVersion: onboardingComplete ? CURRENT_ONBOARDING_VERSION : Number(params.get("onboardingVersion") || 0), quickTourComplete: params.get("tour") !== "1", accessibilityOnboardingDismissed: false, reviewLearningExplained: false, reviewReminderSnoozedUntil: null, reviewReminderLastCount: 0 },
-    runtime: { platform: macPermissionPreview ? "darwin" : updatePreview || desktopPreview ? "win32" : "browser", trackerStatus: macPermissionPreview ? "permission-required" : "running", accessibilityTrusted: !macPermissionPreview, accessibilityMainTrusted: true, accessibilityTarget: "Daytrace Collector", autoStartSupported: desktopPreview, autoStartEnabled: false, capabilities: { browserTabCount: Boolean(updatePreview || desktopPreview), browserCompanion: Boolean(updatePreview || desktopPreview), smartAnalysis: true, encryptedBackup: true }, browserCompanion: { running: desktopPreview }, smartAnalysis: { engine: previewEngine, installed: true, running: false, version: "built-in", signal: { installed: false, running: false, sizeBytes: 6391, updateAvailable: false, lastResult: { status: "never", candidates: 0, refined: 0, changed: 0 } }, semantic: { installed: false, running: false, downloading: false, progress: 0, sizeBytes: 49821594, version: "1.0.0", languages: ["ru", "en"], quality: { benchmark: { labelable: 48, precision: 35 / 37, coverage: 37 / 48 }, holdout: { precision: 20 / 22, coverage: 22 / 32 } }, lastResult: { status: "never", candidates: 0, refined: 0, changed: 0 } }, quality: DEMO_ANALYSIS_QUALITY }, diagnostics: null, update: { status: updateStatus, currentVersion: "0.5.11", latestVersion: updatePreview ? "0.6.0" : "0.5.11", checkedAt: Date.now(), progress: updateStatus === "downloading" ? 64 : ["ready", "installing", "restarting"].includes(updateStatus) ? 100 : 0 } },
+    runtime: { platform: macPermissionPreview ? "darwin" : updatePreview || desktopPreview ? "win32" : "browser", trackerStatus: macPermissionPreview ? "permission-required" : "running", accessibilityTrusted: !macPermissionPreview, accessibilityMainTrusted: true, accessibilityTarget: "Daytrace Activity Collector", accessibilityProbe: macPermissionPreview ? { phase: "denied", trusted: false, checkedAt: Date.now(), code: 77, error: "permission required" } : null, autoStartSupported: desktopPreview, autoStartEnabled: false, capabilities: { browserTabCount: Boolean(updatePreview || desktopPreview), browserCompanion: Boolean(updatePreview || desktopPreview), smartAnalysis: true, encryptedBackup: true }, browserCompanion: { running: desktopPreview }, smartAnalysis: { engine: previewEngine, installed: true, running: false, version: "built-in", signal: { installed: false, running: false, sizeBytes: 6391, updateAvailable: false, lastResult: { status: "never", candidates: 0, refined: 0, changed: 0 } }, semantic: { installed: false, running: false, downloading: false, progress: 0, sizeBytes: 49821594, version: "1.0.0", languages: ["ru", "en"], quality: { benchmark: { labelable: 48, precision: 35 / 37, coverage: 37 / 48 }, holdout: { precision: 20 / 22, coverage: 22 / 32 } }, lastResult: { status: "never", candidates: 0, refined: 0, changed: 0 } }, quality: DEMO_ANALYSIS_QUALITY }, diagnostics: null, update: { status: updateStatus, currentVersion: "0.5.12", latestVersion: updatePreview ? "0.6.0" : "0.5.12", checkedAt: Date.now(), progress: updateStatus === "downloading" ? 64 : ["ready", "installing", "restarting"].includes(updateStatus) ? 100 : 0 } },
     sessions: [
       makeSession("demo-1", 0, 2, "mixed", "work"), makeSession("demo-2", 3, 6, "mixed", "work"), makeSession("demo-3", 7, 8, "communication", "mixed"),
       { id: "demo-break", start: startOfToday(12, 5), end: startOfToday(12, 20), durationMs: 15 * 60_000, focus: "break", label: FOCUS_LABELS[lang].break, intent: "unknown", intentLabel: INTENT_LABELS[lang].unknown, activities: [] },
@@ -163,13 +163,20 @@ function daySessions(sessions, selectedDay, language = "en") {
 function buildOverview(sessions, selectedDay) {
   const dayStart = startOfLocalDay(selectedDay);
   const dayEnd = dayStart + 24 * 60 * 60_000;
-  const activities = sessions.flatMap((session) => session.activities.map((activity) => ({
-    ...activity,
-    focus: activity.focus || session.focus,
-    label: activity.focusLabel || session.label,
-    intent: activity.intent || session.intent || "unknown",
-    intentLabel: activity.intentLabel || session.intentLabel || INTENT_LABELS.en.unknown,
-  })));
+  const activities = sessions.flatMap((session) => session.activities.map((activity) => {
+    const start = Math.max(dayStart, Number(activity.start));
+    const end = Math.min(dayEnd, Number(activity.end));
+    return {
+      ...activity,
+      start,
+      end,
+      durationMs: Math.max(0, end - start),
+      focus: activity.focus || session.focus,
+      label: activity.focusLabel || session.label,
+      intent: activity.intent || session.intent || "unknown",
+      intentLabel: activity.intentLabel || session.intentLabel || INTENT_LABELS.en.unknown,
+    };
+  })).filter((activity) => activity.end > activity.start);
   const focus = new Map();
   const intents = new Map();
   const apps = new Map();
@@ -217,6 +224,7 @@ function buildOverview(sessions, selectedDay) {
       return count + ((previous.app !== activity.app || (previous.context && activity.context && previous.context !== activity.context)) ? 1 : 0);
     }, 0),
     maxTabs,
+    activities: [...activities].sort((a, b) => b.end - a.end),
     focusTotals,
     intentTotals,
     appTotals,
@@ -502,6 +510,9 @@ function MacPermissionOnboarding({ actions, onContinue, runtime, t }) {
     try { await actions.refreshAccessibility(); }
     finally { setChecking(false); }
   };
+  const probePhase = runtime?.accessibilityProbe?.phase || "idle";
+  const probeBusy = probePhase === "registering";
+  const probeText = t.onboarding.permissionProbeStatuses?.[probePhase];
   return <main className="onboarding-shell permission-onboarding-shell">
     <section className="onboarding-card permission-onboarding-card" role="dialog" aria-modal="true" aria-labelledby="mac-permission-title">
       <button className="permission-close" onClick={onContinue} title={t.onboarding.permissionLater} aria-label={t.onboarding.permissionLater}><X size={21} /></button>
@@ -516,9 +527,11 @@ function MacPermissionOnboarding({ actions, onContinue, runtime, t }) {
       </ol>
       {runtime?.macInstall?.issue && <div className="permission-copy-warning"><strong>{t.onboarding.permissionCopyTitle}</strong><span>{text(t.settings.accessibilityInstallIssues[runtime.macInstall.issue] || t.settings.accessibilityInstallIssues["unknown-location"], { name: runtime.macInstall.appName, path: runtime.macInstall.bundlePath || "—" })}</span></div>}
       <div className="permission-repair"><strong>{runtime?.accessibilityMainTrusted ? t.onboarding.permissionWrongTargetTitle : t.onboarding.permissionRepairTitle}</strong><span>{runtime?.accessibilityMainTrusted ? t.onboarding.permissionWrongTargetText : t.onboarding.permissionRepairText}</span></div>
+      <div className="permission-migration"><Info size={19} /><span>{t.onboarding.permissionMigration}</span></div>
+      {probeText && <div className={`permission-probe-result ${probePhase}`} role="status"><span className="status-dot on" /><div><strong>{probeText}</strong>{runtime?.accessibilityProbe?.checkedAt && <small>{new Date(runtime.accessibilityProbe.checkedAt).toLocaleTimeString(t.locale, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</small>}</div></div>}
       <div className="onboarding-privacy"><LockKey size={25} /><div><strong>{t.settings.deviceOnly}</strong><span>{t.onboarding.permissionPrivacy}</span></div></div>
-      <button className="onboarding-continue" onClick={request} disabled={requesting}>{requesting ? t.onboarding.permissionWaiting : t.onboarding.permissionGrant}<ArrowRight size={19} /></button>
-      <button className="permission-check" onClick={refresh} disabled={checking}>{checking ? t.onboarding.permissionChecking : t.onboarding.permissionCheck}<ArrowClockwise size={18} /></button>
+      <button className="onboarding-continue" onClick={request} disabled={requesting || probeBusy}>{requesting || probeBusy ? t.onboarding.permissionWaiting : t.onboarding.permissionGrant}<ArrowRight size={19} /></button>
+      <button className="permission-check" onClick={refresh} disabled={checking || probeBusy}>{checking ? t.onboarding.permissionChecking : t.onboarding.permissionCheck}<ArrowClockwise size={18} /></button>
       <button className="permission-restart" onClick={actions.relaunch}>{t.onboarding.permissionRestart}</button>
       <button className="permission-later" onClick={onContinue}>{t.onboarding.permissionLater}</button>
     </section>
@@ -704,8 +717,46 @@ function OverviewMetrics({ stats, language, t, capabilities = {} }) {
   return <section className="overview-metrics">{cards.map(({ icon: Icon, value, label, hint }) => <article className="metric-card" key={label}><div className="metric-icon"><Icon size={19} /></div><strong>{value}</strong><span>{label}</span><small>{hint}</small></article>)}</section>;
 }
 
-function RankedBars({ title, subtitle, items, max, renderLabel, renderValue }) {
-  return <section className="chart-card"><header><div><h3>{title}</h3><p>{subtitle}</p></div></header><div className="ranked-bars">{items.slice(0, 5).map((item) => <div className="ranked-row" key={renderLabel(item)}><div className="ranked-label"><span>{renderLabel(item)}</span><strong>{renderValue(item)}</strong></div><div className="ranked-track"><span style={{ width: `${Math.max(4, (item.durationMs / Math.max(1, max)) * 100)}%` }} /></div></div>)}</div></section>;
+function RankedBars({ title, subtitle, items, max, renderLabel, renderValue, getKey, onSelect, selectedKey, getActionLabel }) {
+  return <section className="chart-card"><header><div><h3>{title}</h3><p>{subtitle}</p></div></header><div className="ranked-bars">{items.slice(0, 5).map((item) => {
+    const key = getKey ? getKey(item) : renderLabel(item);
+    const content = <><div className="ranked-label"><span>{renderLabel(item)}</span><span className="ranked-value"><strong>{renderValue(item)}</strong>{onSelect && <CaretRight size={13} weight="bold" />}</span></div><div className="ranked-track"><span style={{ width: `${Math.max(4, (item.durationMs / Math.max(1, max)) * 100)}%` }} /></div></>;
+    if (!onSelect) return <div className="ranked-row" key={key}>{content}</div>;
+    return <button type="button" className={`ranked-row ranked-row-button ${selectedKey === key ? "selected" : ""}`} key={key} data-intent={key} aria-haspopup="dialog" aria-label={getActionLabel?.(item)} onClick={() => onSelect(item)}>{content}</button>;
+  })}</div></section>;
+}
+
+function IntentDetailsDialog({ intent, activities, language, t, onClose }) {
+  const closeRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const [visibleCount, setVisibleCount] = useState(ACTIVITY_BATCH_SIZE);
+  const matching = activities.filter((activity) => activity.intent === intent.intent);
+  const apps = [...matching.reduce((totals, activity) => {
+    totals.set(activity.app, (totals.get(activity.app) || 0) + activity.durationMs);
+    return totals;
+  }, new Map()).entries()].map(([app, durationMs]) => ({ app, durationMs })).sort((a, b) => b.durationMs - a.durationMs);
+  useEffect(() => {
+    const previousFocus = document.activeElement;
+    const onKeyDown = (event) => { if (event.key === "Escape") onCloseRef.current(); };
+    document.addEventListener("keydown", onKeyDown);
+    closeRef.current?.focus();
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      previousFocus?.focus?.();
+    };
+  }, [intent.intent]);
+  const remaining = Math.max(0, matching.length - visibleCount);
+  return <div className="modal-backdrop intent-details-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="intent-details-dialog" role="dialog" aria-modal="true" aria-labelledby="intent-details-title"><header><div className="intent-details-icon"><ChartBar size={22} /></div><div><span>{t.overview.intentDetailsEyebrow}</span><h2 id="intent-details-title">{intent.label}</h2><p>{text(t.overview.intentDetailsSummary, { count: matching.length, duration: formatDuration(intent.durationMs, language) })}</p></div><button ref={closeRef} type="button" className="intent-details-close" onClick={onClose} title={t.overview.intentDetailsClose} aria-label={t.overview.intentDetailsClose}><X size={18} /></button></header>{apps.length > 0 && <div className="intent-details-apps" aria-label={t.overview.intentDetailsApps}>{apps.slice(0, 6).map((item) => <div key={item.app}><AppIcon app={item.app} size={22} /><span><strong>{item.app}</strong><small>{formatDuration(item.durationMs, language)}</small></span></div>)}</div>}<div className="intent-details-heading"><strong>{t.overview.intentDetailsActivity}</strong><small>{t.overview.intentDetailsNewest}</small></div><div className="intent-details-list">{matching.slice(0, visibleCount).map((activity, index) => {
+    const confidence = Math.round(Math.max(0, Math.min(1, Number(activity.intentConfidenceScore ?? (activity.intentConfidence === "high" ? .9 : activity.intentConfidence === "medium" ? .7 : .3)))) * 100);
+    return <article key={`${activity.start}-${activity.end}-${activity.app}-${index}`}><time>{formatTime(activity.start, language)}–{formatTime(activity.end, language)}</time><AppIcon app={activity.app} size={25} /><div><strong>{activity.app}</strong><span>{activity.observedLabel || activity.title || t.common.activeWindow}</span><small>{formatDuration(activity.durationMs, language)} · {text(t.overview.intentDetailsConfidence, { percent: confidence })}</small></div></article>;
+  })}{remaining > 0 && <button type="button" className="intent-details-more" onClick={() => setVisibleCount((current) => nextActivityLimit(current, matching.length, ACTIVITY_BATCH_SIZE))}>{text(t.overview.intentDetailsMore, { count: Math.min(ACTIVITY_BATCH_SIZE, remaining), remaining })}</button>}</div><footer><LockKey size={14} /><span>{t.overview.intentDetailsPrivacy}</span></footer></section></div>;
+}
+
+function IntentBreakdownCard({ stats, max, language, t }) {
+  const [selectedIntent, setSelectedIntent] = useState(null);
+  const selected = stats.intentTotals.find((item) => item.intent === selectedIntent);
+  return <><RankedBars title={t.overview.intentTitle} subtitle={t.overview.intentSubtitle} items={stats.intentTotals} max={max} getKey={(item) => item.intent} selectedKey={selectedIntent} onSelect={(item) => setSelectedIntent(item.intent)} getActionLabel={(item) => text(t.overview.intentDetailsOpen, { purpose: item.label, duration: formatDuration(item.durationMs, language) })} renderLabel={(item) => item.label} renderValue={(item) => formatDuration(item.durationMs, language)} />{selected && <IntentDetailsDialog key={selected.intent} intent={selected} activities={stats.activities} language={language} t={t} onClose={() => setSelectedIntent(null)} />}</>;
 }
 
 function DateCalendar({ selectedDay, minDay, maxDay, availableDays, language, onSelect, onClose, t }) {
@@ -783,7 +834,7 @@ function ActivityRhythm({ stats, language, t }) {
 function DayOverview({ stats, language, t, capabilities }) {
   const intentMax = Math.max(1, ...stats.intentTotals.map((item) => item.durationMs));
   const appMax = Math.max(1, ...stats.appTotals.map((item) => item.durationMs));
-  return <div className="day-overview" data-tour="overview"><OverviewMetrics stats={stats} language={language} t={t} capabilities={capabilities} /><div className="overview-charts"><RankedBars title={t.overview.intentTitle} subtitle={t.overview.intentSubtitle} items={stats.intentTotals} max={intentMax} renderLabel={(item) => item.label} renderValue={(item) => formatDuration(item.durationMs, language)} /><RankedBars title={t.overview.appsTitle} subtitle={t.overview.appsSubtitle} items={stats.appTotals} max={appMax} renderLabel={(item) => item.app} renderValue={(item) => formatDuration(item.durationMs, language)} /></div><ActivityRhythm stats={stats} language={language} t={t} /></div>;
+  return <div className="day-overview" data-tour="overview"><OverviewMetrics stats={stats} language={language} t={t} capabilities={capabilities} /><div className="overview-charts"><IntentBreakdownCard stats={stats} max={intentMax} language={language} t={t} /><RankedBars title={t.overview.appsTitle} subtitle={t.overview.appsSubtitle} items={stats.appTotals} max={appMax} renderLabel={(item) => item.app} renderValue={(item) => formatDuration(item.durationMs, language)} /></div><ActivityRhythm stats={stats} language={language} t={t} /></div>;
 }
 
 function IntentPicker({ activity, onClassify, t }) {
@@ -1130,6 +1181,9 @@ function SettingsPage({ state, actions, isDesktop, language, focusSection, t, on
     ? text(t.settings.accessibilityInstallIssues[macInstall.issue] || t.settings.accessibilityInstallIssues["unknown-location"], { name: macInstall.appName || "Daytrace", path: macInstall.bundlePath || "—" })
     : runtime.accessibilityMainTrusted ? t.settings.accessibilityWrongTarget : t.settings.accessibilityText;
   const statusLabel = t.settings.statuses[runtime.trackerStatus] || t.settings.statuses.stopped;
+  const accessibilityProbePhase = runtime.accessibilityProbe?.phase || "idle";
+  const accessibilityProbeBusy = accessibilityProbePhase === "registering";
+  const accessibilityProbeText = t.settings.accessibilityProbeStatuses?.[accessibilityProbePhase];
   const setting = (key, title, description) => (
     <div className="setting-row" key={key}>
       <div><strong>{title}</strong><span>{description}</span></div>
@@ -1149,9 +1203,10 @@ function SettingsPage({ state, actions, isDesktop, language, focusSection, t, on
         <div className="permission-card">
           <ShieldCheck size={22} />
           <div className="permission-copy"><strong>{t.settings.accessibility}</strong><span>{accessibilityText}</span></div>
+          {accessibilityProbeText && <div className={`permission-probe-result ${accessibilityProbePhase}`} role="status"><span className="status-dot on" /><div><strong>{accessibilityProbeText}</strong>{runtime.accessibilityProbe?.checkedAt && <small>{new Date(runtime.accessibilityProbe.checkedAt).toLocaleTimeString(t.locale, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</small>}</div></div>}
           <div className="permission-actions">
-            <button onClick={() => run("accessibility", actions.requestAccessibility)} disabled={Boolean(pending)}>{t.settings.grantAccess}</button>
-            <button onClick={() => run("accessibility-check", actions.refreshAccessibility)} disabled={Boolean(pending)}>{t.onboarding.permissionCheck}</button>
+            <button onClick={() => run("accessibility", actions.requestAccessibility)} disabled={Boolean(pending) || accessibilityProbeBusy}>{accessibilityProbeBusy ? t.onboarding.permissionWaiting : t.settings.grantAccess}</button>
+            <button onClick={() => run("accessibility-check", actions.refreshAccessibility)} disabled={Boolean(pending) || accessibilityProbeBusy}>{t.onboarding.permissionCheck}</button>
             <button onClick={actions.relaunch}>{t.settings.restartAfterAccess}</button>
           </div>
         </div>

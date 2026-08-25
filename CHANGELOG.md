@@ -4,6 +4,16 @@ All notable changes to Daytrace are documented here.
 
 ## [Unreleased]
 
+## [0.5.12] - 2026-08-25
+
+- Made every purpose row in **How the time was used** an accessible drill-down control. Work, Learning, Personal, Entertainment, Mixed, and Ambiguous purpose now open the exact newest-first local intervals that formed the total.
+- Added a lightweight RU/EN detail dialog with per-application totals, safe observed active-window context, time range, duration, and inference confidence. Long categories reveal details in bounded 12-row batches and never start model inference or rescan the archive.
+- Added full light/dark styling, a reduced-motion-safe opening transition, keyboard focus, Escape/backdrop close, and an Electron smoke that verifies Personal details in both languages at a compact desktop size.
+- Replaced the changing macOS collector identity with a nested `Daytrace Activity Collector.app` using the stable bundle identifier `io.github.caspiang.daytrace.collector`. Registration now launches the exact helper through LaunchServices and the helper itself reports its real Accessibility result.
+- Community macOS packages now preserve a stable project identity across updates, sign nested bundles from the inside out, and verify the final universal ZIP and mounted DMG. This improves TCC permission continuity without claiming Apple Developer ID notarization; Gatekeeper's first-launch warning can still appear.
+- Added a one-time migration message for users updating from v0.5.11 or earlier: enable the newly named **Daytrace Activity Collector** entry once, while obsolete Daytrace/Daytrace 2/Daytrace Collector entries no longer count as collector consent.
+- Local verification passed 149 unit/integration tests, desktop, navigation, semantic, recovery, Sites, and bilingual drill-down smokes. The Windows background check measured 0.000% main-process CPU, 0.013% average sampled Electron CPU, 84.5 MiB peak private memory, and 0.1 MiB short-run growth over 12 seconds.
+
 ## [0.5.11] - 2026-08-25
 
 - Fixed Overview navigation stalls on retained histories with thousands of activities. The renderer now receives a compact shell state and loads only the selected day instead of parsing the complete rolling 48-hour timeline after every heartbeat.

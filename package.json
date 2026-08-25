@@ -1,6 +1,6 @@
 {
   "name": "daytrace-local",
-  "version": "0.5.11",
+  "version": "0.5.12",
   "private": true,
   "description": "Private, fully local activity timeline and workday recall for Windows and macOS.",
   "author": "Daytrace contributors",
@@ -42,16 +42,16 @@
     "model:verify": "node scripts/verify-smart-model.mjs",
     "model:verify:semantic": "node scripts/evaluate-semantic-model.mjs",
     "preview": "vite preview",
-    "test": "npm run model:verify && npm run model:verify:semantic && node --test --test-concurrency=1 tests/privacy.test.mjs tests/sessionizer.test.mjs tests/intent-classifier.test.mjs tests/intent-accuracy.test.mjs tests/activity-insights.test.mjs tests/analysis-quality.test.mjs tests/rule-preview.test.mjs tests/local-answer-dates.test.mjs tests/browser-companion.test.mjs tests/smart-analysis.test.mjs tests/semantic-model.test.mjs tests/data-portability.test.mjs tests/diagnostics.test.mjs tests/update-service.test.mjs tests/accessibility-service.test.mjs tests/runtime-recovery.test.mjs tests/mac-install-service.test.mjs tests/mac-update-service.test.mjs tests/windows-update-service.test.mjs tests/event-store.test.mjs tests/day-view-state.test.mjs tests/localization.test.mjs tests/runtime-security.test.mjs tests/native-collector-contract.test.mjs tests/release-docs.test.mjs",
+    "test": "npm run model:verify && npm run model:verify:semantic && node --test --test-concurrency=1 tests/privacy.test.mjs tests/sessionizer.test.mjs tests/intent-classifier.test.mjs tests/intent-accuracy.test.mjs tests/activity-insights.test.mjs tests/analysis-quality.test.mjs tests/rule-preview.test.mjs tests/local-answer-dates.test.mjs tests/browser-companion.test.mjs tests/smart-analysis.test.mjs tests/semantic-model.test.mjs tests/data-portability.test.mjs tests/diagnostics.test.mjs tests/update-service.test.mjs tests/accessibility-service.test.mjs tests/mac-accessibility-probe.test.mjs tests/runtime-recovery.test.mjs tests/mac-install-service.test.mjs tests/mac-update-service.test.mjs tests/windows-update-service.test.mjs tests/event-store.test.mjs tests/day-view-state.test.mjs tests/localization.test.mjs tests/runtime-security.test.mjs tests/native-collector-contract.test.mjs tests/release-docs.test.mjs",
     "test:accuracy": "node --test tests/intent-accuracy.test.mjs",
     "test:sites": "npm run build && node --test tests/sites-worker.test.mjs",
-    "test:desktop": "node scripts/run-desktop-smoke.cjs && node scripts/run-navigation-performance-smoke.cjs && node scripts/run-semantic-desktop-smoke.cjs",
+    "test:desktop": "node scripts/run-desktop-smoke.cjs && node scripts/run-navigation-performance-smoke.cjs && electron scripts/run-overview-drilldown-smoke.cjs && node scripts/run-semantic-desktop-smoke.cjs",
     "test:stability": "node scripts/run-runtime-recovery-smoke.cjs",
     "test:performance": "node scripts/run-background-performance-smoke.cjs",
     "test:packaged:win": "node scripts/run-packaged-windows-smoke.cjs"
   },
-  "dependencies": {},
   "devDependencies": {
+    "@electron/osx-sign": "1.3.3",
     "@fontsource/manrope": "^5.3.0",
     "@fontsource/source-serif-4": "^5.3.0",
     "@huggingface/transformers": "4.2.0",
@@ -61,10 +61,10 @@
     "electron": "43.4.0",
     "electron-builder": "26.15.3",
     "png-to-ico": "^3.0.2",
+    "rcedit": "^5.0.2",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-icons": "^5.7.0",
-    "rcedit": "^5.0.2",
     "vite": "6.4.3",
     "wait-on": "^8.0.5"
   },
@@ -95,20 +95,6 @@
       "README_RU.md",
       "package.json"
     ],
-    "extraFiles": [
-      {
-        "from": "README_RU.md",
-        "to": "README_RU.md"
-      },
-      {
-        "from": "README.md",
-        "to": "README.md"
-      },
-      {
-        "from": "LICENSE",
-        "to": "LICENSE"
-      }
-    ],
     "extraResources": [
       {
         "from": "browser-extension",
@@ -123,6 +109,20 @@
     },
     "win": {
       "icon": "build/icon.ico",
+      "extraFiles": [
+        {
+          "from": "README_RU.md",
+          "to": "README_RU.md"
+        },
+        {
+          "from": "README.md",
+          "to": "README.md"
+        },
+        {
+          "from": "LICENSE",
+          "to": "LICENSE"
+        }
+      ],
       "extraResources": [
         {
           "from": "native/windows-tracker/bin/Release/daytrace-win-x64/",
@@ -157,13 +157,13 @@
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.inherit.plist",
       "binaries": [
-        "Contents/Helpers/Daytrace Collector.app/Contents/MacOS/Daytrace Collector"
+        "Contents/Helpers/Daytrace Activity Collector.app/Contents/MacOS/Daytrace Activity Collector"
       ],
       "artifactName": "Daytrace-${version}-macOS-${arch}.${ext}",
       "extraFiles": [
         {
-          "from": "native/macos-tracker/build/Daytrace Collector.app",
-          "to": "Helpers/Daytrace Collector.app"
+          "from": "native/macos-tracker/build/Daytrace Activity Collector.app",
+          "to": "Helpers/Daytrace Activity Collector.app"
         }
       ],
       "target": [

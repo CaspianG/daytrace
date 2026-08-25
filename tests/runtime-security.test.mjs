@@ -102,7 +102,8 @@ test("theme choice stays in the local settings bridge and respects the operating
 });
 
 test("macOS Accessibility uses the collector identity and never blocks the application shell", () => {
-  assert.match(mainSource, /MAC_ACCESSIBILITY_TARGET = "Daytrace Collector"/);
+  assert.match(mainSource, /MAC_COLLECTOR_NAME = "Daytrace Activity Collector"/);
+  assert.match(mainSource, /MAC_ACCESSIBILITY_TARGET = MAC_COLLECTOR_NAME/);
   assert.match(mainSource, /accessibilityMainTrusted: mainAccessibilityTrusted\(\)/);
   assert.doesNotMatch(mainSource, /process\.platform === "darwin" && !accessibilityTrusted\(\).*permission-required/);
   assert.match(rendererSource, /const showMacPermission =/);
