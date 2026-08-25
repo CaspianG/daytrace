@@ -13,7 +13,15 @@ final class CallbackTransport {
 
     init?(port: Int) {
         guard (1...65535).contains(port) else { return nil }
-        stream = OutputStream(toHost: "127.0.0.1", port: port)
+        var outputStream: OutputStream?
+        Stream.getStreamsToHost(
+            withName: "127.0.0.1",
+            port: port,
+            inputStream: nil,
+            outputStream: &outputStream
+        )
+        guard let outputStream else { return nil }
+        stream = outputStream
         stream.schedule(in: .current, forMode: .default)
         stream.open()
         let deadline = Date().addingTimeInterval(5)
