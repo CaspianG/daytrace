@@ -236,7 +236,10 @@ test("PowerShell preflight failure never moves or deletes the original Windows i
       expectedVersion: "9.9.9",
       tempDir: updateRoot,
       logFile,
-      preparationTimeoutMs: 1_000,
+      // Windows Defender can make the first PowerShell process on a cold CI
+      // runner take several seconds to load the script. Keep this test about
+      // the preflight result rather than racing process startup.
+      preparationTimeoutMs: 15_000,
       tokenFactory: () => "e".repeat(64),
       beforeHelperStart: (helperEnvironment) => fs.mkdirSync(helperEnvironment[windowsUpdater.WINDOWS_UPDATE_ENV.backupDirectory]),
     });
