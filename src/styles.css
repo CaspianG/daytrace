@@ -138,9 +138,13 @@ button:focus-visible, input:focus-visible { outline: 2px solid #748e6c; outline-
 .chart-card header p { margin: 4px 0 0; color: #918e87; font-size: 10px; }
 .ranked-bars { display: grid; gap: 12px; margin-top: 16px; }
 .ranked-row { display: grid; gap: 6px; }
+.ranked-row-button { width: calc(100% + 12px); margin: -5px -6px; padding: 5px 6px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; text-align: left; transition: background 150ms ease, transform 150ms ease; }
+.ranked-row-button:hover { background: #f2f5ef; transform: translateX(2px); }
+.ranked-row-button:focus-visible { outline-offset: 1px; }
 .ranked-label { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; min-width: 0; font-size: 11px; }
 .ranked-label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ranked-label strong { flex: 0 0 auto; color: #77746d; font-family: "Source Serif 4", Georgia, serif; font-size: 11px; font-weight: 500; }
+.ranked-label .ranked-value { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; overflow: visible; color: #72826d; }
 .ranked-track { height: 5px; border-radius: 999px; background: #ece9e2; overflow: hidden; }
 .ranked-track span { display: block; height: 100%; border-radius: inherit; background: #789570; }
 .overview-charts .chart-card:nth-child(2) .ranked-track span { background: #bf745c; }
@@ -166,6 +170,38 @@ button:focus-visible, input:focus-visible { outline: 2px solid #748e6c; outline-
 .rhythm-apps strong { max-width: 145px; overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .rhythm-apps small { color: #8b8881; font-size: 8px; }
 .rhythm-detail > p { margin: 0; color: #73766f; font-size: 9px; }
+.intent-details-backdrop { animation: intent-backdrop-in 170ms ease-out; }
+.intent-details-dialog { width: min(680px, 100%); max-height: min(780px, calc(100vh - 48px)); padding: 24px; border: 1px solid #d8d4cb; border-radius: 15px; background: #fffefa; box-shadow: 0 28px 85px rgba(38, 41, 34, .25); overflow: auto; animation: intent-dialog-in 190ms cubic-bezier(.2, .8, .2, 1); }
+.intent-details-dialog > header { display: grid; grid-template-columns: 44px minmax(0, 1fr) 34px; align-items: start; gap: 12px; }
+.intent-details-icon { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 50%; color: #587052; background: #e8efe3; }
+.intent-details-dialog > header > div:nth-child(2) { min-width: 0; }
+.intent-details-dialog > header span { display: block; color: #72806e; font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.intent-details-dialog h2 { margin: 2px 0 3px; font-family: "Source Serif 4", Georgia, serif; font-size: 24px; font-weight: 600; }
+.intent-details-dialog > header p { margin: 0; color: #77746d; font-size: 11px; }
+.intent-details-close { display: grid; width: 32px; height: 32px; place-items: center; border: 0; border-radius: 8px; color: #78766f; background: transparent; cursor: pointer; }
+.intent-details-close:hover { background: #f0eee8; }
+.intent-details-apps { display: flex; flex-wrap: wrap; gap: 7px; margin: 18px 0; padding: 12px; border: 1px solid #e1e5dd; border-radius: 10px; background: #f7f9f5; }
+.intent-details-apps > div { display: grid; grid-template-columns: 22px minmax(0, auto); align-items: center; gap: 7px; min-width: 0; padding: 6px 8px; border: 1px solid #e4e6df; border-radius: 8px; background: #fffefa; }
+.intent-details-apps > div > span { display: grid; gap: 1px; min-width: 0; text-transform: none; letter-spacing: 0; }
+.intent-details-apps strong { max-width: 150px; overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.intent-details-apps small { color: #8a877f; font-size: 8px; }
+.intent-details-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 18px 1px 8px; }
+.intent-details-heading strong { font-family: "Source Serif 4", Georgia, serif; font-size: 15px; }
+.intent-details-heading small { color: #918e87; font-size: 9px; }
+.intent-details-list { display: grid; border: 1px solid #e1ddd5; border-radius: 10px; overflow: hidden; }
+.intent-details-list article { display: grid; grid-template-columns: 82px 25px minmax(0, 1fr); align-items: center; gap: 10px; min-height: 62px; padding: 9px 11px; background: #fbfaf6; }
+.intent-details-list article + article { border-top: 1px solid #e5e1d9; }
+.intent-details-list time { color: #7c7972; font-family: "Source Serif 4", Georgia, serif; font-size: 10px; white-space: nowrap; }
+.intent-details-list article > div:last-child { display: grid; min-width: 0; gap: 2px; }
+.intent-details-list article strong, .intent-details-list article span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.intent-details-list article strong { font-size: 10px; }
+.intent-details-list article span { color: #62615c; font-size: 10px; }
+.intent-details-list article small { color: #8c8981; font-size: 8px; }
+.intent-details-more { min-height: 38px; border: 0; border-top: 1px solid #dde3d9; color: #5f765a; background: #f3f7f1; cursor: pointer; font-size: 9px; font-weight: 750; }
+.intent-details-more:hover { background: #eaf1e7; }
+.intent-details-dialog > footer { display: flex; align-items: center; gap: 7px; margin-top: 12px; color: #85827a; font-size: 9px; line-height: 1.45; }
+@keyframes intent-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes intent-dialog-in { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
 .timeline-title { margin-top: 31px; }
 .section-title { display: flex; align-items: baseline; justify-content: space-between; margin: 0 0 20px 8px; }
 .section-title h2, .summary-panel h2 { margin: 0; font-family: "Source Serif 4", Georgia, serif; font-size: 23px; font-weight: 600; }
@@ -787,7 +823,8 @@ html[data-theme="dark"] .summary-panel,
 html[data-theme="dark"] .answer-surface,
 html[data-theme="dark"] .skill-card,
 html[data-theme="dark"] .settings-section,
-html[data-theme="dark"] .rule-preview-dialog { border-color: #343d31; background: #1a1f17; box-shadow: 0 1px 0 rgba(255, 255, 255, .015); }
+html[data-theme="dark"] .rule-preview-dialog,
+html[data-theme="dark"] .intent-details-dialog { border-color: #343d31; background: #1a1f17; box-shadow: 0 1px 0 rgba(255, 255, 255, .015); }
 html[data-theme="dark"] .question-bar:focus-within { border-color: #687b62; box-shadow: 0 0 0 3px rgba(145, 170, 137, .11); }
 html[data-theme="dark"] .question-bar svg { color: #899184; }
 html[data-theme="dark"] .question-bar button { background: #a95f49; }
@@ -984,6 +1021,24 @@ html[data-theme="dark"] .review-banner { border-color: #5b503d; color: #cfbc9d; 
 html[data-theme="dark"] .review-banner small { color: #aa977b; }
 html[data-theme="dark"] .modal-backdrop { background: rgba(6, 8, 5, .68); }
 html[data-theme="dark"] .dialog-icon { color: #bad1b3; background: #2b3828; }
+html[data-theme="dark"] .ranked-row-button:hover { background: #242b21; }
+html[data-theme="dark"] .ranked-label .ranked-value { color: #9bad95; }
+html[data-theme="dark"] .intent-details-icon { color: #bad1b3; background: #2b3828; }
+html[data-theme="dark"] .intent-details-dialog > header p,
+html[data-theme="dark"] .intent-details-list time,
+html[data-theme="dark"] .intent-details-dialog > footer { color: #969e92; }
+html[data-theme="dark"] .intent-details-close { color: #a6ada1; }
+html[data-theme="dark"] .intent-details-close:hover { background: #262d23; }
+html[data-theme="dark"] .intent-details-apps { border-color: #354331; background: #20271d; }
+html[data-theme="dark"] .intent-details-apps > div,
+html[data-theme="dark"] .intent-details-list article { border-color: #363e33; background: #181d16; }
+html[data-theme="dark"] .intent-details-list,
+html[data-theme="dark"] .intent-details-list article + article { border-color: #363e33; }
+html[data-theme="dark"] .intent-details-list article span { color: #afb5aa; }
+html[data-theme="dark"] .intent-details-list article small,
+html[data-theme="dark"] .intent-details-apps small { color: #8f988b; }
+html[data-theme="dark"] .intent-details-more { border-color: #3b4937; color: #adbea8; background: #222b1f; }
+html[data-theme="dark"] .intent-details-more:hover { background: #293326; }
 html[data-theme="dark"] .rule-preview-dialog > p,
 html[data-theme="dark"] .preview-samples span { color: #a3aa9e; }
 html[data-theme="dark"] .preview-samples,

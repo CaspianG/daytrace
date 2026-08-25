@@ -1,6 +1,6 @@
 {
   "name": "daytrace-local",
-  "version": "0.5.11",
+  "version": "0.5.12",
   "private": true,
   "description": "Private, fully local activity timeline and workday recall for Windows and macOS.",
   "author": "Daytrace contributors",
@@ -45,7 +45,7 @@
     "test": "npm run model:verify && npm run model:verify:semantic && node --test --test-concurrency=1 tests/privacy.test.mjs tests/sessionizer.test.mjs tests/intent-classifier.test.mjs tests/intent-accuracy.test.mjs tests/activity-insights.test.mjs tests/analysis-quality.test.mjs tests/rule-preview.test.mjs tests/local-answer-dates.test.mjs tests/browser-companion.test.mjs tests/smart-analysis.test.mjs tests/semantic-model.test.mjs tests/data-portability.test.mjs tests/diagnostics.test.mjs tests/update-service.test.mjs tests/accessibility-service.test.mjs tests/mac-accessibility-probe.test.mjs tests/runtime-recovery.test.mjs tests/mac-install-service.test.mjs tests/mac-update-service.test.mjs tests/windows-update-service.test.mjs tests/event-store.test.mjs tests/day-view-state.test.mjs tests/localization.test.mjs tests/runtime-security.test.mjs tests/native-collector-contract.test.mjs tests/release-docs.test.mjs",
     "test:accuracy": "node --test tests/intent-accuracy.test.mjs",
     "test:sites": "npm run build && node --test tests/sites-worker.test.mjs",
-    "test:desktop": "node scripts/run-desktop-smoke.cjs && node scripts/run-navigation-performance-smoke.cjs && node scripts/run-semantic-desktop-smoke.cjs",
+    "test:desktop": "node scripts/run-desktop-smoke.cjs && node scripts/run-navigation-performance-smoke.cjs && electron scripts/run-overview-drilldown-smoke.cjs && node scripts/run-semantic-desktop-smoke.cjs",
     "test:stability": "node scripts/run-runtime-recovery-smoke.cjs",
     "test:performance": "node scripts/run-background-performance-smoke.cjs",
     "test:packaged:win": "node scripts/run-packaged-windows-smoke.cjs"
