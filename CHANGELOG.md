@@ -4,6 +4,15 @@ All notable changes to Daytrace are documented here.
 
 ## [Unreleased]
 
+## [0.5.13] - 2026-08-26
+
+- Fixed the recurring macOS state where **Daytrace Activity Collector** was enabled in Accessibility but Daytrace continued to report that permission was missing. Permission checks and live collection now launch the exact same nested helper app through LaunchServices instead of checking or executing a different process path.
+- Added an authenticated loopback-only event channel between the helper app and Daytrace. The helper itself reports readiness, liveness, revoked permission, and safe activity events; Daytrace no longer treats a successful `open` command or the Electron UI process permission as proof that collection works.
+- Added **Repair Daytrace permission** for stale TCC records. It resets only `io.github.caspiang.daytrace.collector`, immediately registers that same helper again, and leaves permissions for every other application untouched.
+- Made Accessibility diagnostics explicit and bilingual: checking, registering, denied, unavailable, reset, and launch/protocol failures remain visible instead of producing a button that appears to do nothing.
+- Replaced an unavailable Swift stream initializer with the portable Foundation stream-pair API used by macOS 12+, and added package-level probes for both permission identity and the real LaunchServices runtime.
+- Verification passed all 155 cross-platform unit/integration cases, desktop and navigation smokes, low-load and recovery gates, native Windows build, universal arm64/x64 macOS collector build, stable nested signatures, and inspection of the final ZIP and mounted DMG on GitHub's macOS runner. The v0.5.13 Windows background sample measured 0.125% main-process CPU, 0.010% average sampled Electron CPU, 83.8 MiB peak private memory, and no short-run private-memory growth over 12 seconds.
+
 ## [0.5.12] - 2026-08-25
 
 - Made every purpose row in **How the time was used** an accessible drill-down control. Work, Learning, Personal, Entertainment, Mixed, and Ambiguous purpose now open the exact newest-first local intervals that formed the total.

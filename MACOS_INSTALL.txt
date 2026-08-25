@@ -24,11 +24,12 @@ the collector permission across updates. It is not Apple trust or notarization.
    Daytrace 2, or Daytrace Collector entry. This permission is separate from
    Gatekeeper.
 
-If Accessibility appears enabled but Daytrace still asks, the switch probably
-belongs to the UI app rather than its collector. Return to Daytrace, click
-Register collector, enable the Daytrace Activity Collector entry macOS adds, and click
-Check again. If several collector entries exist, remove the stale ones first.
-The setup has a close button and never locks settings or existing local data.
+If Accessibility appears enabled but Daytrace still asks, update to v0.5.13 or
+newer and click Repair Daytrace permission once. Daytrace resets only its exact
+collector record, registers Daytrace Activity Collector again, and opens the
+right pane. Enable the newly added helper. Permissions for other applications
+are not changed. The setup has a close button and never locks settings or
+existing local data.
 
 From v0.5.4 onward, the in-app Update button verifies the DMG, replaces the
 installed app, repairs a numbered copy such as Daytrace 2.app, and relaunches
@@ -38,6 +39,8 @@ updater. v0.5.12 has a one-time migration to the newly named Daytrace Activity
 Collector. Enable it once; its fixed bundle identity and stable community
 signature are then preserved across later community updates. Daytrace verifies
 the real helper result and never treats a button press itself as success.
+From v0.5.13 checks and real collection launch that same helper app through the
+same LaunchServices path and require its authenticated local readiness signal.
 
 From v0.5.5 onward, Daytrace keeps the previous app until the new version has
 rendered and shown a real window. If Gatekeeper blocks it or startup fails, the
@@ -74,11 +77,12 @@ Gatekeeper из-за отсутствия платного сертификат�
    Daytrace, Daytrace 2 или старый Daytrace Collector. Это разрешение не
    связано с Gatekeeper.
 
-Если доступ выглядит включённым, но Daytrace продолжает его просить, скорее всего
-включена запись окна, а не сборщика. Вернитесь в Daytrace, нажмите
-«Зарегистрировать сборщик», включите добавленный macOS Daytrace Activity Collector и
-нажмите «Проверить снова». Если записей сборщика несколько, удалите старые.
-Экран можно закрыть; настройки и сохранённые данные он больше не блокирует.
+Если доступ выглядит включённым, но Daytrace продолжает его просить, обновитесь
+до v0.5.13 или новее и один раз нажмите «Восстановить разрешение Daytrace».
+Приложение сбросит только точную запись своего сборщика, заново зарегистрирует
+Daytrace Activity Collector и откроет нужный раздел. Включите добавленного
+помощника. Разрешения других программ не изменятся. Экран можно закрыть;
+настройки и сохранённые данные он не блокирует.
 
 Начиная с v0.5.4 кнопка обновления сама проверяет DMG, заменяет установленное
 приложение, исправляет номерную копию вроде Daytrace 2.app и перезапускает
@@ -87,6 +91,8 @@ Daytrace. При переходе с v0.5.3 или старше ручную з�
 раз включите новую Daytrace Activity Collector. Дальше её фиксированная bundle-
 идентичность и стабильная community-подпись сохраняются между обновлениями.
 Daytrace проверяет реальный результат сборщика и не считает успехом само нажатие.
+Начиная с v0.5.13 проверка и настоящий сбор запускают один `.app` помощника одним
+способом через LaunchServices и ждут его защищённый локальный сигнал готовности.
 
 Начиная с v0.5.5 Daytrace хранит предыдущую версию, пока новая действительно не
 отрисует и не покажет окно. Если её заблокирует Gatekeeper или запуск завершится
