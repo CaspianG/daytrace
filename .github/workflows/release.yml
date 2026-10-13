@@ -24,7 +24,7 @@ jobs:
             test "$attempt" = 3 && exit 1
             sleep 15
           done
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: daytrace-windows
           path: |
@@ -54,7 +54,7 @@ jobs:
           done
       - name: Stage companion macOS install guide beside the artifacts
         run: cp MACOS_INSTALL.txt release/MACOS_INSTALL.txt
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: daytrace-macos
           path: |
