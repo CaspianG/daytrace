@@ -58,7 +58,7 @@
     "@phosphor-icons/react": "^2.1.10",
     "@vitejs/plugin-react": "5.0.4",
     "concurrently": "10.0.5",
-    "electron": "43.4.0",
+    "electron": "43.8.1",
     "electron-builder": "26.15.3",
     "png-to-ico": "^3.0.2",
     "rcedit": "^5.0.2",
